@@ -466,3 +466,15 @@
 ### 备注:
 - `gh` 命令未安装，GitHub App 连接也因网络请求失败不可用；将使用 `git push` 尝试上传。
 - build 目录构建验证后不纳入 Git，由 `.gitignore` 排除。
+## [2026-04-28] - 任务: GitHub 上传完成
+
+### 做了什么:
+- 本地首个提交 `697a58b Initial StudyTrace app` 已推送到远端 `origin/main`。
+- 远端仓库: `https://github.com/oykb58246/StudyTrace`
+
+### 测试情况:
+- git push: 通过
+- 远端 main 校验: 通过，`origin/main` 指向 `697a58b085f5d5474288cdf5c0755ca43fc2f31a`
+
+### 备注:
+- 本地分支 `main` 已设置为跟踪 `origin/main`。
