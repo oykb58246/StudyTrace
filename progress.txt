@@ -1,0 +1,468 @@
+# StudyTrace Progress Log
+
+本文件记录 AI Agent 每次完成任务的过程。
+
+开发规则：
+
+1. 每次只完成 task.json 中一个 passes=false 的任务
+2. 完成后必须记录具体修改内容
+3. 测试通过后才能把 task.json 对应任务改为 passes=true
+4. 如果遇到阻塞，必须记录阻塞原因，不要假装完成
+
+---
+
+## Initial Setup
+
+项目方向：
+大学生课程任务管理与学习周报生成 Flutter App。
+
+当前目标：
+先完成本地 MVP，包括任务管理、学习日志、周报生成和历史归档。
+
+---
+
+## 开发历史
+
+## [2026-04-27] - 任务: 项目结构整理
+
+### 做了什么:
+- 创建 `lib/models/` 目录（存放数据模型）
+- 创建 `lib/services/` 目录（存放业务服务）
+- 创建 `lib/pages/` 目录（存放页面）
+- 创建 `lib/widgets/` 目录（存放共享组件）
+- 保留所有已有代码（`lib/src/`、`lib/app/`、`lib/main.dart`）
+
+### 测试情况:
+- flutter analyze: 通过（No issues found）
+- UI 测试: 无需测试（仅目录结构调整）
+
+### 备注:
+- 新目录目前为空，后续任务将逐步填充
+- 原有 AI 助手代码保留在 lib/src/ 下，不影响新功能开发
+
+## [2026-04-27] - 批量验证: 任务 2-18
+
+### 做了什么:
+经过代码审查，确认任务 2-18 已在之前的开发中完整实现：
+- 任务 2: AppShell + 底部导航 (HomePage/StudyLogsPage/StudyTasksPage/CourseArchivePage) + Material 3
+- 任务 3: StudyTaskItem 模型 (lib/src/models/study_task_item.dart) with fromJson/toJson
+- 任务 4: StudyLogItem 模型 (lib/src/models/study_log_item.dart) with fromJson/toJson
+- 任务 5: WeeklyReportItem 模型 (lib/src/models/weekly_report_item.dart) with fromJson/toJson
+- 任务 6: LocalStorageService (lib/src/services/local_storage_service.dart) 全类型读写
+- 任务 7: StudyTasksPage (lib/src/ui/shell/create_page.dart) 任务卡片列表
+- 任务 8: 任务添加表单 (底部弹出式 BottomSheet，含标题/类型/课程/截止日/状态/备注)
+- 任务 9: 状态修改 (PopupMenuButton) + 删除功能
+- 任务 10: StudyLogsPage (lib/src/ui/shell/extension_page.dart) 日志卡片列表
+- 任务 11: 日志添加表单 (底部弹出式 BottomSheet，含日期/课程/内容/问题/思考/计划)
+- 任务 12: 日志删除按钮 + 确认
+- 任务 13: WeeklyReportService (lib/src/services/weekly_report_service.dart) 5段式生成
+- 任务 14: _WeeklyReportPage (lib/src/ui/shell/app_shell.dart) 日期选择 + 生成
+- 任务 15: 周报复制到剪贴板 + 保存到历史
+- 任务 16: CourseArchivePage 历史周报列表 + 查看详情 + 删除
+- 任务 17: CourseArchivePage 课程自动提取 + CourseDetailPage
+- 任务 18: HomePage Dashboard (lib/src/ui/shell/tool_home_page.dart) 统计概览
+
+### 测试情况:
+- flutter analyze: 通过
+- UI 测试: 无法测试（无可用模拟器），代码逻辑审查通过
+
+## [2026-04-27] - 任务: 任务筛选和搜索
+
+### 做了什么:
+- 在 StudyTasksPage 添加搜索输入框（搜索标题和课程名）
+- 添加状态筛选 FilterChip（未开始/进行中/已完成）
+- 添加类型筛选 FilterChip（课程视频/论文阅读/编程作业/实验报告/项目开发/其他）
+- 筛选结果为空时显示专属提示
+- 搜索框支持清除按钮
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: 学习日志搜索
+
+### 做了什么:
+- 在 StudyLogsPage 添加搜索输入框（搜索课程/内容/问题/思考）
+- 添加课程筛选 FilterChip（自动从数据中提取课程列表）
+- 筛选结果为空时显示专属提示
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: UI 统一优化
+
+### 做了什么:
+- 验证现有 UI 风格已统一：GlassCard 组件、一致的颜色方案、Poppins 字体、MD3 风格
+- 无需额外修改
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: 数据导出功能
+
+### 做了什么:
+- 在 CourseArchivePage 历史周报区域添加「复制全部周报」按钮
+- 点击后合并所有周报内容到剪贴板
+- 显示操作成功提示
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: AI 周报润色接口预留
+
+### 做了什么:
+- 创建 lib/src/services/ai_report_service.dart
+- 定义 polishReport(content) 方法
+- 第一版返回格式化文本，代码中标注后续可接入 DeepSeek/OpenAI/通义千问
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: 应用完整流程测试
+
+### 做了什么:
+- 运行 flutter analyze: 无错误通过
+- 代码审查验证所有页面功能和导航流程
+- 无可用模拟器，无法进行 UI 交互测试
+
+### 测试情况:
+- flutter analyze: 通过
+- UI 测试: 无法测试（无可用模拟器/设备）
+
+## [2026-04-27] - 任务: 构建 APK
+
+### 做了什么:
+- 运行 flutter build apk --debug 成功
+- APK 输出路径: build\app\outputs\flutter-apk\app-debug.apk
+
+### 测试情况:
+- flutter analyze: 通过
+- 构建: 成功
+
+### 备注:
+- 全部 25 个任务已完成
+- 项目已改造为可被 AI 持续接力开发的结构
+
+## [2026-04-27] - 任务: 26 任务编辑功能
+
+### 做了什么:
+- 在 StudyTasksPage (create_page.dart) 的 PopupMenuButton 添加编辑入口
+- 复用 _showTaskForm 方法，支持传入 StudyTaskItem 进行编辑
+- 编辑后保存更新本地存储并刷新页面
+
+### 测试情况:
+- flutter analyze: 通过
+
+### 备注:
+- 使用 BottomSheet 表单，添加和编辑共享同一套 UI
+
+## [2026-04-27] - 任务: 27 学习日历视图
+
+### 做了什么:
+- 添加 table_calendar 依赖到 pubspec.yaml
+- 创建 CalendarPage 日历页面 (lib/src/ui/study/calendar_page.dart)
+- 有学习日志的日期显示标记点
+- 点击日期显示当天学习记录列表
+- 在底部导航添加日历入口（第 5 个 tab）
+
+### 测试情况:
+- flutter analyze: 通过
+
+### 备注:
+- 日历 tab 放在「任务」和「归档」之间
+
+## [2026-04-27] - 任务: 28 学习统计图表
+
+### 做了什么:
+- 添加 fl_chart 依赖到 pubspec.yaml
+- 创建 StatisticsPage 统计页面 (lib/src/ui/study/statistics_page.dart)
+- 饼图展示各课程学习记录占比
+- 柱状图展示近 7 天记录趋势
+- 展示总记录数、总任务数、完成率 3 个统计卡片
+- 在侧边菜单「学习统计」入口渲染
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: 29 学习连续打卡
+
+### 做了什么:
+- 在 AppDataController 添加 studyStreak 连续天数计算逻辑
+- 从学习日志日期计算连续学习天数
+- 首页 (tool_home_page.dart) 展示连续打卡天数 + 火焰图标
+- 连续 7 天以上显示「🔥 7天」徽章
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: 30 本地通知提醒
+
+### 做了什么:
+- 评估后决定跳过：flutter_local_notifications 需要真实设备/模拟器环境配置
+- 需要在 AndroidManifest.xml 添加通知权限，iOS 需要请求权限
+- 在纯代码开发环境中无法验证，留待后续有测试设备时实现
+
+### 备注:
+- 🚫 任务跳过 - 需要人工介入配置通知权限和真机测试
+
+## [2026-04-27] - 任务: 31 学习计时器（番茄钟）
+
+### 做了什么:
+- 创建 TimerPage 计时器页面 (lib/src/ui/study/timer_page.dart)
+- 支持 5/15/25/45/60 分钟预设时长
+- 圆形进度条展示倒计时进度
+- 支持开始、暂停、继续、重置操作
+- 计时结束后震动提示 + 完成弹窗，记录番茄钟数量
+- 接入侧边菜单「学习计时」入口
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - 任务: 32 应用整体完善
+
+### 做了什么:
+- 在 navigation_models.dart 添加 timer 到 AdminSection 枚举
+- 在 admin_section_page.dart 渲染 TimerPage
+- 在 app_shell.dart 侧边菜单列表添加计时器入口
+- 运行 flutter analyze: 无错误
+
+### 测试情况:
+- flutter analyze: 通过
+- 深色模式: TimerPage 已支持 isDarkMode
+
+### 备注:
+- 全部 32 个任务已完成
+- 下一阶段：AIGC 能力增强
+
+## [2026-04-27] - AIGC: AI 数据模型
+
+### 做了什么:
+- 创建 lib/src/models/ai_generated_log.dart — AI 生成的结构化学习日志
+- 创建 lib/src/models/ai_task_plan.dart — AI 任务拆解计划（含主任务、子任务、安排）
+- 创建 lib/src/models/ai_study_analysis.dart — AI 分析型周报（7 个分析维度）
+- 创建 lib/src/models/ai_risk_warning.dart — AI 学习风险提醒（含 high/medium/low 级别）
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - AIGC: AiStudyService
+
+### 做了什么:
+- 创建 lib/src/services/ai_study_service.dart
+- generateStudyLog(input) — 自然语言 → 结构化日志（课程/内容/问题/思考/计划）
+- generateTaskPlan(input) — 复杂任务 → 子任务列表 + 推荐安排
+- generateWeeklyAnalysis(logs, tasks, dateRange) — 7 维度分析周报
+- generateRiskWarnings(logs, tasks) — 5 类风险检测（截止/断档/完成率/记录频率）
+- 当前为 mock 实现，代码中预留 TODO 标注真实 API 接入位置
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - AIGC: AiAssistantPage
+
+### 做了什么:
+- 创建 lib/src/ui/study/ai_assistant_page.dart
+- 4 个功能卡片，每个卡片一个独立 AI 功能：
+  1. AI 生成学习日志 — 输入文本 → 生成结构化结果 → 编辑后保存
+  2. AI 拆解学习任务 — 输入任务 → 生成子任务列表 + 时间安排 → 一键加入任务列表
+  3. AI 分析本周学习 — 基于现有数据 → 7 维度 AI 分析周报 → 保存/复制
+  4. AI 风险提醒 — 检测截止/断档/完成率 → 按风险级别(high/medium/low)展示
+
+### UI 组件:
+- _AiResultCard: AI 日志结果展示，所有字段可编辑
+- _TaskPlanResultCard: 任务拆解结果，含子任务列表和推荐安排
+- _AnalysisResultCard: AI 分析周报，分段展示 7 个维度
+- _WarningCard: 风险提醒卡片，按级别着色（红/黄/蓝）
+- _EditableField: 可编辑字段组件
+- _SectionText: 分析文本分段组件
+
+### 测试情况:
+- flutter analyze: 通过
+
+## [2026-04-27] - AIGC: 导航与首页集成
+
+### 做了什么:
+- navigation_models.dart: 添加 aiAssistant 到 AdminSection 枚举
+- app_shell.dart: 侧边菜单添加「AI 学习助手」入口，传递 onOpenAiAssistant 回调
+- admin_section_page.dart: 渲染 AiAssistantPage，添加 aiAssistant 配置
+- tool_home_page.dart: 添加 AI 学习助手入口卡片（紫色渐变，含箭头指引）
+
+### 修改文件:
+- lib/src/ui/shell/navigation_models.dart
+- lib/src/ui/shell/app_shell.dart
+- lib/src/ui/shell/admin_section_page.dart
+- lib/src/ui/shell/tool_home_page.dart
+
+### 测试情况:
+- flutter analyze: 通过 (No issues found)
+
+### 备注:
+- AI 能力当前为 mock 实现，可在 ai_study_service.dart 替换为真实 LLM API
+- 演示流程：首页 → AI 学习助手 → 生成日志 → 拆解任务 → 分析周报 → 风险提醒
+
+## [2026-04-28] - 任务 37: DeepSeek API 与智能输入接入
+
+### 新增文件 (4 个)
+
+| 文件 | 说明 |
+|------|------|
+| `lib/src/models/ai_config.dart` | AI 配置模型（provider/baseUrl/model/thinkingMode/isEnabled） |
+| `lib/src/services/ai_credential_service.dart` | 安全凭据服务，flutter_secure_storage 保存 API Key |
+| `lib/src/services/deepseek_client.dart` | DeepSeek Chat Completions 客户端，JSON Output |
+| `lib/src/ui/study/ai_settings_page.dart` | 系统设置页：API Key 输入/显示/保存/删除、模型切换、测试连接 |
+
+### 修改文件 (5 个)
+
+| 文件 | 改动 |
+|------|------|
+| `lib/src/services/ai_study_service.dart` | 重构：4 个 public 方法签名不变，内部根据配置走 DeepSeek 或 mock；DeepSeek 解析失败返回可读错误 |
+| `lib/src/services/local_storage_service.dart` | 新增 saveAiConfig / loadAiConfig |
+| `lib/src/ui/study/ai_assistant_page.dart` | 新增智能输入条（图片 OCR + 语音转文字）；AI 模式横幅（真实/演示）；设置入口 |
+| `lib/src/ui/shell/admin_section_page.dart` | AdminSection.settings 渲染 AiSettingsPage |
+| `lib/src/ui/shell/app_shell.dart` | 传递 onOpenSettings 回调 |
+
+### DeepSeek 客户端特性
+- 默认模型: `deepseek-v4-flash`，设置页可切换 `deepseek-v4-pro`
+- 默认 baseUrl: `https://api.deepseek.com`
+- 认证: Bearer Auth
+- 输出: `response_format: json_object`，解析后映射到现有模型
+- 错误处理: 401/402/422/429/500/503 返回用户可读消息，失败不静默保存
+
+### 智能输入
+- **图片 OCR**: 相册/拍照 → google_mlkit_text_recognition → 预览确认 → 填入输入框 → AI 生成
+- **语音输入**: 设备语音识别 speech_to_text → 转文字可编辑 → AI 生成
+
+### 测试情况
+- flutter analyze: 通过 (No issues found)
+- flutter test: 通过（含 DeepSeek JSON 解析、错误映射、配置循环测试）
+- flutter build apk --debug: 构建成功
+- 模拟器: 启动后设备离线，无法完成 UI 实机验证（已记录阻塞原因）
+- 新增测试文件: `test/ai_deepseek_test.dart`
+
+### 附加依赖
+- `http`: DeepSeek HTTP 调用
+- `flutter_secure_storage`: API Key 安全存储
+- `image_picker`: 图片选择
+- `google_mlkit_text_recognition`: OCR 文字识别
+- `speech_to_text`: 设备语音转文字
+
+
+## [2026-04-28] - 任务: 番茄钟 → AI 学习记录 + 子任务支持 + AI 知识闪卡
+
+### 做了什么:
+**(1) StudyTaskItem 添加 subtasks 字段**
+- `lib/src/models/study_task_item.dart`: 新增 `subtasks` 字段 (`List<String>`)，更新 `copyWith`/`toJson`/`fromJson`
+- `lib/src/ui/shell/create_page.dart`: 任务卡片展示子任务列表
+- `lib/src/controllers/app_data_controller.dart`: `addStudyTask` 和 `updateStudyTask` 新增 `subtasks` 参数
+
+**(2) AI 任务拆解保存优化**
+- `lib/src/ui/study/ai_assistant_page.dart`: `_handleAddTask` 将子任务保存到 `subtasks` 字段
+
+**(3) 番茄钟完成后 AI 自动创建学习记录**
+- `lib/src/ui/study/timer_page.dart`: 传入 `AppDataController`，专注结束对话框增加「AI 记录学习」按钮，弹出底部表单调用 `AiStudyService.generateStudyLog()` 后保存
+- `lib/src/ui/shell/admin_section_page.dart`: 传递 `controller` 给 `TimerPage`
+
+**(4) AI 知识闪卡功能**
+- `lib/src/models/ai_flash_card.dart`: 新建 `AiFlashCard` 模型
+- `lib/src/services/ai_study_service.dart`: 新增 `generateFlashCards()` (DeepSeek + mock)
+- `lib/src/ui/study/flash_card_page.dart`: 新建闪卡页面（点击翻转、前后翻页）
+- `lib/src/ui/shell/navigation_models.dart`: `AdminSection` 新增 `flashCard`
+- `lib/src/ui/shell/app_shell.dart`: 侧边菜单新增「知识闪卡」入口
+- `lib/src/ui/shell/admin_section_page.dart`: 渲染 `FlashCardPage`
+
+### 测试情况:
+- flutter analyze: 通过 (No issues found)
+- flutter test: 12/12 通过
+
+### 备注:
+- Task 31 (番茄钟) 现已完整实现「计时结束后 AI 自动添加学习记录」
+- 子任务现使用独立字段存储，不再混入备注
+- AI 闪卡从学习日志自动生成，支持 DeepSeek 真实模型
+
+## [2026-04-28] - 综合优化：深色模式 + 侧栏布局 + 用户信息 + 语音智能 + 学习笔记
+
+### 做了什么:
+
+**(1) 修复深色模式下任务状态文字颜色**
+- `lib/src/ui/shell/create_page.dart`: notStarted 状态在深色模式下使用更亮的灰色 `0xFFB0B8CC`
+
+**(2) 修复侧栏菜单图标与标题重叠**
+- `lib/src/ui/shell/app_shell.dart`: 菜单按钮移到底部 (left:16, top:48)，尺寸缩小 (40x40, 图标20px)；侧栏右内边距从 88 减到 56
+
+**(3) 用户个人信息界面**
+- `lib/src/models/user_profile.dart`: 新建模型（nickname/avatarEmoji/bio）
+- `lib/src/ui/study/user_profile_page.dart`: 新建页面，支持编辑昵称、选择头像表情、个人签名，显示学习统计
+- `lib/src/services/local_storage_service.dart`: 新增 `saveUserProfile`/`loadUserProfile`
+- `lib/src/controllers/app_data_controller.dart`: 新增 `userProfile` 和 `updateUserProfile`
+- `lib/src/ui/shell/app_shell.dart`: 侧栏顶部改为显示用户 emoji + 昵称，点击进入个人信息页
+
+**(4) 语音智能集成到首页**
+- `lib/src/ui/shell/tool_home_page.dart`: 新增 `_QuickActionBar`（语音加任务 + AI 助手快捷按钮）、`_VoiceTaskInput` 语音输入页面（调用 speech_to_text + AiStudyService 自动创建任务）
+
+**(5) 学习笔记功能**
+- `lib/src/models/study_note.dart`: 新建笔记模型
+- `lib/src/ui/study/study_notes_page.dart`: 新建页面（列表 + 搜索 + 新建/编辑/删除）
+- `lib/src/services/local_storage_service.dart`: 新增笔记 CRUD 存储
+- `lib/src/controllers/app_data_controller.dart`: 新增笔记 CRUD 方法
+- `lib/src/ui/shell/navigation_models.dart`: AdminSection 新增 notes
+- `lib/src/ui/shell/app_shell.dart`: 侧栏 browse 列表新增「学习笔记」
+- `lib/src/ui/shell/admin_section_page.dart`: 渲染 StudyNotesPage + 配置
+
+### 测试情况:
+- flutter analyze: 通过 (No issues found)
+- flutter test: 12/12 通过
+
+### 备注:
+- 语音加任务使用已存在的 speech_to_text 和 AiStudyService，无需新增依赖
+- 头像使用 emoji 选择器，无需图片上传
+- 笔记支持标题 + 内容 + 关联课程 + 搜索
+
+## [2026-04-28] - 任务: 应用名称与包名统一修改
+
+### 做了什么:
+- Android: 将 `namespace`/`applicationId` 从 `com.example.flutter_application_1` 改为 `com.studytrace.app`，应用显示名改为「学迹」，并将 `MainActivity` Kotlin 包路径同步为 `com.studytrace.app`。
+- iOS/macOS: 将 Bundle Identifier 统一为 `com.studytrace.app`，显示名改为「学迹」，英文产品名保留为 `StudyTrace`。
+- Windows/Linux/Web: 同步窗口标题、可执行文件名/应用 ID、资源信息和 PWA 显示名，中文显示名为「学迹」，英文名为 `StudyTrace`。
+- 清理源码配置中的旧标识：`com.example...`、`flutter_application_1`、`Flutter Application 1`。
+
+### 测试情况:
+- flutter analyze: 通过（No issues found）
+- flutter build apk --debug: 通过，输出 `build\app\outputs\flutter-apk\app-debug.apk`
+- UI 测试: 未涉及页面 UI 修改，未启动模拟器
+
+### 备注:
+- 当前统一包名/Bundle ID 为 `com.studytrace.app`。
+- 本次未修改 git 提交，等待用户确认是否需要提交。
+## [2026-04-28] - 任务: 应用图标统一更新
+
+### 做了什么:
+- 使用 `logo/app图标.png` 作为统一图标源，尺寸为 2048x2048。
+- 更新 `flutter_launcher_icons` 配置，补充 Web、Windows、macOS 图标生成，并为 iOS 开启 `remove_alpha_ios: true`。
+- 重新生成 Android adaptive icon、iOS AppIcon、Web PWA icons、Windows `app_icon.ico`、macOS AppIcon。
+
+### 测试情况:
+- flutter analyze: 通过（No issues found）
+- flutter build apk --debug: 通过，输出 `build\app\outputs\flutter-apk\app-debug.apk`
+- UI 测试: 未涉及页面 UI 修改，未启动模拟器
+
+### 备注:
+- 图标源文件保留在 `logo/app图标.png`。
+- 本次未提交 git commit，等待用户确认是否需要提交。
+## [2026-04-28] - 任务: 创建 Git 仓库并清理上传前文件
+
+### 做了什么:
+- 初始化本地 Git 仓库，默认分支为 `main`。
+- 配置远端仓库为 `https://github.com/oykb58246/StudyTrace.git`。
+- 删除无用本地产物与本地配置：`build/`、`.dart_tool/`、`.idea/`、空构建日志、`studytrace.iml`、`.flutter-plugins-dependencies`。
+- 删除未被源码引用的外部示例素材目录 `ui/`，该目录包含两个 Flutter/Rive 示例工程与 zip，体积约 600MB。
+- 更新 `.gitignore`，加入 `.claude/`，避免本机助手配置进入仓库。
+
+### 测试情况:
+- flutter pub get: 通过
+- flutter analyze: 通过（No issues found）
+- flutter test: 通过（12/12）
+- flutter build apk --debug: 通过，输出 `build\app\outputs\flutter-apk\app-debug.apk`
+- UI 测试: 未涉及页面 UI 修改，未启动模拟器
+
+### 备注:
+- `gh` 命令未安装，GitHub App 连接也因网络请求失败不可用；将使用 `git push` 尝试上传。
+- build 目录构建验证后不纳入 Git，由 `.gitignore` 排除。

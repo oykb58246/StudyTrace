@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="Exists('C:\Program Files\LLVM\bin\clang-cl.exe')">
+    <LLVMInstallDir>C:\Program Files\LLVM\</LLVMInstallDir>
+  </PropertyGroup>
+</Project>
