@@ -20,6 +20,8 @@ class StudyNotesPage extends StatefulWidget {
 class _StudyNotesPageState extends State<StudyNotesPage> {
   String? _folderId; // null = root
   String _search = '';
+  bool _selectionMode = false;
+  final Set<String> _selectedNoteIds = <String>{};
 
   List<StudyNote> _currentNotes() {
     var notes = widget.controller.notesForFolder(_folderId);
@@ -31,7 +33,38 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
   }
 
   void _goTo(StudyNote folder) => setState(() => _folderId = folder.id);
-  void _goUp() => setState(() => _folderId = null);
+  void _goUp() => setState(() {
+        _folderId = null;
+        _exitSelectionMode();
+      });
+
+  void _toggleSelectionMode() {
+    setState(() {
+      _selectionMode = !_selectionMode;
+      if (!_selectionMode) {
+        _selectedNoteIds.clear();
+      }
+    });
+  }
+
+  void _exitSelectionMode() {
+    _selectionMode = false;
+    _selectedNoteIds.clear();
+  }
+
+  void _toggleNoteSelection(StudyNote note) {
+    setState(() {
+      _selectionMode = true;
+      if (_selectedNoteIds.contains(note.id)) {
+        _selectedNoteIds.remove(note.id);
+      } else {
+        _selectedNoteIds.add(note.id);
+      }
+      if (_selectedNoteIds.isEmpty) {
+        _selectionMode = false;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +80,9 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             foregroundColor: textColor,
-            title: _folderId != null
+            title: _selectionMode
+                ? Text('已选择 ${_selectedNoteIds.length} 项', style: const TextStyle(fontWeight: FontWeight.w800))
+                : _folderId != null
                 ? Row(children: [
                     GestureDetector(onTap: _goUp, child: Text('笔记', style: TextStyle(color: bodyColor, fontSize: 18))),
                     const Icon(Icons.chevron_right_rounded, size: 20),
@@ -55,33 +90,46 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
                   ])
                 : const Text('学习笔记', style: TextStyle(fontWeight: FontWeight.w800)),
             actions: [
-              if (_search.isEmpty)
-                IconButton(icon: const Icon(Icons.search_rounded), onPressed: () => setState(() {})),
+              if (_selectionMode) ...[
+                IconButton(
+                  tooltip: '批量删除',
+                  icon: const Icon(Icons.delete_sweep_rounded),
+                  onPressed: _selectedNoteIds.isEmpty ? null : _deleteSelectedNotes,
+                ),
+                IconButton(
+                  tooltip: '取消多选',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => setState(_exitSelectionMode),
+                ),
+              ] else if (notes.isNotEmpty)
+                IconButton(
+                  tooltip: '多选',
+                  icon: const Icon(Icons.checklist_rounded),
+                  onPressed: _toggleSelectionMode,
+                ),
             ],
           ),
           body: Column(children: [
-            // Search bar (when active)
-            if (_search.isNotEmpty || !_search.startsWith(' '))
-              Padding(
-                padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
-                child: TextField(
-                  autofocus: false,
-                  onChanged: (v) => setState(() => _search = v),
-                  style: TextStyle(color: textColor, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: '搜索笔记...',
-                    hintStyle: TextStyle(color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.35) : AppColors.muted),
-                    prefixIcon: Icon(Icons.search_rounded, color: bodyColor, size: 20),
-                    suffixIcon: _search.isNotEmpty
-                        ? IconButton(icon: const Icon(Icons.clear_rounded), onPressed: () => setState(() => _search = ''))
-                        : null,
-                    filled: true,
-                    fillColor: widget.isDarkMode ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF2F5FC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                  ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
+              child: TextField(
+                autofocus: false,
+                onChanged: (v) => setState(() => _search = v),
+                style: TextStyle(color: textColor, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: '搜索笔记...',
+                  hintStyle: TextStyle(color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.35) : AppColors.muted),
+                  prefixIcon: Icon(Icons.search_rounded, color: bodyColor, size: 20),
+                  suffixIcon: _search.isNotEmpty
+                      ? IconButton(icon: const Icon(Icons.clear_rounded), onPressed: () => setState(() => _search = ''))
+                      : null,
+                  filled: true,
+                  fillColor: widget.isDarkMode ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF2F5FC),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
                 ),
               ),
+            ),
             // Content
             Expanded(
               child: notes.isEmpty
@@ -111,6 +159,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
   Widget _noteTile(StudyNote note, Color textColor, Color bodyColor) {
     final isFolder = note.isFolder;
     final hasBlocks = note.blocks.isNotEmpty;
+    final isSelected = _selectedNoteIds.contains(note.id);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
@@ -118,14 +167,30 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: isFolder
-              ? () => _goTo(note)
-              : () => _openEditor(note: note),
-          onLongPress: () => _showNoteMenu(note),
+          onTap: _selectionMode
+              ? () => _toggleNoteSelection(note)
+              : isFolder
+                  ? () => _goTo(note)
+                  : () => _openEditor(note: note),
+          onLongPress: () => _selectionMode ? _toggleNoteSelection(note) : _showNoteMenu(note),
           child: GlassCard(
-            color: widget.isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+            color: isSelected
+                ? const Color(0xFF7040F2).withValues(alpha: widget.isDarkMode ? 0.2 : 0.12)
+                : widget.isDarkMode
+                    ? const Color(0xFF242B37).withValues(alpha: 0.9)
+                    : null,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(children: [
+              if (_selectionMode) ...[
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Icon(
+                    isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                    size: 22,
+                    color: isSelected ? const Color(0xFF7040F2) : bodyColor,
+                  ),
+                ),
+              ],
               Container(
                 width: 36, height: 36,
                 decoration: BoxDecoration(
@@ -280,6 +345,39 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
           ),
         ]),
       ),
+    );
+  }
+
+  Future<void> _deleteSelectedNotes() async {
+    final selectedCount = _selectedNoteIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('批量删除'),
+        content: Text('确定删除已选中的 $selectedCount 项吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('取消')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF6850), foregroundColor: Colors.white),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final ids = _selectedNoteIds.toList(growable: false);
+    for (final id in ids) {
+      await widget.controller.deleteStudyNote(id);
+    }
+
+    if (!mounted) return;
+    setState(_exitSelectionMode);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已删除 $selectedCount 项')),
     );
   }
 

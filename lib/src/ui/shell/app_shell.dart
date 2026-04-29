@@ -54,6 +54,7 @@ class _AppShellState extends State<AppShell>
       vsync: this,
       duration: const Duration(milliseconds: 380),
       reverseDuration: const Duration(milliseconds: 280),
+      animationBehavior: AnimationBehavior.preserve,
       value: widget.debugMenuInitiallyOpen ? 1 : 0,
     );
     unawaited(_loadData());
@@ -751,6 +752,7 @@ class _MenuButtonState extends State<_MenuButton>
     _iconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
+      animationBehavior: AnimationBehavior.preserve,
       value: widget.isMenuOpen ? 1 : 0,
     );
   }

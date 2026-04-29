@@ -179,40 +179,31 @@ class _TimerPageState extends State<TimerPage> {
           ),
         ),
         const SizedBox(height: 18),
-        // Session count
+        // View history button
         if (_sessionHistory.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          Text('专注记录',
-              style: TextStyle(
-                  color: titleColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          GlassCard(
-            color: widget.isDarkMode
-                ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                : null,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              children: _sessionHistory.take(10).map((s) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      children: [
-                        Icon(Icons.check_circle_rounded,
-                            color: const Color(0xFF4BC4A1).withValues(alpha: 0.7), size: 16),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text('${s.minutes} 分钟专注',
-                              style: TextStyle(color: titleColor, fontSize: 14)),
-                        ),
-                        Text(
-                            '${s.time.month.toString().padLeft(2, '0')}-${s.time.day.toString().padLeft(2, '0')} '
-                            '${s.time.hour.toString().padLeft(2, '0')}:${s.time.minute.toString().padLeft(2, '0')}',
-                            style: TextStyle(color: bodyColor, fontSize: 12)),
-                      ],
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: titleColor,
+                side: BorderSide(color: widget.isDarkMode ? Colors.white24 : const Color(0x337040F2)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => _FocusHistoryPage(
+                      isDarkMode: widget.isDarkMode,
+                      sessions: _sessionHistory,
+                      totalCount: _sessionCount,
                     ),
-                  ))
-                  .toList(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.history_rounded, size: 18),
+              label: const Text('查看全部专注记录',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
             ),
           ),
         ],
@@ -956,6 +947,96 @@ class _TimerLogField extends StatelessWidget {
                   height: 1.4)),
         ],
       ),
+    );
+  }
+}
+
+// ─── Focus History Full Page ───
+
+class _FocusHistoryPage extends StatelessWidget {
+  const _FocusHistoryPage({
+    required this.isDarkMode,
+    required this.sessions,
+    required this.totalCount,
+  });
+  final bool isDarkMode;
+  final List<_FocusSession> sessions;
+  final int totalCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+
+    final grouped = <String, List<_FocusSession>>{};
+    for (final s in sessions) {
+      final key = '${s.time.year}-${s.time.month.toString().padLeft(2, '0')}-${s.time.day.toString().padLeft(2, '0')}';
+      grouped.putIfAbsent(key, () => []).add(s);
+    }
+    final totalMinutes = sessions.fold<int>(0, (sum, s) => sum + s.minutes);
+
+    return Scaffold(
+      backgroundColor: isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: textColor,
+        title: const Text('专注记录', style: TextStyle(fontWeight: FontWeight.w800)),
+      ),
+      body: sessions.isEmpty
+          ? Center(child: Text('暂无专注记录', style: TextStyle(color: bodyColor)))
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    gradient: const LinearGradient(colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)]),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('累计专注', style: TextStyle(color: Color(0xD9FFFFFF), fontSize: 13)),
+                          const SizedBox(height: 4),
+                          Text('$totalCount 次', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
+                        ]),
+                      ),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('总时长', style: TextStyle(color: Color(0xD9FFFFFF), fontSize: 13)),
+                          const SizedBox(height: 4),
+                          Text('${(totalMinutes / 60).toStringAsFixed(1)}h', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
+                        ]),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 22),
+                for (final entry in grouped.entries) ...[
+                  Text(entry.key, style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  ...entry.value.map((s) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: GlassCard(
+                          color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(children: [
+                            Container(
+                              width: 36, height: 36,
+                              decoration: BoxDecoration(color: const Color(0xFF4BC4A1).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+                              child: const Icon(Icons.timer_rounded, color: Color(0xFF4BC4A1), size: 18),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text('${s.minutes} 分钟专注', style: TextStyle(color: textColor, fontSize: 15, fontWeight: FontWeight.w600))),
+                            Text('${s.time.hour.toString().padLeft(2, '0')}:${s.time.minute.toString().padLeft(2, '0')}', style: TextStyle(color: bodyColor, fontSize: 13)),
+                          ]),
+                        ),
+                      )),
+                  const SizedBox(height: 14),
+                ],
+              ],
+            ),
     );
   }
 }
