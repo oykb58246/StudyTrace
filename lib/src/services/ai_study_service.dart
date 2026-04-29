@@ -195,31 +195,41 @@ $input
         '你需要把复杂学习任务拆成可执行计划。',
       ),
       userPrompt: '''
-今天日期：${_fmtDate(DateTime.now())}
+今天日期和时间：${DateTime.now().toIso8601String()}
 请根据输入生成 JSON，字段必须为：
 {
   "mainTitle": "主任务标题",
-  "taskType": "courseVideo | paperReading | programmingHomework | labReport | projectDevelopment | other",
+  "taskType": "classHomework | paperReading | programmingHomework | labReport | projectDev | examReview | readingNotes | other",
   "courseName": "课程名或未归类",
-  "deadline": "yyyy-MM-dd",
+  "deadline": "yyyy-MM-ddTHH:mm:ss（ISO 8601 本地时间）",
   "difficulty": "较轻松 | 中等 | 困难",
   "subTasks": ["子任务1", "子任务2"],
+  "plannedSubTasks": [
+    {
+      "title": "子任务标题",
+      "startAt": "yyyy-MM-ddTHH:mm:ss（开始时间，可选）",
+      "deadline": "yyyy-MM-ddTHH:mm:ss（截止时间）",
+      "note": "备注"
+    }
+  ],
   "schedule": "按天安排，中文多行文本"
 }
-
-输入：
-$input
-''',
+要求：plannedSubTasks 中每个子任务的 deadline 必须早于或等于主任务 deadline。
+      ''',
     );
-    return AiTaskPlan(
-      mainTitle: _requiredString(result, 'mainTitle'),
-      taskType: _taskTypeFromName(_requiredString(result, 'taskType')),
-      courseName: _requiredString(result, 'courseName'),
-      deadline: _dateFromText(_requiredString(result, 'deadline')),
-      difficulty: _asString(result['difficulty'], fallback: '中等'),
-      subTasks: _asStringList(result['subTasks']),
-      schedule: _asString(result['schedule']),
-    );
+    final rawPlanned = result['plannedSubTasks'];
+    final List<AiPlannedSubTask> planned = [];
+    if (rawPlanned is List) {
+      for (final item in rawPlanned) {
+        if (item is Map<String, dynamic>) {
+          planned.add(AiPlannedSubTask.fromJson(item));
+        }
+      }
+    }
+    return AiTaskPlan.fromJson({
+      ...result,
+      'plannedSubTasks': rawPlanned ?? planned,
+    });
   }
 
   Future<AiStudyAnalysis> _deepSeekGenerateWeeklyAnalysis({
@@ -425,6 +435,20 @@ ${_logsJson(logs)}
             ? '中等'
             : '较轻松';
 
+    // Generate timed sub-tasks
+    final totalSubs = subTasks.length;
+    final plannedSubTasks = <AiPlannedSubTask>[];
+    for (var i = 0; i < totalSubs; i++) {
+      final offsetDays = (daysUntilDeadline * i / totalSubs).round();
+      final subDeadline = now.add(Duration(days: offsetDays + 1));
+      plannedSubTasks.add(AiPlannedSubTask(
+        title: subTasks[i],
+        deadline: DateTime(subDeadline.year, subDeadline.month,
+            subDeadline.day, 22, 0),
+        note: '第 ${offsetDays + 1} 天完成',
+      ));
+    }
+
     return AiTaskPlan(
       mainTitle: input,
       taskType: taskType,
@@ -432,6 +456,7 @@ ${_logsJson(logs)}
       deadline: deadline,
       difficulty: difficulty,
       subTasks: subTasks,
+      plannedSubTasks: plannedSubTasks,
       schedule: schedule,
     );
   }
@@ -663,7 +688,7 @@ ${_logsJson(logs)}
       return StudyTaskType.labReport;
     }
     if (input.contains('PPT') || input.contains('项目') || input.contains('开发')) {
-      return StudyTaskType.projectDevelopment;
+      return StudyTaskType.projectDev;
     }
     if (input.contains('编程') || input.contains('代码') || input.contains('程序')) {
       return StudyTaskType.programmingHomework;
@@ -671,8 +696,14 @@ ${_logsJson(logs)}
     if (input.contains('论文') || input.contains('阅读') || input.contains('文献')) {
       return StudyTaskType.paperReading;
     }
-    if (input.contains('视频') || input.contains('课程')) {
-      return StudyTaskType.courseVideo;
+    if (input.contains('复习') || input.contains('考试') || input.contains('期末')) {
+      return StudyTaskType.examReview;
+    }
+    if (input.contains('笔记') || input.contains('读书')) {
+      return StudyTaskType.readingNotes;
+    }
+    if (input.contains('视频') || input.contains('作业')) {
+      return StudyTaskType.classHomework;
     }
     return StudyTaskType.other;
   }
@@ -709,7 +740,7 @@ ${_logsJson(logs)}
           '总结问题与解决方法',
           '检查格式并提交',
         ]);
-      case StudyTaskType.projectDevelopment:
+      case StudyTaskType.projectDev:
         base.addAll([
           '确定技术方案',
           '搭建项目框架',
@@ -736,13 +767,30 @@ ${_logsJson(logs)}
           '整理论文核心观点',
           '撰写阅读笔记',
         ]);
-      case StudyTaskType.courseVideo:
+      case StudyTaskType.classHomework:
         base.addAll([
-          '规划观看进度',
-          '观看视频并做笔记',
-          '完成课后练习',
-          '整理疑问难点',
-          '复习重点内容',
+          '明确作业要求',
+          '整理相关资料',
+          '完成作业内容',
+          '检查并修改',
+          '按时提交',
+        ]);
+      case StudyTaskType.examReview:
+        base.addAll([
+          '整理课程知识框架',
+          '复习重点章节',
+          '做历年真题',
+          '总结常见考点',
+          '模拟考试练习',
+          '查漏补缺',
+        ]);
+      case StudyTaskType.readingNotes:
+        base.addAll([
+          '浏览全书/全文了解结构',
+          '精读重点章节',
+          '提炼核心观点',
+          '摘抄关键段落',
+          '撰写个人感悟',
         ]);
       case StudyTaskType.other:
         base.addAll([
@@ -865,34 +913,6 @@ ${_logsJson(logs)}
     return value.toString().trim();
   }
 
-  List<String> _asStringList(Object? value) {
-    if (value == null) return const [];
-    if (value is! List) throw const AiServiceException('AI 返回格式异常');
-    return value
-        .map((item) => _asString(item))
-        .where((item) => item.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  StudyTaskType _taskTypeFromName(String value) {
-    switch (value.trim()) {
-      case 'courseVideo':
-        return StudyTaskType.courseVideo;
-      case 'paperReading':
-        return StudyTaskType.paperReading;
-      case 'programmingHomework':
-        return StudyTaskType.programmingHomework;
-      case 'labReport':
-        return StudyTaskType.labReport;
-      case 'projectDevelopment':
-        return StudyTaskType.projectDevelopment;
-      case 'other':
-        return StudyTaskType.other;
-      default:
-        throw const AiServiceException('AI 返回格式异常');
-    }
-  }
-
   RiskLevel _riskLevelFromName(String value) {
     switch (value.trim()) {
       case 'low':
@@ -903,15 +923,6 @@ ${_logsJson(logs)}
         return RiskLevel.high;
       default:
         throw const AiServiceException('AI 返回格式异常');
-    }
-  }
-
-  DateTime _dateFromText(String value) {
-    try {
-      final parsed = DateTime.parse(value.trim());
-      return DateTime(parsed.year, parsed.month, parsed.day);
-    } on FormatException {
-      throw const AiServiceException('AI 返回格式异常');
     }
   }
 

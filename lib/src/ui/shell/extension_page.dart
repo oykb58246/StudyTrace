@@ -116,8 +116,10 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
-                        label: const Text('全部课程',
-                            style: TextStyle(fontSize: 12)),
+                        label: Text('全部课程',
+                            style: TextStyle(fontSize: 12,
+                                color: widget.isDarkMode
+                                    ? Colors.white : AppColors.ink)),
                         selected: _courseFilter == null,
                         selectedColor:
                             const Color(0xFF7040F2).withValues(alpha: 0.22),
@@ -132,8 +134,10 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     ...availableCourses.map((c) => Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: FilterChip(
-                            label:
-                                Text(c, style: const TextStyle(fontSize: 12)),
+                            label: Text(c,
+                                style: TextStyle(fontSize: 12,
+                                    color: widget.isDarkMode
+                                        ? Colors.white : AppColors.ink)),
                             selected: _courseFilter == c,
                             selectedColor: const Color(0xFF7394F9)
                                 .withValues(alpha: 0.22),

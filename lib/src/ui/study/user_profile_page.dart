@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/user_profile.dart';
@@ -19,9 +23,11 @@ class UserProfilePage extends StatefulWidget {
 }
 
 class _UserProfilePageState extends State<UserProfilePage> {
+  final _imagePicker = ImagePicker();
   late TextEditingController _nicknameController;
   late TextEditingController _bioController;
   late String _avatarEmoji;
+  String? _avatarImagePath;
   bool _isSaving = false;
 
   static const _emojiOptions = [
@@ -36,6 +42,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
     _nicknameController = TextEditingController(text: profile.nickname);
     _bioController = TextEditingController(text: profile.bio);
     _avatarEmoji = profile.avatarEmoji;
+    _avatarImagePath = profile.avatarImagePath;
   }
 
   @override
@@ -75,39 +82,54 @@ class _UserProfilePageState extends State<UserProfilePage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 40),
         children: [
-          // Avatar emoji selector
+          // Avatar selector
           Center(
             child: GestureDetector(
-              onTap: _showEmojiPicker,
+              onTap: _showAvatarPicker,
               child: Container(
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
-                  ),
+                  gradient: _avatarImagePath == null
+                      ? const LinearGradient(
+                          colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
+                        )
+                      : null,
+                  color: _avatarImagePath != null
+                      ? (widget.isDarkMode
+                          ? const Color(0xFF242B37)
+                          : Colors.white)
+                      : null,
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF7040F2).withValues(alpha: 0.3),
+                      color: const Color(0xFF7040F2).withValues(alpha: _avatarImagePath == null ? 0.3 : 0.1),
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
                   ],
                 ),
-                child: Center(
-                  child: Text(
-                    _avatarEmoji,
-                    style: const TextStyle(fontSize: 44),
-                  ),
-                ),
+                clipBehavior: Clip.antiAlias,
+                child: _avatarImagePath != null
+                    ? Image.file(
+                        File(_avatarImagePath!),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Center(
+                          child: Text(_avatarEmoji,
+                              style: const TextStyle(fontSize: 44)),
+                        ),
+                      )
+                    : Center(
+                        child: Text(_avatarEmoji,
+                            style: const TextStyle(fontSize: 44)),
+                      ),
               ),
             ),
           ),
           const SizedBox(height: 12),
           Center(
             child: Text(
-              '点击更换头像表情',
+              _avatarImagePath != null ? '点击更换头像' : '点击设置头像',
               style: TextStyle(color: bodyColor, fontSize: 13),
             ),
           ),
@@ -225,6 +247,113 @@ class _UserProfilePageState extends State<UserProfilePage> {
     );
   }
 
+  void _showAvatarPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 34),
+        decoration: BoxDecoration(
+          color: widget.isDarkMode
+              ? const Color(0xFF1A1F2E)
+              : const Color(0xFFF5F7FF),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: widget.isDarkMode ? Colors.white24 : Colors.black26,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text('设置头像', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _avatarAction(Icons.photo_library_rounded, '相册', () {
+                  Navigator.of(ctx).pop();
+                  _pickImage(ImageSource.gallery);
+                }),
+                _avatarAction(Icons.camera_alt_rounded, '拍照', () {
+                  Navigator.of(ctx).pop();
+                  _pickImage(ImageSource.camera);
+                }),
+                _avatarAction(Icons.emoji_emotions_rounded, '表情', () {
+                  Navigator.of(ctx).pop();
+                  _showEmojiPicker();
+                }),
+              ],
+            ),
+            if (_avatarImagePath != null) ...[
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  setState(() => _avatarImagePath = null);
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text('移除照片，使用表情头像',
+                    style: TextStyle(color: Color(0xFFEF6850))),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _avatarAction(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 56, height: 56,
+            decoration: BoxDecoration(
+              color: widget.isDarkMode
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFF2F5FC),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, size: 26,
+                color: widget.isDarkMode ? Colors.white70 : AppColors.ink),
+          ),
+          const SizedBox(height: 6),
+          Text(label,
+              style: TextStyle(
+                  color: widget.isDarkMode ? Colors.white70 : AppColors.ink,
+                  fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      final dir = await getApplicationDocumentsDirectory();
+      final targetPath = '${dir.path}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final copied = await File(picked.path).copy(targetPath);
+      setState(() => _avatarImagePath = copied.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('获取图片失败：$e')),
+        );
+      }
+    }
+  }
+
   void _showEmojiPicker() {
     showModalBottomSheet(
       context: context,
@@ -303,6 +432,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
             ? '学习者'
             : _nicknameController.text.trim(),
         avatarEmoji: _avatarEmoji,
+        avatarImagePath: _avatarImagePath,
         bio: _bioController.text.trim().isEmpty
             ? '好好学习，天天向上'
             : _bioController.text.trim(),

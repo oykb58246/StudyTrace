@@ -9,6 +9,14 @@ import '../../services/ai_study_service.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
+class _FocusSession {
+  final DateTime time;
+  final int minutes;
+  _FocusSession({required this.time, required this.minutes});
+}
+
+// ---------- Setup page (choose time) ----------
+
 class TimerPage extends StatefulWidget {
   const TimerPage({
     super.key,
@@ -24,16 +32,330 @@ class TimerPage extends StatefulWidget {
 }
 
 class _TimerPageState extends State<TimerPage> {
-  final _aiService = AiStudyService();
-  static const int _defaultMinutes = 25;
-  int _remainingSeconds = _defaultMinutes * 60;
-  bool _isRunning = false;
-  bool _isPaused = false;
-  Timer? _timer;
-  int _sessionCount = 0;
-
   final List<int> _presetMinutes = [5, 15, 25, 45, 60];
   int _selectedPreset = 25;
+  int _customMinutes = 25;
+  int _sessionCount = 0;
+  final List<_FocusSession> _sessionHistory = [];
+
+  int get _effectiveMinutes => _customMinutes;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor =
+        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+
+    return ListView(
+      key: const Key('page_timer'),
+      padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
+      children: [
+        Text('学习计时器',
+            style: TextStyle(
+                color: titleColor, fontSize: 24, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Text('番茄工作法 · 已完成 $_sessionCount 个番茄钟',
+            style: TextStyle(color: bodyColor, fontSize: 14)),
+        const SizedBox(height: 24),
+        // Time display
+        Center(
+          child: GestureDetector(
+            onTap: _showCustomTimePicker,
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: const Color(0xFF7040F2).withValues(alpha: 0.3),
+                    width: 3),
+                color: widget.isDarkMode
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : const Color(0xFFF2F5FC),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('$_effectiveMinutes',
+                      style: TextStyle(
+                          color: titleColor,
+                          fontSize: 56,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1)),
+                  Text('分钟',
+                      style: TextStyle(color: bodyColor, fontSize: 14)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Center(
+          child: Text('点击数字自定义时长',
+              style: TextStyle(color: bodyColor, fontSize: 12)),
+        ),
+        const SizedBox(height: 24),
+        // Preset buttons
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          alignment: WrapAlignment.center,
+          children: _presetMinutes.map((minutes) {
+            final isSelected = minutes == _selectedPreset;
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedPreset = minutes;
+                  _customMinutes = minutes;
+                });
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: isSelected
+                      ? const Color(0xFF7040F2)
+                      : widget.isDarkMode
+                          ? const Color(0xFF2A3040)
+                          : const Color(0xFFEEF1FA),
+                ),
+                child: Text(
+                  '$minutes 分钟',
+                  style: TextStyle(
+                    color: isSelected
+                        ? Colors.white
+                        : widget.isDarkMode
+                            ? Colors.white70
+                            : AppColors.body,
+                    fontWeight:
+                        isSelected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 28),
+        // Start button
+        SizedBox(
+          height: 56,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4BC4A1),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
+              elevation: 0,
+            ),
+            onPressed: () async {
+              final result = await Navigator.of(context).push<Map<String, dynamic>>(
+                MaterialPageRoute(
+                  builder: (_) => _FocusTimerPage(
+                    isDarkMode: widget.isDarkMode,
+                    controller: widget.controller,
+                    minutes: _effectiveMinutes,
+                  ),
+                ),
+              );
+              if (result != null && mounted) {
+                final count = result['count'] as int? ?? 0;
+                final sessions = result['sessions'] as List<_FocusSession>? ?? [];
+                setState(() {
+                  _sessionCount += count;
+                  _sessionHistory.insertAll(0, sessions);
+                  if (_sessionHistory.length > 50) {
+                    _sessionHistory.removeRange(50, _sessionHistory.length);
+                  }
+                });
+              }
+            },
+            icon: const Icon(Icons.play_arrow_rounded, size: 24),
+            label: const Text('开始专注',
+                style:
+                    TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+          ),
+        ),
+        const SizedBox(height: 18),
+        // Session count
+        if (_sessionHistory.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          Text('专注记录',
+              style: TextStyle(
+                  color: titleColor,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
+          const SizedBox(height: 10),
+          GlassCard(
+            color: widget.isDarkMode
+                ? const Color(0xFF242B37).withValues(alpha: 0.9)
+                : null,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: _sessionHistory.take(10).map((s) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded,
+                            color: const Color(0xFF4BC4A1).withValues(alpha: 0.7), size: 16),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text('${s.minutes} 分钟专注',
+                              style: TextStyle(color: titleColor, fontSize: 14)),
+                        ),
+                        Text(
+                            '${s.time.month.toString().padLeft(2, '0')}-${s.time.day.toString().padLeft(2, '0')} '
+                            '${s.time.hour.toString().padLeft(2, '0')}:${s.time.minute.toString().padLeft(2, '0')}',
+                            style: TextStyle(color: bodyColor, fontSize: 12)),
+                      ],
+                    ),
+                  ))
+                  .toList(),
+            ),
+          ),
+        ],
+        if (_sessionCount > 0)
+          GlassCard(
+            color: widget.isDarkMode
+                ? const Color(0xFF242B37).withValues(alpha: 0.9)
+                : null,
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    color: const Color(0x197394F9),
+                  ),
+                  child: const Icon(Icons.timer_rounded,
+                      color: Color(0xFF7394F9), size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('本日完成',
+                          style: TextStyle(color: bodyColor, fontSize: 12)),
+                      Text('$_sessionCount 个番茄钟',
+                          style: TextStyle(
+                              color: titleColor,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showCustomTimePicker() {
+    final controller = TextEditingController(text: '$_customMinutes');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: widget.isDarkMode
+            ? const Color(0xFF242B37)
+            : Colors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24)),
+        title: Text('自定义时长',
+            style: TextStyle(
+                color:
+                    widget.isDarkMode ? Colors.white : AppColors.ink)),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: TextStyle(
+              color: widget.isDarkMode ? Colors.white : AppColors.ink,
+              fontSize: 24,
+              fontWeight: FontWeight.w800),
+          textAlign: TextAlign.center,
+          decoration: InputDecoration(
+            suffixText: '分钟',
+            suffixStyle: TextStyle(
+                color: widget.isDarkMode
+                    ? Colors.white54
+                    : AppColors.muted,
+                fontSize: 16),
+            filled: true,
+            fillColor: widget.isDarkMode
+                ? Colors.white.withValues(alpha: 0.06)
+                : const Color(0xFFF2F5FC),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7040F2),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+            ),
+            onPressed: () {
+              final value = int.tryParse(controller.text.trim());
+              if (value != null && value > 0 && value <= 180) {
+                setState(() => _customMinutes = value);
+                Navigator.of(ctx).pop();
+              }
+            },
+            child: const Text('确定',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------- Fullscreen focus timer ----------
+
+class _FocusTimerPage extends StatefulWidget {
+  const _FocusTimerPage({
+    required this.isDarkMode,
+    required this.controller,
+    required this.minutes,
+  });
+
+  final bool isDarkMode;
+  final AppDataController controller;
+  final int minutes;
+
+  @override
+  State<_FocusTimerPage> createState() => _FocusTimerPageState();
+}
+
+class _FocusTimerPageState extends State<_FocusTimerPage> {
+  final _aiService = AiStudyService();
+  late int _remainingSeconds;
+  Timer? _timer;
+  bool _isRunning = false;
+  bool _isPaused = false;
+  final List<_FocusSession> _sessions = [];
+  int _completedCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _remainingSeconds = widget.minutes * 60;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _start();
+    });
+  }
 
   @override
   void dispose() {
@@ -42,70 +364,85 @@ class _TimerPageState extends State<TimerPage> {
   }
 
   void _start() {
-    _isRunning = true;
-    _isPaused = false;
+    _timer?.cancel();
+    setState(() {
+      _isRunning = true;
+      _isPaused = false;
+    });
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_remainingSeconds <= 0) {
+      if (!mounted) {
         timer.cancel();
-        _isRunning = false;
-        _sessionCount++;
-        _showCompleteDialog();
         return;
       }
-      setState(() => _remainingSeconds--);
+      setState(() {
+        if (_remainingSeconds > 0) {
+          _remainingSeconds--;
+        }
+        if (_remainingSeconds <= 0) {
+          timer.cancel();
+          _isRunning = false;
+          _isPaused = false;
+          _completedCount++;
+          _sessions.add(_FocusSession(
+              time: DateTime.now(), minutes: widget.minutes));
+          _showCompleteDialog();
+        }
+      });
     });
   }
 
   void _pause() {
     _timer?.cancel();
-    setState(() => _isPaused = true);
+    setState(() {
+      _isPaused = true;
+      _isRunning = false;
+    });
   }
 
   void _resume() {
-    setState(() => _isPaused = false);
     _start();
   }
 
-  void _reset() {
+  void _quit() {
     _timer?.cancel();
-    setState(() {
-      _isRunning = false;
-      _isPaused = false;
-      _remainingSeconds = _selectedPreset * 60;
+    Navigator.of(context).pop({
+      'count': _completedCount,
+      'sessions': _sessions,
     });
   }
 
-  void _selectPreset(int minutes) {
-    if (_isRunning) return;
-    setState(() {
-      _selectedPreset = minutes;
-      _remainingSeconds = minutes * 60;
-    });
+  String get _formattedTime {
+    final minutes = _remainingSeconds ~/ 60;
+    final seconds = _remainingSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  double get _progress {
+    if (widget.minutes == 0) return 1;
+    return 1 - (_remainingSeconds / (widget.minutes * 60));
   }
 
   void _showCompleteDialog() {
     HapticFeedback.heavyImpact();
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: widget.isDarkMode
             ? const Color(0xFF242B37)
             : Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+            borderRadius: BorderRadius.circular(24)),
         title: Row(
           children: [
             const Icon(Icons.check_circle_rounded,
                 color: Color(0xFF4BC4A1), size: 28),
             const SizedBox(width: 10),
-            Text(
-              '专注完成！',
-              style: TextStyle(
-                color: widget.isDarkMode ? Colors.white : AppColors.ink,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+            Text('专注完成！',
+                style: TextStyle(
+                    color:
+                        widget.isDarkMode ? Colors.white : AppColors.ink,
+                    fontWeight: FontWeight.w800)),
           ],
         ),
         content: Column(
@@ -113,31 +450,27 @@ class _TimerPageState extends State<TimerPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '恭喜完成第 $_sessionCount 个番茄钟！\n休息一下，然后继续吧。',
+              '恭喜完成 ${widget.minutes} 分钟番茄钟！',
               style: TextStyle(
-                color: widget.isDarkMode
-                    ? const Color(0xFFC2C8D6)
-                    : AppColors.body,
-                height: 1.5,
-              ),
+                  color: widget.isDarkMode
+                      ? const Color(0xFFC2C8D6)
+                      : AppColors.body,
+                  height: 1.5),
             ),
             const SizedBox(height: 6),
-            Text(
-              '需要记录这次学习了什么吗？',
-              style: TextStyle(
-                color: widget.isDarkMode
-                    ? const Color(0xFFC2C8D6)
-                    : AppColors.body,
-                fontSize: 13,
-              ),
-            ),
+            Text('需要记录这次学习了什么吗？',
+                style: TextStyle(
+                    color: widget.isDarkMode
+                        ? const Color(0xFFC2C8D6)
+                        : AppColors.body,
+                    fontSize: 13)),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              _reset();
+              _quit();
             },
             child: const Text('跳过',
                 style: TextStyle(fontWeight: FontWeight.w700)),
@@ -147,8 +480,7 @@ class _TimerPageState extends State<TimerPage> {
               backgroundColor: const Color(0xFF7040F2),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
+                  borderRadius: BorderRadius.circular(14)),
               elevation: 0,
             ),
             onPressed: () {
@@ -195,7 +527,8 @@ class _TimerPageState extends State<TimerPage> {
               children: [
                 Center(
                   child: Container(
-                    width: 40, height: 4,
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
                       color: widget.isDarkMode
                           ? Colors.white24
@@ -205,34 +538,22 @@ class _TimerPageState extends State<TimerPage> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                Row(
-                  children: [
-                    const Icon(Icons.timer_rounded,
-                        color: Color(0xFF4BC4A1), size: 24),
-                    const SizedBox(width: 10),
-                    Text('记录本次学习',
-                        style: TextStyle(
-                            color: titleColor,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800)),
-                  ],
-                ),
+                Text('记录本次学习',
+                    style: TextStyle(
+                        color: titleColor,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                Text(
-                  '描述刚才学了什么，AI 将自动整理为结构化日志',
-                  style: TextStyle(color: bodyColor, fontSize: 13),
-                ),
+                Text('描述刚才学了什么，AI 将自动整理为结构化日志',
+                    style: TextStyle(color: bodyColor, fontSize: 13)),
                 const SizedBox(height: 16),
                 TextField(
                   controller: descriptionController,
                   maxLines: 4,
-                  style: TextStyle(
-                    color: titleColor,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: titleColor, fontSize: 14),
                   decoration: InputDecoration(
                     hintText:
-                        '例：今天学习了数据库索引和B+树，理解了聚簇索引和非聚簇索引的区别...',
+                        '例：今天学习了数据库索引和B+树...',
                     hintStyle: TextStyle(
                       color: widget.isDarkMode
                           ? Colors.white.withValues(alpha: 0.4)
@@ -260,8 +581,7 @@ class _TimerPageState extends State<TimerPage> {
                       backgroundColor: const Color(0xFF7040F2),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                          borderRadius: BorderRadius.circular(14)),
                       elevation: 0,
                     ),
                     onPressed: isGenerating
@@ -270,14 +590,12 @@ class _TimerPageState extends State<TimerPage> {
                             final input =
                                 descriptionController.text.trim();
                             if (input.isEmpty) return;
-                            setSheetState(
-                                () => isGenerating = true);
+                            setSheetState(() => isGenerating = true);
                             try {
-                              final result =
-                                  await _aiService
-                                      .generateStudyLog(input);
-                              setSheetState(() =>
-                                  generatedLog = result);
+                              final result = await _aiService
+                                  .generateStudyLog(input);
+                              setSheetState(
+                                  () => generatedLog = result);
                             } catch (e) {
                               if (ctx.mounted) {
                                 ScaffoldMessenger.of(ctx)
@@ -311,7 +629,6 @@ class _TimerPageState extends State<TimerPage> {
                 if (generatedLog != null &&
                     generatedLog!.courseName.isNotEmpty) ...[
                   const SizedBox(height: 18),
-                  // AI result preview
                   GlassCard(
                     color: widget.isDarkMode
                         ? const Color(0xFF242B37)
@@ -319,22 +636,18 @@ class _TimerPageState extends State<TimerPage> {
                         : null,
                     padding: const EdgeInsets.all(16),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        const Row(
                           children: [
-                            const Icon(
-                                Icons.auto_awesome_rounded,
-                                color: Color(0xFF7394F9),
-                                size: 18),
-                            const SizedBox(width: 8),
+                            Icon(Icons.auto_awesome_rounded,
+                                color: Color(0xFF7394F9), size: 18),
+                            SizedBox(width: 8),
                             Text('AI 生成结果',
                                 style: TextStyle(
-                                    color: titleColor,
+                                    color: Color(0xFF7394F9),
                                     fontSize: 15,
-                                    fontWeight:
-                                        FontWeight.w700)),
+                                    fontWeight: FontWeight.w700)),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -342,22 +655,18 @@ class _TimerPageState extends State<TimerPage> {
                             label: '课程',
                             value: generatedLog!.courseName,
                             isDarkMode: widget.isDarkMode),
-                        const SizedBox(height: 8),
                         _TimerLogField(
                             label: '学习内容',
                             value: generatedLog!.content,
                             isDarkMode: widget.isDarkMode),
-                        const SizedBox(height: 8),
                         _TimerLogField(
                             label: '问题',
                             value: generatedLog!.problems,
                             isDarkMode: widget.isDarkMode),
-                        const SizedBox(height: 8),
                         _TimerLogField(
                             label: '思考',
                             value: generatedLog!.thoughts,
                             isDarkMode: widget.isDarkMode),
-                        const SizedBox(height: 8),
                         _TimerLogField(
                             label: '计划',
                             value: generatedLog!.nextPlan,
@@ -372,37 +681,28 @@ class _TimerPageState extends State<TimerPage> {
                                   const Color(0xFF4BC4A1),
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(14),
-                              ),
+                                  borderRadius:
+                                      BorderRadius.circular(14)),
                               elevation: 0,
                             ),
                             onPressed: () async {
-                              await widget.controller
-                                  .addStudyLog(
+                              await widget.controller.addStudyLog(
                                 date: DateTime.now(),
-                                courseName: generatedLog!.courseName,
+                                courseName:
+                                    generatedLog!.courseName,
                                 content: generatedLog!.content,
-                                problems: generatedLog!.problems,
-                                thoughts: generatedLog!.thoughts,
-                                nextPlan: generatedLog!.nextPlan,
+                                problems:
+                                    generatedLog!.problems,
+                                thoughts:
+                                    generatedLog!.thoughts,
+                                nextPlan:
+                                    generatedLog!.nextPlan,
                               );
                               if (!ctx.mounted) return;
                               Navigator.of(ctx).pop();
-                              _reset();
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      '学习记录已保存！'),
-                                  backgroundColor:
-                                      Color(0xFF4BC4A1),
-                                ),
-                              );
+                              _quit();
                             },
-                            icon: const Icon(
-                                Icons.save_rounded,
+                            icon: const Icon(Icons.save_rounded,
                                 size: 18),
                             label: const Text('保存学习记录',
                                 style: TextStyle(
@@ -423,224 +723,206 @@ class _TimerPageState extends State<TimerPage> {
     descriptionController.dispose();
   }
 
-  String get _formattedTime {
-    final minutes = _remainingSeconds ~/ 60;
-    final seconds = _remainingSeconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  }
-
-  double get _progress {
-    return 1 - (_remainingSeconds / (_selectedPreset * 60));
-  }
-
   @override
   Widget build(BuildContext context) {
     final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
-    return ListView(
-      key: const Key('page_timer'),
-      padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
-      children: [
-        Text(
-          '学习计时器',
-          style: TextStyle(
-            color: titleColor,
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '番茄工作法 · 已完成 $_sessionCount 个番茄钟',
-          style: TextStyle(color: bodyColor, fontSize: 14),
-        ),
-        const SizedBox(height: 24),
-        // Timer circle
-        Center(
-          child: SizedBox(
-            width: 240,
-            height: 240,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 240,
-                  height: 240,
-                  child: CircularProgressIndicator(
-                    value: _progress,
-                    strokeWidth: 10,
-                    backgroundColor: widget.isDarkMode
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : const Color(0xFFE8EBF5),
-                    color: const Color(0xFF7040F2),
+    return PopScope(
+      canPop: !_isRunning,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _isRunning) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('请先退出专注再返回')),
+          );
+        }
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: widget.isDarkMode
+            ? const Color(0xFF05070D)
+            : const Color(0xFFF5F7FF),
+        body: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              // Timer circle
+              Expanded(
+                child: Center(
+                  child: SizedBox(
+                    width: 260,
+                    height: 260,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 260,
+                          height: 260,
+                          child: CircularProgressIndicator(
+                            value: _progress,
+                            strokeWidth: 10,
+                            backgroundColor: widget.isDarkMode
+                                ? Colors.white.withValues(alpha: 0.06)
+                                : const Color(0xFFE8EBF5),
+                            color: _isRunning
+                                ? const Color(0xFF4BC4A1)
+                                : const Color(0xFFF8AA5B),
+                          ),
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _formattedTime,
+                              style: TextStyle(
+                                color: titleColor,
+                                fontSize: 62,
+                                fontWeight: FontWeight.w800,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _isPaused
+                                  ? '已暂停'
+                                  : _isRunning
+                                      ? '专注中...'
+                                      : '计时结束',
+                              style: TextStyle(
+                                  color: bodyColor, fontSize: 15),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
+              ),
+              // Control buttons
+              Padding(
+                padding: const EdgeInsets.only(bottom: 40),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      _formattedTime,
-                      style: TextStyle(
-                        color: titleColor,
-                        fontSize: 52,
-                        fontWeight: FontWeight.w800,
-                        height: 1.1,
+                    if (!_isRunning && !_isPaused)
+                      _TimerBtn(
+                        icon: Icons.play_arrow_rounded,
+                        label: '重新开始',
+                        color: const Color(0xFF4BC4A1),
+                        onTap: () {
+                          setState(
+                              () => _remainingSeconds = widget.minutes * 60);
+                          _start();
+                        },
+                      )
+                    else if (_isPaused)
+                      _TimerBtn(
+                        icon: Icons.play_arrow_rounded,
+                        label: '继续',
+                        color: const Color(0xFF4BC4A1),
+                        onTap: _resume,
+                      )
+                    else
+                      _TimerBtn(
+                        icon: Icons.pause_rounded,
+                        label: '暂停',
+                        color: const Color(0xFFF8AA5B),
+                        onTap: _pause,
                       ),
-                    ),
-                    Text(
-                      _isPaused
-                          ? '已暂停'
-                          : _isRunning
-                              ? '专注中...'
-                              : '准备开始',
-                      style: TextStyle(
-                        color: bodyColor,
-                        fontSize: 14,
-                      ),
+                    const SizedBox(width: 20),
+                    _TimerBtn(
+                      icon: Icons.exit_to_app_rounded,
+                      label: '退出专注',
+                      color: const Color(0xFFEF6850),
+                      onTap: _isRunning
+                          ? () {
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  backgroundColor: widget.isDarkMode
+                                      ? const Color(0xFF242B37)
+                                      : Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(24)),
+                                  title: Text('退出专注',
+                                      style: TextStyle(
+                                          color: widget.isDarkMode
+                                              ? Colors.white
+                                              : AppColors.ink)),
+                                  content: const Text('确定要退出当前专注吗？'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(ctx).pop(),
+                                      child: const Text('继续专注'),
+                                    ),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            const Color(0xFFEF6850),
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      onPressed: () {
+                                        Navigator.of(ctx).pop();
+                                        _quit();
+                                      },
+                                      child: const Text('退出',
+                                          style: TextStyle(
+                                              fontWeight:
+                                                  FontWeight.w700)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                          : _quit,
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 28),
-        // Control buttons
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+      ),
+    );
+  }
+}
+
+class _TimerBtn extends StatelessWidget {
+  const _TimerBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 100,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: color.withValues(alpha: 0.15),
+        ),
+        child: Column(
           children: [
-            if (!_isRunning)
-              _ControlButton(
-                icon: Icons.play_arrow_rounded,
-                label: '开始',
-                color: const Color(0xFF4BC4A1),
-                isDarkMode: widget.isDarkMode,
-                onTap: _start,
-              )
-            else if (_isPaused)
-              _ControlButton(
-                icon: Icons.play_arrow_rounded,
-                label: '继续',
-                color: const Color(0xFF4BC4A1),
-                isDarkMode: widget.isDarkMode,
-                onTap: _resume,
-              )
-            else
-              _ControlButton(
-                icon: Icons.pause_rounded,
-                label: '暂停',
-                color: const Color(0xFFF8AA5B),
-                isDarkMode: widget.isDarkMode,
-                onTap: _pause,
-              ),
-            const SizedBox(width: 16),
-            _ControlButton(
-              icon: Icons.stop_rounded,
-              label: '重置',
-              color: const Color(0xFFF77D8E),
-              isDarkMode: widget.isDarkMode,
-              onTap: _reset,
-            ),
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 4),
+            Text(label,
+                style: TextStyle(
+                    color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
           ],
         ),
-        const SizedBox(height: 24),
-        // Preset time selection
-        Text(
-          '选择时长',
-          style: TextStyle(
-            color: titleColor,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: _presetMinutes.map((minutes) {
-            final isSelected = minutes == _selectedPreset;
-            return GestureDetector(
-              onTap: () => _selectPreset(minutes),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  color: isSelected
-                      ? const Color(0xFF7040F2)
-                      : widget.isDarkMode
-                          ? const Color(0xFF2A3040)
-                          : const Color(0xFFEEF1FA),
-                ),
-                child: Text(
-                  '$minutes 分钟',
-                  style: TextStyle(
-                    color: isSelected
-                        ? Colors.white
-                        : widget.isDarkMode
-                            ? Colors.white70
-                            : AppColors.body,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 18),
-        // Session count stats
-        if (_sessionCount > 0)
-          GlassCard(
-            color: widget.isDarkMode
-                ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                : null,
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    color: const Color(0x197394F9),
-                  ),
-                  child: const Icon(
-                    Icons.timer_rounded,
-                    color: Color(0xFF7394F9),
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '本日完成',
-                        style: TextStyle(
-                          color: bodyColor,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        '$_sessionCount 个番茄钟',
-                        style: TextStyle(
-                          color: titleColor,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
+      ),
     );
   }
 }
@@ -649,78 +931,30 @@ class _TimerLogField extends StatelessWidget {
   final String label;
   final String value;
   final bool isDarkMode;
-
-  const _TimerLogField({
-    required this.label,
-    required this.value,
-    required this.isDarkMode,
-  });
+  const _TimerLogField(
+      {required this.label, required this.value, required this.isDarkMode});
 
   @override
   Widget build(BuildContext context) {
     if (value.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: TextStyle(
-                color:
-                    isDarkMode ? Colors.white70 : AppColors.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 2),
-        Text(value,
-            style: TextStyle(
-              color:
-                  isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-              fontSize: 13,
-              height: 1.4,
-            )),
-      ],
-    );
-  }
-}
-
-class _ControlButton extends StatelessWidget {
-  const _ControlButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.isDarkMode,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final bool isDarkMode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 80,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: color.withValues(alpha: 0.15),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 4),
-            Text(
-              label,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
               style: TextStyle(
-                color: isDarkMode ? Colors.white70 : AppColors.body,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+                  color: isDarkMode ? Colors.white70 : AppColors.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Text(value,
+              style: TextStyle(
+                  color:
+                      isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
+                  fontSize: 13,
+                  height: 1.4)),
+        ],
       ),
     );
   }

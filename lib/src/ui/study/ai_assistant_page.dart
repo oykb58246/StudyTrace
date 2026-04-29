@@ -9,6 +9,7 @@ import '../../models/ai_generated_log.dart';
 import '../../models/ai_risk_warning.dart';
 import '../../models/ai_study_analysis.dart';
 import '../../models/ai_task_plan.dart';
+import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_study_service.dart';
 import '../../services/deepseek_client.dart';
@@ -835,16 +836,32 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     if (_taskPlan == null) return;
     final plan = _taskPlan!;
 
-    // 拆解结果的子任务保存到 subtasks 字段，安排和难度存到 note
     final noteBuffer = StringBuffer();
-    if (plan.difficulty.isNotEmpty) {
-      noteBuffer.writeln('难度：${plan.difficulty}');
-    }
+    if (plan.difficulty.isNotEmpty) noteBuffer.writeln('难度：${plan.difficulty}');
     if (plan.schedule.isNotEmpty) {
-      noteBuffer.writeln();
       noteBuffer.writeln('推荐安排：');
       noteBuffer.writeln(plan.schedule);
     }
+
+    // Convert AiPlannedSubTask → StudySubTaskItem
+    final now = DateTime.now();
+    final subTasks = plan.plannedSubTasks.isNotEmpty
+        ? plan.plannedSubTasks.map((p) => StudySubTaskItem(
+              id: 'sub_${now.microsecondsSinceEpoch}_${plan.plannedSubTasks.indexOf(p)}',
+              title: p.title,
+              startAt: p.startAt,
+              deadline: p.deadline,
+              note: p.note,
+              createdAt: now,
+              updatedAt: now,
+            )).toList()
+        : plan.subTasks.map((s) => StudySubTaskItem(
+              id: 'sub_${now.microsecondsSinceEpoch}_${plan.subTasks.indexOf(s)}',
+              title: s,
+              deadline: plan.deadline,
+              createdAt: now,
+              updatedAt: now,
+            )).toList();
 
     await widget.controller.addStudyTask(
       title: plan.mainTitle,
@@ -853,7 +870,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       deadline: plan.deadline,
       status: StudyTaskStatus.notStarted,
       note: noteBuffer.toString().trim(),
-      subtasks: plan.subTasks,
+      subTasks: subTasks,
     );
 
     if (!mounted) return;
@@ -1161,6 +1178,12 @@ class _EditableFieldState extends State<_EditableField> {
   }
 }
 
+String _fmtPlanDate(DateTime d) {
+  final h = d.hour.toString().padLeft(2, '0');
+  final m = d.minute.toString().padLeft(2, '0');
+  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} $h:$m';
+}
+
 class _TaskPlanResultCard extends StatelessWidget {
   final bool isDarkMode;
   final AiTaskPlan plan;
@@ -1219,13 +1242,59 @@ class _TaskPlanResultCard extends StatelessWidget {
               style: TextStyle(color: bodyColor, fontSize: 13)),
           const SizedBox(height: 4),
           Text(
-              '截止：${plan.deadline.year}-'
-              '${plan.deadline.month.toString().padLeft(2, '0')}-'
-              '${plan.deadline.day.toString().padLeft(2, '0')}',
+              '截止：${_fmtPlanDate(plan.deadline)}',
               style: TextStyle(
                   color: isDarkMode ? Colors.white54 : AppColors.muted,
                   fontSize: 12)),
-          if (plan.subTasks.isNotEmpty) ...[
+          if (plan.plannedSubTasks.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+            Text('子任务（带时间）',
+                style: TextStyle(
+                    color: titleColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            for (var i = 0; i < plan.plannedSubTasks.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${i + 1}. ',
+                        style: TextStyle(
+                            color: bodyColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(plan.plannedSubTasks[i].title,
+                              style: TextStyle(
+                                  color: titleColor, fontSize: 13)),
+                          Text(
+                              '截止：${_fmtPlanDate(plan.plannedSubTasks[i].deadline)}',
+                              style: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white54
+                                      : AppColors.muted,
+                                  fontSize: 11)),
+                          if (plan.plannedSubTasks[i].note.isNotEmpty)
+                            Text(plan.plannedSubTasks[i].note,
+                                style: TextStyle(
+                                    color: isDarkMode
+                                        ? Colors.white38
+                                        : Colors.black38,
+                                    fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ] else if (plan.subTasks.isNotEmpty) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 10),

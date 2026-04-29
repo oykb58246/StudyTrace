@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_study_service.dart';
 import '../../theme/app_theme.dart';
@@ -680,12 +681,25 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
 
     try {
       final plan = await _aiService.generateTaskPlan(text);
+      final now = DateTime.now();
+      final subTasks = plan.plannedSubTasks.isNotEmpty
+          ? plan.plannedSubTasks.map((p) => StudySubTaskItem(
+                id: 'sub_v_${now.microsecondsSinceEpoch}_${plan.plannedSubTasks.indexOf(p)}',
+                title: p.title, startAt: p.startAt,
+                deadline: p.deadline, note: p.note,
+                createdAt: now, updatedAt: now,
+              )).toList()
+          : plan.subTasks.map((s) => StudySubTaskItem(
+                id: 'sub_v_${now.microsecondsSinceEpoch}_${plan.subTasks.indexOf(s)}',
+                title: s, deadline: plan.deadline,
+                createdAt: now, updatedAt: now,
+              )).toList();
       await widget.controller.addStudyTask(
         title: plan.mainTitle,
         type: plan.taskType,
         courseName: plan.courseName,
-        deadline: DateTime.now().add(const Duration(days: 7)),
-        subtasks: plan.subTasks,
+        deadline: plan.deadline,
+        subTasks: subTasks,
         note: '已通过语音创建',
       );
     } catch (_) {

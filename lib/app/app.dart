@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../src/services/notification_service.dart';
 import '../src/theme/app_theme.dart';
 import '../src/ui/login/login_screen.dart';
 
@@ -8,9 +9,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    NotificationService().init();
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: '灵析 AI 助手',
+      title: 'StudyTrace',
       theme: buildAppTheme(),
       home: const WelcomeScreen(),
     );

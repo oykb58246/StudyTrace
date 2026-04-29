@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../theme/app_theme.dart';
 import '../study/calendar_page.dart';
+import '../study/study_notes_page.dart';
 import '../study/user_profile_page.dart';
 import 'admin_section_page.dart';
 import 'create_page.dart';
@@ -125,6 +127,18 @@ class _AppShellState extends State<AppShell>
         _activeAdminSection = null;
         _primaryTab = PrimaryTab.assistant;
       });
+    } else if (section == AdminSection.notes) {
+      // Open notes as full-screen page to avoid shell overlay
+      _closeMenu();
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StudyNotesPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ),
+      );
+      return;
     } else {
       setState(() => _activeAdminSection = section);
     }
@@ -963,17 +977,29 @@ class _SideMenu extends StatelessWidget {
                                 width: 42,
                                 height: 42,
                                 decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
-                                  ),
+                                  gradient: controller.userProfile.avatarImagePath == null
+                                      ? const LinearGradient(
+                                          colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
+                                        )
+                                      : null,
                                   shape: BoxShape.circle,
                                 ),
-                                child: Center(
-                                  child: Text(
-                                    controller.userProfile.avatarEmoji,
-                                    style: const TextStyle(fontSize: 22),
-                                  ),
-                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: controller.userProfile.avatarImagePath != null
+                                    ? Image.file(
+                                        File(controller.userProfile.avatarImagePath!),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Center(
+                                          child: Text(controller.userProfile.avatarEmoji,
+                                              style: const TextStyle(fontSize: 22)),
+                                        ),
+                                      )
+                                    : Center(
+                                        child: Text(
+                                          controller.userProfile.avatarEmoji,
+                                          style: const TextStyle(fontSize: 22),
+                                        ),
+                                      ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(

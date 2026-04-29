@@ -386,6 +386,7 @@ class _LandingPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: 20),
           Image.asset(
             'logo/logo黑透明.png',
             height: 48,
@@ -456,7 +457,7 @@ class _LoginPageState extends State<_LoginPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            isRegister ? '注册新账号，开始管理学习。' : '登录以继续使用 StudyTrace。',
+            isRegister ? '注册新账号，开始管理学习。' : '登录以继续使用学迹。',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   fontSize: 16,
                   color: AppColors.body.withValues(alpha: 0.72),

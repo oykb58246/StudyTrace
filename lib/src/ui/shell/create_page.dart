@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
@@ -119,7 +120,9 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                         padding: const EdgeInsets.only(right: 8),
                         child: FilterChip(
                           label: Text(s.label,
-                              style: const TextStyle(fontSize: 12)),
+                              style: TextStyle(fontSize: 12,
+                                  color: widget.isDarkMode
+                                      ? Colors.white : AppColors.ink)),
                           selected: _statusFilter == s,
                           selectedColor: const Color(0xFF7040F2).withValues(alpha: 0.22),
                           checkmarkColor: const Color(0xFF7040F2),
@@ -138,7 +141,9 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                         padding: const EdgeInsets.only(right: 8),
                         child: FilterChip(
                           label: Text(t.label,
-                              style: const TextStyle(fontSize: 12)),
+                              style: TextStyle(fontSize: 12,
+                                  color: widget.isDarkMode
+                                      ? Colors.white : AppColors.ink)),
                           selected: _typeFilter == t,
                           selectedColor:
                               const Color(0xFF7394F9).withValues(alpha: 0.22),
@@ -260,6 +265,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
     var selectedType = existing?.type ?? StudyTaskType.other;
     var selectedStatus = existing?.status ?? StudyTaskStatus.notStarted;
     var deadline = existing?.deadline ?? DateTime.now().add(const Duration(days: 7));
+    var reminderTime = existing?.reminderTime;
 
     showModalBottomSheet(
       context: context,
@@ -389,19 +395,85 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                       ),
                     ),
                     onPressed: () async {
-                      final picked = await showDatePicker(
+                      final pickedDate = await showDatePicker(
                         context: ctx,
                         initialDate: deadline,
                         firstDate: DateTime(2024),
                         lastDate: DateTime(2030),
                       );
-                      if (picked != null) {
-                        setSheetState(() => deadline = picked);
-                      }
+                      if (pickedDate == null) return;
+                      if (!ctx.mounted) return;
+                      final pickedTime = await showTimePicker(
+                        context: ctx,
+                        initialTime: TimeOfDay.fromDateTime(deadline),
+                      );
+                      if (pickedTime == null) return;
+                      setSheetState(() {
+                        deadline = DateTime(
+                          pickedDate.year, pickedDate.month, pickedDate.day,
+                          pickedTime.hour, pickedTime.minute,
+                        );
+                      });
                     },
                     icon: const Icon(Icons.calendar_today_rounded, size: 18),
                     label: Text(
-                      '${deadline.year}-${deadline.month.toString().padLeft(2, '0')}-${deadline.day.toString().padLeft(2, '0')}',
+                      '${deadline.year}-${deadline.month.toString().padLeft(2, '0')}-${deadline.day.toString().padLeft(2, '0')} '
+                      '${deadline.hour.toString().padLeft(2, '0')}:${deadline.minute.toString().padLeft(2, '0')}',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _FormField(
+                  label: '提醒时间（可选）',
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: widget.isDarkMode
+                          ? Colors.white
+                          : const Color(0xFF4BC4A1),
+                      side: BorderSide(
+                        color: widget.isDarkMode
+                            ? Colors.white24
+                            : const Color(0x334BC4A1),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () async {
+                      final now = DateTime.now();
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: reminderTime ?? deadline,
+                        firstDate: now,
+                        lastDate: deadline,
+                        helpText: '选择提醒日期',
+                      );
+                      if (picked == null) return;
+                      if (!ctx.mounted) return;
+                      final time = await showTimePicker(
+                        context: ctx,
+                        initialTime: TimeOfDay.fromDateTime(
+                            reminderTime ?? deadline),
+                        helpText: '选择提醒时间',
+                      );
+                      if (time != null) {
+                        setSheetState(() {
+                          reminderTime = DateTime(
+                            picked.year,
+                            picked.month,
+                            picked.day,
+                            time.hour,
+                            time.minute,
+                          );
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.notifications_active_rounded, size: 18),
+                    label: Text(
+                      reminderTime != null
+                          ? '${reminderTime!.year}-${reminderTime!.month.toString().padLeft(2, '0')}-${reminderTime!.day.toString().padLeft(2, '0')} ${reminderTime!.hour.toString().padLeft(2, '0')}:${reminderTime!.minute.toString().padLeft(2, '0')}'
+                          : '不设置提醒',
+                      style: const TextStyle(fontSize: 13),
                     ),
                   ),
                 ),
@@ -447,6 +519,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                           deadline: deadline,
                           status: selectedStatus,
                           note: noteController.text.trim(),
+                          reminderTime: reminderTime,
                         );
                       } else {
                         await widget.controller.addStudyTask(
@@ -456,6 +529,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                           deadline: deadline,
                           status: selectedStatus,
                           note: noteController.text.trim(),
+                          reminderTime: reminderTime,
                         );
                       }
                       if (ctx.mounted) Navigator.of(ctx).pop();
@@ -528,7 +602,7 @@ class _FormField extends StatelessWidget {
   }
 }
 
-class _TaskCard extends StatelessWidget {
+class _TaskCard extends StatefulWidget {
   const _TaskCard({
     super.key,
     required this.task,
@@ -545,169 +619,147 @@ class _TaskCard extends StatelessWidget {
   final VoidCallback onDelete;
 
   @override
-  Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+  State<_TaskCard> createState() => _TaskCardState();
+}
 
-    final statusColor = switch (task.status) {
+class _TaskCardState extends State<_TaskCard> {
+  bool _expanded = false;
+  late StudyTaskItem _task;
+
+  @override
+  void initState() {
+    super.initState();
+    _task = widget.task;
+  }
+
+  @override
+  void didUpdateWidget(covariant _TaskCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.task != widget.task) _task = widget.task;
+  }
+
+  void _handleMenu(String action) {
+    switch (action) {
+      case 'edit':
+        widget.onEdit();
+      case 'delete':
+        widget.onDelete();
+      case 'status_completed':
+        widget.onStatusChanged(StudyTaskStatus.completed);
+      case 'status_inProgress':
+        widget.onStatusChanged(StudyTaskStatus.inProgress);
+      case 'status_notStarted':
+        widget.onStatusChanged(StudyTaskStatus.notStarted);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDarkMode;
+    final task = _task;
+    final titleColor = isDark ? Colors.white : AppColors.ink;
+    final bodyColor = isDark ? const Color(0xFFC2C8D6) : AppColors.body;
+    final effStatus = task.effectiveStatus;
+
+    final statusColor = switch (effStatus) {
       StudyTaskStatus.completed => const Color(0xFF4BC4A1),
       StudyTaskStatus.inProgress => const Color(0xFFF8AA5B),
       StudyTaskStatus.notStarted =>
-          isDarkMode ? const Color(0xFFB0B8CC) : const Color(0xFF8B93A7),
+          isDark ? const Color(0xFFB0B8CC) : const Color(0xFF8B93A7),
     };
 
     return GlassCard(
-      color: isDarkMode
+      color: isDark
           ? const Color(0xFF242B37).withValues(alpha: 0.9)
           : null,
       padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        task.status.label,
-                        style: TextStyle(
-                          color: statusColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(6)),
+                          child: Text(effStatus.label, style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w700)),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        BadgePill(label: task.type.label, background: const Color(0x197394F9), foreground: const Color(0xFF7394F9)),
+                        if (task.isTaskSet) ...[
+                          const SizedBox(width: 8),
+                          Text('${task.completedCount}/${task.totalCount}', style: TextStyle(color: bodyColor, fontSize: 11, fontWeight: FontWeight.w700)),
+                        ],
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    BadgePill(
-                      label: task.type.label,
-                      background: const Color(0x197394F9),
-                      foreground: const Color(0xFF7394F9),
-                    ),
+                    const SizedBox(height: 8),
+                    Text(task.title, style: TextStyle(color: titleColor, fontSize: 16, fontWeight: FontWeight.w800)),
+                    if (task.courseName.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text('📖 ${task.courseName}', style: TextStyle(color: bodyColor, fontSize: 13)),
+                    ],
+                    const SizedBox(height: 4),
+                    Text('截止：${_fmtDate(task.deadline)}', style: TextStyle(color: isDark ? Colors.white54 : AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+                    if (task.note.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(task.note, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: bodyColor, fontSize: 13, height: 1.45)),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  task.title,
-                  style: TextStyle(
-                    color: titleColor,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (task.courseName.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '📖 ${task.courseName}',
-                    style: TextStyle(color: bodyColor, fontSize: 13),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  '截止：${_fmtDate(task.deadline)}',
-                  style: TextStyle(
-                    color:
-                        isDarkMode ? Colors.white54 : AppColors.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (task.subtasks.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  ...task.subtasks.map((st) => Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('· ',
-                                style: TextStyle(
-                                    color: bodyColor,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700)),
-                            Expanded(
-                              child: Text(st,
-                                  style: TextStyle(
-                                      color: bodyColor, fontSize: 12)),
-                            ),
-                          ],
-                        ),
-                      )),
-                ],
-                if (task.note.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    task.note,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: bodyColor, fontSize: 13, height: 1.45),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          PopupMenuButton<StudyTaskStatus>(
-            icon: Icon(
-              Icons.more_vert_rounded,
-              color: isDarkMode ? Colors.white54 : AppColors.muted,
-            ),
-            color:
-                isDarkMode ? const Color(0xFF242B37) : Colors.white,
-            onSelected: onStatusChanged,
-            itemBuilder: (_) => StudyTaskStatus.values
-                .map((s) => PopupMenuItem(
-                      value: s,
-                      child: Text(
-                        '切换为「${s.label}」',
-                        style: TextStyle(
-                          color: isDarkMode ? Colors.white : AppColors.ink,
-                        ),
-                      ),
-                    ))
-                .toList()
-              ..add(
-                const PopupMenuItem(
-                  value: null,
-                  enabled: false,
-                  child: Divider(height: 1),
-                ),
-              )
-              ..add(
-                PopupMenuItem(
-                  value: null,
-                  enabled: false,
-                  child: InkWell(
-                    onTap: onEdit,
-                    child: const Text(
-                      '编辑任务',
-                      style: TextStyle(color: Color(0xFF7394F9)),
-                    ),
-                  ),
-                ),
-              )
-              ..add(
-                PopupMenuItem(
-                  value: null,
-                  enabled: false,
-                  child: InkWell(
-                    onTap: onDelete,
-                    child: const Text(
-                      '删除任务',
-                      style: TextStyle(color: Color(0xFFEF6850)),
-                    ),
-                  ),
-                ),
               ),
+              PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert_rounded, color: isDark ? Colors.white54 : AppColors.muted),
+                color: isDark ? const Color(0xFF242B37) : Colors.white,
+                onSelected: _handleMenu,
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'status_completed', child: Text('标记完成', style: TextStyle(color: isDark ? Colors.white : AppColors.ink))),
+                  PopupMenuItem(value: 'status_inProgress', child: Text('标记进行中', style: TextStyle(color: isDark ? Colors.white : AppColors.ink))),
+                  PopupMenuItem(value: 'status_notStarted', child: Text('标记未开始', style: TextStyle(color: isDark ? Colors.white : AppColors.ink))),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(value: 'edit', child: const Text('编辑任务', style: TextStyle(color: Color(0xFF7394F9)))),
+                  PopupMenuItem(value: 'delete', child: const Text('删除任务', style: TextStyle(color: Color(0xFFEF6850)))),
+                ],
+              ),
+            ],
           ),
+          // Expandable sub-tasks
+          if (task.subTasks.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(8),
+              child: Row(
+                children: [
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 18, color: bodyColor),
+                  Text('${_expanded ? '收起' : '展开'}子任务 (${task.completedCount}/${task.totalCount})', style: TextStyle(color: bodyColor, fontSize: 12)),
+                ],
+              ),
+            ),
+            if (_expanded) ...[
+              const SizedBox(height: 6),
+              ...task.subTasks.map((st) => Padding(
+                    padding: const EdgeInsets.only(left: 8, bottom: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          st.status == SubTaskStatus.completed ? Icons.check_circle : Icons.radio_button_unchecked,
+                          size: 16,
+                          color: st.status == SubTaskStatus.completed ? const Color(0xFF4BC4A1) : bodyColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(st.title, style: TextStyle(color: titleColor, fontSize: 13, decoration: st.status == SubTaskStatus.completed ? TextDecoration.lineThrough : null))),
+                        Text(_fmtDate(st.deadline), style: TextStyle(color: bodyColor, fontSize: 10)),
+                      ],
+                    ),
+                  )),
+            ],
+          ],
         ],
       ),
     );
@@ -715,5 +767,7 @@ class _TaskCard extends StatelessWidget {
 }
 
 String _fmtDate(DateTime date) {
-  return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  final h = date.hour.toString().padLeft(2, '0');
+  final m = date.minute.toString().padLeft(2, '0');
+  return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} $h:$m';
 }

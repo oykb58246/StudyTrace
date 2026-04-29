@@ -2,9 +2,12 @@ import 'package:flutter/foundation.dart';
 
 import '../models/analysis_item.dart';
 import '../models/ai_config.dart';
+import '../models/ai_flash_card.dart';
 import '../models/history_item.dart';
 import '../models/study_log_item.dart';
+import '../models/note_block.dart';
 import '../models/study_note.dart';
+import '../models/study_sub_task_item.dart';
 import '../models/study_task_item.dart';
 import '../models/todo_item.dart';
 import '../models/user_profile.dart';
@@ -12,6 +15,7 @@ import '../models/weekly_report_item.dart';
 import '../services/ai_credential_service.dart';
 import '../services/deepseek_client.dart';
 import '../services/local_storage_service.dart';
+import '../services/notification_service.dart';
 import '../services/weekly_report_service.dart';
 
 class AppDataController extends ChangeNotifier {
@@ -41,6 +45,7 @@ class AppDataController extends ChangeNotifier {
 
   UserProfile _userProfile = const UserProfile();
   final List<StudyNote> _studyNotes = [];
+  final List<AiFlashCard> _flashCards = [];
 
   bool _isLoaded = false;
   bool _darkMode = false;
@@ -57,6 +62,7 @@ class AppDataController extends ChangeNotifier {
   List<WeeklyReportItem> get weeklyReports => List.unmodifiable(_weeklyReports);
   UserProfile get userProfile => _userProfile;
   List<StudyNote> get studyNotes => List.unmodifiable(_studyNotes);
+  List<AiFlashCard> get flashCards => List.unmodifiable(_flashCards);
 
   bool get isLoaded => _isLoaded;
   bool get darkMode => _darkMode;
@@ -244,7 +250,8 @@ class AppDataController extends ChangeNotifier {
     required DateTime deadline,
     StudyTaskStatus status = StudyTaskStatus.notStarted,
     String note = '',
-    List<String> subtasks = const [],
+    List<StudySubTaskItem> subTasks = const [],
+    DateTime? reminderTime,
   }) async {
     final now = DateTime.now();
     final task = StudyTaskItem(
@@ -255,13 +262,15 @@ class AppDataController extends ChangeNotifier {
       deadline: deadline,
       status: status,
       note: note,
-      subtasks: subtasks,
+      subTasks: subTasks,
+      reminderTime: reminderTime,
       createdAt: now,
       updatedAt: now,
     );
     _studyTasks.insert(0, task);
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
+    NotificationService().scheduleForTask(task);
     return task;
   }
 
@@ -277,6 +286,9 @@ class AppDataController extends ChangeNotifier {
     );
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
+    if (status == StudyTaskStatus.completed) {
+      NotificationService().cancelForTask(_studyTasks[index]);
+    }
   }
 
   Future<void> updateStudyTask(
@@ -287,7 +299,8 @@ class AppDataController extends ChangeNotifier {
     required DateTime deadline,
     required StudyTaskStatus status,
     required String note,
-    List<String>? subtasks,
+    List<StudySubTaskItem>? subTasks,
+    DateTime? reminderTime,
   }) async {
     final index = _studyTasks.indexWhere((t) => t.id == taskId);
     if (index == -1) return;
@@ -297,15 +310,24 @@ class AppDataController extends ChangeNotifier {
       courseName: courseName,
       deadline: deadline,
       status: status,
+      reminderTime: reminderTime,
       note: note,
-      subtasks: subtasks,
+      subTasks: subTasks,
       updatedAt: DateTime.now(),
     );
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
+    NotificationService().scheduleForTask(_studyTasks[index]);
   }
 
   Future<void> deleteStudyTask(String taskId) async {
+    final task = _studyTasks.cast<StudyTaskItem?>().firstWhere(
+          (t) => t?.id == taskId,
+          orElse: () => null,
+        );
+    if (task != null) {
+      NotificationService().cancelForTask(task);
+    }
     _studyTasks.removeWhere((t) => t.id == taskId);
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
@@ -448,6 +470,9 @@ class AppDataController extends ChangeNotifier {
     required String title,
     required String content,
     String courseName = '',
+    String? parentId,
+    bool isFolder = false,
+    List<NoteBlock> blocks = const [],
   }) async {
     final now = DateTime.now();
     final note = StudyNote(
@@ -455,6 +480,9 @@ class AppDataController extends ChangeNotifier {
       title: title,
       content: content,
       courseName: courseName,
+      parentId: parentId,
+      isFolder: isFolder,
+      blocks: blocks,
       createdAt: now,
       updatedAt: now,
     );
@@ -469,6 +497,8 @@ class AppDataController extends ChangeNotifier {
     required String title,
     required String content,
     String? courseName,
+    String? parentId,
+    List<NoteBlock>? blocks,
   }) async {
     final index = _studyNotes.indexWhere((n) => n.id == noteId);
     if (index == -1) return;
@@ -476,6 +506,8 @@ class AppDataController extends ChangeNotifier {
       title: title,
       content: content,
       courseName: courseName,
+      parentId: parentId,
+      blocks: blocks,
       updatedAt: DateTime.now(),
     );
     await _storage.saveStudyNotes(_studyNotes);
@@ -483,8 +515,20 @@ class AppDataController extends ChangeNotifier {
   }
 
   Future<void> deleteStudyNote(String noteId) async {
-    _studyNotes.removeWhere((n) => n.id == noteId);
+    // Also delete children if it's a folder
+    _studyNotes.removeWhere((n) => n.id == noteId || n.parentId == noteId);
     await _storage.saveStudyNotes(_studyNotes);
+    notifyListeners();
+  }
+
+  List<StudyNote> notesForFolder(String? folderId) {
+    return _studyNotes.where((n) => n.parentId == folderId).toList();
+  }
+
+  void saveFlashCards(List<AiFlashCard> cards) {
+    _flashCards
+      ..clear()
+      ..addAll(cards);
     notifyListeners();
   }
 }

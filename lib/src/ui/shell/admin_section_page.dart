@@ -6,8 +6,9 @@ import '../shared/common_widgets.dart';
 import '../study/ai_assistant_page.dart';
 import '../study/ai_settings_page.dart';
 import '../study/flash_card_page.dart';
+import '../study/learning_dashboard_page.dart';
 import '../study/statistics_page.dart';
-import '../study/study_notes_page.dart';
+import '../study/task_planning_page.dart';
 import '../study/timer_page.dart';
 import 'navigation_models.dart';
 
@@ -67,13 +68,18 @@ class AdminSectionPage extends StatelessWidget {
       );
     }
 
-    if (section == AdminSection.notes && controller != null) {
-      return StudyNotesPage(
+    if (section == AdminSection.automations && controller != null) {
+      return TaskPlanningPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
     }
-
+    if (section == AdminSection.analytics && controller != null) {
+      return LearningDashboardPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    }
     final config = _configFor(section);
 
     return ListView(

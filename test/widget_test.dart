@@ -278,7 +278,7 @@ void main() {
 
     await controller.addStudyTask(
       title: '任务A',
-      type: StudyTaskType.courseVideo,
+      type: StudyTaskType.classHomework,
       courseName: '高等数学',
       deadline: DateTime(2026, 5, 10),
     );

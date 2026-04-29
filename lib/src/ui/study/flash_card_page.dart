@@ -20,8 +20,11 @@ class FlashCardPage extends StatefulWidget {
   State<FlashCardPage> createState() => _FlashCardPageState();
 }
 
-class _FlashCardPageState extends State<FlashCardPage> {
+class _FlashCardPageState extends State<FlashCardPage>
+    with SingleTickerProviderStateMixin {
   final _aiService = AiStudyService();
+  late final AnimationController _flipController;
+  late Animation<double> _flipAnimation;
   List<AiFlashCard> _cards = [];
   var _currentIndex = 0;
   var _isFlipped = false;
@@ -30,7 +33,26 @@ class _FlashCardPageState extends State<FlashCardPage> {
   @override
   void initState() {
     super.initState();
+    _flipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _flipAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
+    );
+    _flipController.addStatusListener((status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        setState(() {});
+      }
+    });
     _generateCards();
+  }
+
+  @override
+  void dispose() {
+    _flipController.dispose();
+    super.dispose();
   }
 
   Future<void> _generateCards() async {
@@ -39,6 +61,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
       _cards = [];
       _currentIndex = 0;
       _isFlipped = false;
+      _flipController.value = 0;
     });
     try {
       final logs = widget.controller.studyLogs;
@@ -46,10 +69,20 @@ class _FlashCardPageState extends State<FlashCardPage> {
         setState(() => _isGenerating = false);
         return;
       }
+      // Try saved cards first
+      final saved = widget.controller.flashCards;
+      if (saved.isNotEmpty) {
+        setState(() {
+          _cards = saved;
+          _isGenerating = false;
+        });
+        return;
+      }
       final cards = await _aiService.generateFlashCards(
         logs: logs.take(20).toList(),
         count: 8,
       );
+      widget.controller.saveFlashCards(cards);
       if (mounted) {
         setState(() {
           _cards = cards;
@@ -61,11 +94,21 @@ class _FlashCardPageState extends State<FlashCardPage> {
     }
   }
 
+  void _toggleFlip() {
+    if (_isFlipped) {
+      _flipController.reverse();
+    } else {
+      _flipController.forward();
+    }
+    setState(() => _isFlipped = !_isFlipped);
+  }
+
   void _nextCard() {
     if (_currentIndex < _cards.length - 1) {
       setState(() {
         _currentIndex++;
         _isFlipped = false;
+        _flipController.value = 0;
       });
     }
   }
@@ -75,6 +118,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
       setState(() {
         _currentIndex--;
         _isFlipped = false;
+        _flipController.value = 0;
       });
     }
   }
@@ -193,123 +237,47 @@ class _FlashCardPageState extends State<FlashCardPage> {
           ),
           const SizedBox(height: 14),
 
-          // Flash card
+          // Flash card with 3D flip
           GestureDetector(
-            onTap: () => setState(() => _isFlipped = !_isFlipped),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: double.infinity,
-              height: 340,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                color: widget.isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.95)
-                    : Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.isDarkMode
-                        ? Colors.black.withValues(alpha: 0.3)
-                        : const Color(0x1A121A36),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Card header
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-                    child: Row(
-                      children: [
-                        BadgePill(
-                          label: _cards[_currentIndex].courseName,
-                          background: const Color(0x197040F2),
-                          foreground: const Color(0xFF7040F2),
-                        ),
-                        const Spacer(),
-                        Icon(
-                          _isFlipped
-                              ? Icons.visibility_rounded
-                              : Icons.visibility_off_rounded,
+            onTap: _toggleFlip,
+            child: AnimatedBuilder(
+              animation: _flipAnimation,
+              builder: (context, _) {
+                final angle = _flipAnimation.value * 3.14159;
+                final isFront = angle < 3.14159 / 2;
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.001)
+                    ..rotateY(angle),
+                  child: Container(
+                    width: double.infinity,
+                    height: 340,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(28),
+                      color: widget.isDarkMode
+                          ? const Color(0xFF242B37).withValues(alpha: 0.95)
+                          : Colors.white,
+                      boxShadow: [
+                        BoxShadow(
                           color: widget.isDarkMode
-                              ? Colors.white38
-                              : AppColors.muted,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _isFlipped ? '答案' : '点击翻转',
-                          style: TextStyle(
-                            color: widget.isDarkMode
-                                ? Colors.white38
-                                : AppColors.muted,
-                            fontSize: 12,
-                          ),
+                              ? Colors.black.withValues(alpha: 0.3)
+                              : const Color(0x1A121A36),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
                         ),
                       ],
                     ),
+                    child: isFront
+                        ? _buildCardFront(titleColor)
+                        : Transform(
+                            alignment: Alignment.center,
+                            transform: Matrix4.identity()..rotateY(3.14159),
+                            child: _buildCardBack(titleColor, bodyColor),
+                          ),
                   ),
-                  const SizedBox(height: 16),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: Center(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _isFlipped
-                                  ? Icons.lightbulb_rounded
-                                  : Icons.help_outline_rounded,
-                              color: _isFlipped
-                                  ? const Color(0xFF4BC4A1)
-                                  : const Color(0xFF7040F2),
-                              size: 32,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _isFlipped
-                                  ? _cards[_currentIndex].answer
-                                  : _cards[_currentIndex].question,
-                              style: TextStyle(
-                                color: titleColor,
-                                fontSize: _isFlipped ? 16 : 18,
-                                fontWeight: _isFlipped
-                                    ? FontWeight.w500
-                                    : FontWeight.w700,
-                                height: 1.5,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            if (_isFlipped &&
-                                _cards[_currentIndex].hint.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF7394F9)
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '💡 ${_cards[_currentIndex].hint}',
-                                  style: TextStyle(
-                                    color: bodyColor,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 20),
@@ -355,6 +323,90 @@ class _FlashCardPageState extends State<FlashCardPage> {
             ],
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildCardFront(Color titleColor) {
+    if (_cards.isEmpty) return const SizedBox.shrink();
+    final card = _cards[_currentIndex];
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+          child: Row(
+            children: [
+              BadgePill(
+                label: card.courseName,
+                background: const Color(0x197040F2),
+                foreground: const Color(0xFF7040F2),
+              ),
+              const Spacer(),
+              Text('点击翻转', style: TextStyle(color: widget.isDarkMode ? Colors.white38 : AppColors.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Divider(height: 1),
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.help_outline_rounded, color: Color(0xFF7040F2), size: 32),
+                  const SizedBox(height: 16),
+                  Text(card.question, style: TextStyle(color: titleColor, fontSize: 18, fontWeight: FontWeight.w700, height: 1.5), textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCardBack(Color titleColor, Color bodyColor) {
+    if (_cards.isEmpty) return const SizedBox.shrink();
+    final card = _cards[_currentIndex];
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+          child: Row(
+            children: [
+              BadgePill(label: card.courseName, background: const Color(0x194BC4A1), foreground: const Color(0xFF4BC4A1)),
+              const Spacer(),
+              Text('答案', style: TextStyle(color: widget.isDarkMode ? Colors.white38 : AppColors.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Divider(height: 1),
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.lightbulb_rounded, color: Color(0xFF4BC4A1), size: 32),
+                  const SizedBox(height: 16),
+                  Text(card.answer, style: TextStyle(color: titleColor, fontSize: 16, fontWeight: FontWeight.w500, height: 1.5), textAlign: TextAlign.center),
+                  if (card.hint.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(color: const Color(0xFF7394F9).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                      child: Text('💡 ${card.hint}', style: TextStyle(color: bodyColor, fontSize: 13)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
