@@ -35,10 +35,12 @@ class _FlashCardPageState extends State<FlashCardPage>
     super.initState();
     _flipController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1150),
+      reverseDuration: const Duration(milliseconds: 1050),
+      animationBehavior: AnimationBehavior.preserve,
     );
     _flipAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _flipController, curve: Curves.easeInOutCubic),
     );
     _flipController.addStatusListener((status) {
       if (status == AnimationStatus.completed ||
@@ -95,6 +97,8 @@ class _FlashCardPageState extends State<FlashCardPage>
   }
 
   void _toggleFlip() {
+    if (_flipController.isAnimating) return;
+
     if (_isFlipped) {
       _flipController.reverse();
     } else {
