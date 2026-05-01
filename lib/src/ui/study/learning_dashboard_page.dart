@@ -68,6 +68,7 @@ class LearningDashboardPage extends StatelessWidget {
           weekLabels.add('${start.month}/${start.day}');
         }
 
+        final accent = controller.primaryColor;
         final textColor = isDarkMode ? Colors.white : AppColors.ink;
         final bodyColor =
             isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
@@ -85,7 +86,7 @@ class LearningDashboardPage extends StatelessWidget {
             // Stats grid
             Row(
               children: [
-                Expanded(child: _statCard('总任务', '$totalTasks', const Color(0xFF7040F2), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('总任务', '$totalTasks', accent, isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
                 Expanded(child: _statCard('完成率', totalTasks > 0 ? '${(completedTasks * 100 ~/ totalTasks)}%' : '-', const Color(0xFF4BC4A1), isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
@@ -138,7 +139,7 @@ class LearningDashboardPage extends StatelessWidget {
                             value: totalSubTasks > 0 ? completedSubTasks / totalSubTasks : 0,
                             strokeWidth: 5,
                             backgroundColor: isDarkMode ? Colors.white12 : const Color(0xFFE8EBF5),
-                            color: const Color(0xFF7040F2),
+                            color: accent,
                           ),
                           Text('${totalSubTasks > 0 ? (completedSubTasks * 100 ~/ totalSubTasks) : 0}%',
                               style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w800)),
@@ -172,7 +173,7 @@ class LearningDashboardPage extends StatelessWidget {
                               Container(
                                 height: (weeklyData[i] / (weeklyData.reduce((a, b) => a > b ? a : b) + 1)) * 90,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF7040F2).withValues(alpha: 0.7),
+                                  color: accent.withValues(alpha: 0.7),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                               ),
@@ -241,8 +242,8 @@ class LearningDashboardPage extends StatelessWidget {
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(color: const Color(0xFF7040F2).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                                  child: Text('${e.value}条', style: const TextStyle(color: Color(0xFF7040F2), fontSize: 11, fontWeight: FontWeight.w700)),
+                                  decoration: BoxDecoration(color: accent.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                                  child: Text('${e.value}条', style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w700)),
                                 ),
                               ],
                             ),

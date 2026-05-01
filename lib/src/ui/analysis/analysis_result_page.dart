@@ -79,6 +79,7 @@ class _AnalysisResultPageState extends State<AnalysisResultPage> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
@@ -104,10 +105,10 @@ class _AnalysisResultPageState extends State<AnalysisResultPage> {
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(30),
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
+                colors: [accent, Color(0xFF8D5EFF)],
               ),
             ),
             child: Column(

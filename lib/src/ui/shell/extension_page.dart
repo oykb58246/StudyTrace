@@ -24,7 +24,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
   String? _courseFilter;
 
   List<StudyLogItem> _filteredLogs(List<StudyLogItem> logs) {
-    var result = logs;
+    var result = logs.toList(); // 确保是可修改的列表
     if (_courseFilter != null) {
       result = result.where((l) => l.courseName == _courseFilter).toList();
     }
@@ -38,6 +38,8 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
               l.thoughts.toLowerCase().contains(q))
           .toList();
     }
+    // 按 date 倒序排列（最新的在前）
+    result.sort((a, b) => b.date.compareTo(a.date));
     return result;
   }
 
@@ -46,6 +48,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
+        final accent = widget.controller.primaryColor;
         final allLogs = widget.controller.studyLogs;
         final logs = _filteredLogs(allLogs);
         final availableCourses = widget.controller.courseNames;
@@ -117,13 +120,15 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
                         label: Text('全部课程',
-                            style: TextStyle(fontSize: 12,
+                            style: TextStyle(
+                                fontSize: 12,
                                 color: widget.isDarkMode
-                                    ? Colors.white : AppColors.ink)),
+                                    ? Colors.white
+                                    : AppColors.ink)),
                         selected: _courseFilter == null,
                         selectedColor:
-                            const Color(0xFF7040F2).withValues(alpha: 0.22),
-                        checkmarkColor: const Color(0xFF7040F2),
+                            accent.withValues(alpha: 0.2),
+                        checkmarkColor: accent,
                         backgroundColor: widget.isDarkMode
                             ? const Color(0xFF2A3040)
                             : const Color(0xFFEEF1FA),
@@ -135,20 +140,21 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                           padding: const EdgeInsets.only(right: 8),
                           child: FilterChip(
                             label: Text(c,
-                                style: TextStyle(fontSize: 12,
+                                style: TextStyle(
+                                    fontSize: 12,
                                     color: widget.isDarkMode
-                                        ? Colors.white : AppColors.ink)),
+                                        ? Colors.white
+                                        : AppColors.ink)),
                             selected: _courseFilter == c,
-                            selectedColor: const Color(0xFF7394F9)
-                                .withValues(alpha: 0.22),
+                            selectedColor:
+                                const Color(0xFF7394F9).withValues(alpha: 0.22),
                             checkmarkColor: const Color(0xFF7394F9),
                             backgroundColor: widget.isDarkMode
                                 ? const Color(0xFF2A3040)
                                 : const Color(0xFFEEF1FA),
                             side: BorderSide.none,
                             onSelected: (sel) {
-                              setState(
-                                  () => _courseFilter = sel ? c : null);
+                              setState(() => _courseFilter = sel ? c : null);
                             },
                           ),
                         )),
@@ -162,7 +168,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
               child: ElevatedButton.icon(
                 key: const Key('add_log_button'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7040F2),
+                  backgroundColor: accent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
@@ -227,6 +233,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
   }
 
   void _showLogForm(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final courseController = TextEditingController();
     final contentController = TextEditingController();
     final problemsController = TextEditingController();
@@ -257,9 +264,8 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: widget.isDarkMode
-                          ? Colors.white24
-                          : Colors.black26,
+                      color:
+                          widget.isDarkMode ? Colors.white24 : Colors.black26,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -280,11 +286,11 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: widget.isDarkMode
                           ? Colors.white
-                          : const Color(0xFF7040F2),
+                          : accent,
                       side: BorderSide(
                         color: widget.isDarkMode
                             ? Colors.white24
-                            : const Color(0x337040F2),
+                            : accent.withValues(alpha: 0.2),
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -301,20 +307,21 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                         setSheetState(() => selectedDate = picked);
                       }
                     },
-                    icon:
-                        const Icon(Icons.calendar_today_rounded, size: 18),
+                    icon: const Icon(Icons.calendar_today_rounded, size: 18),
                     label: Text(_fmtDate(selectedDate)),
                   ),
                 ),
                 const SizedBox(height: 14),
                 _LogFormField(
                   label: '所属课程',
-                  child: TextField(
+                  child: _LogCourseSelector(
+                    isDarkMode: widget.isDarkMode,
                     controller: courseController,
-                    style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : AppColors.ink,
-                    ),
-                    decoration: _logInputDeco('例如：高等数学', widget.isDarkMode),
+                    allCourses: widget.controller.allCourses,
+                    onSelectionChanged: (course) {
+                      setSheetState(() => courseController.text = course);
+                    },
+                    accentColor: accent,
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -326,8 +333,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     style: TextStyle(
                       color: widget.isDarkMode ? Colors.white : AppColors.ink,
                     ),
-                    decoration:
-                        _logInputDeco('今天学了什么...', widget.isDarkMode),
+                    decoration: _logInputDeco('今天学了什么...', widget.isDarkMode),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -339,8 +345,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     style: TextStyle(
                       color: widget.isDarkMode ? Colors.white : AppColors.ink,
                     ),
-                    decoration:
-                        _logInputDeco('遇到什么困难...', widget.isDarkMode),
+                    decoration: _logInputDeco('遇到什么困难...', widget.isDarkMode),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -352,8 +357,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     style: TextStyle(
                       color: widget.isDarkMode ? Colors.white : AppColors.ink,
                     ),
-                    decoration:
-                        _logInputDeco('有什么感悟...', widget.isDarkMode),
+                    decoration: _logInputDeco('有什么感悟...', widget.isDarkMode),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -365,8 +369,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     style: TextStyle(
                       color: widget.isDarkMode ? Colors.white : AppColors.ink,
                     ),
-                    decoration:
-                        _logInputDeco('后续安排...', widget.isDarkMode),
+                    decoration: _logInputDeco('后续安排...', widget.isDarkMode),
                   ),
                 ),
                 const SizedBox(height: 22),
@@ -374,7 +377,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                   height: 50,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7040F2),
+                      backgroundColor: accent,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18),
@@ -427,8 +430,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
       fillColor: isDark
           ? Colors.white.withValues(alpha: 0.06)
           : const Color(0xFFF2F5FC),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
@@ -467,6 +469,172 @@ class _LogFormField extends StatelessWidget {
   }
 }
 
+class _LogCourseSelector extends StatefulWidget {
+  final bool isDarkMode;
+  final TextEditingController controller;
+  final List<String> allCourses;
+  final ValueChanged<String> onSelectionChanged;
+  final Color accentColor;
+
+  const _LogCourseSelector({
+    required this.isDarkMode,
+    required this.controller,
+    required this.allCourses,
+    required this.onSelectionChanged,
+    required this.accentColor,
+  });
+
+  @override
+  State<_LogCourseSelector> createState() => _LogCourseSelectorState();
+}
+
+class _LogCourseSelectorState extends State<_LogCourseSelector> {
+  bool _showDropdown = false;
+  late List<String> _suggestions;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_updateSuggestions);
+    _updateSuggestions();
+  }
+
+  @override
+  void didUpdateWidget(_LogCourseSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.allCourses != widget.allCourses) {
+      _updateSuggestions();
+    }
+  }
+
+  void _updateSuggestions() {
+    final query = widget.controller.text.toLowerCase();
+    _suggestions = widget.allCourses
+        .where(
+          (c) => c.toLowerCase().contains(query) && c.toLowerCase() != query,
+        )
+        .toList();
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_updateSuggestions);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: widget.controller,
+          style: TextStyle(
+            color: widget.isDarkMode ? Colors.white : AppColors.ink,
+          ),
+          onChanged: (_) {
+            _updateSuggestions();
+            setState(() => _showDropdown = true);
+          },
+          decoration: InputDecoration(
+            hintText: '选择或输入课程名...',
+            hintStyle: TextStyle(
+              color: widget.isDarkMode
+                  ? Colors.white.withValues(alpha: 0.4)
+                  : Colors.black26,
+            ),
+            filled: true,
+            fillColor: widget.isDarkMode
+                ? Colors.white.withValues(alpha: 0.06)
+                : const Color(0xFFF2F5FC),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: widget.controller.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      widget.controller.clear();
+                      _updateSuggestions();
+                    },
+                  )
+                : null,
+          ),
+        ),
+        if (_showDropdown && _suggestions.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: widget.isDarkMode ? const Color(0xFF242B37) : Colors.white,
+              border: Border.all(
+                color: widget.isDarkMode
+                    ? Colors.white12
+                    : const Color(0xFFE0E0E0),
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _suggestions
+                  .take(5)
+                  .map(
+                    (course) => InkWell(
+                      onTap: () {
+                        widget.controller.text = course;
+                        widget.onSelectionChanged(course);
+                        setState(() => _showDropdown = false);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          border: course != _suggestions.last
+                              ? Border(
+                                  bottom: BorderSide(
+                                    color: widget.isDarkMode
+                                        ? Colors.white12
+                                        : const Color(0xFFE0E0E0),
+                                  ),
+                                )
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.book_rounded,
+                              size: 16,
+                              color: widget.accentColor,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                course,
+                                style: TextStyle(
+                                  color: widget.isDarkMode
+                                      ? Colors.white
+                                      : AppColors.ink,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _LogCard extends StatelessWidget {
   const _LogCard({
     super.key,
@@ -485,9 +653,7 @@ class _LogCard extends StatelessWidget {
     final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
     return GlassCard(
-      color: isDarkMode
-          ? const Color(0xFF242B37).withValues(alpha: 0.9)
-          : null,
+      color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

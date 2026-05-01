@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 
 import '../models/ai_config.dart';
 import '../models/ai_flash_card.dart';
@@ -10,129 +9,206 @@ import '../models/ai_task_plan.dart';
 import '../models/study_log_item.dart';
 import '../models/study_task_item.dart';
 import 'ai_credential_service.dart';
+import 'blueheart_model_client.dart';
 import 'deepseek_client.dart';
 import 'local_storage_service.dart';
 
 /// AIGC 学习服务
 ///
-/// 提供面向学习场景的四大 AI 能力：
-/// 1. AI 生成学习日志
-/// 2. AI 任务拆解
-/// 3. AI 分析型周报
-/// 4. AI 学习风险提醒
-///
-/// 未配置 DeepSeek API Key 时返回规则生成的模拟结果。
-/// 配置并启用后，使用 DeepSeek Chat Completions + JSON Output。
+/// 优先使用蓝心大模型（内置 AppKey），DeepSeek 作为备选。
+/// 未配置任何 AI 服务时抛出错误提示用户配置。
 class AiStudyService {
   AiStudyService({
     LocalStorageService? storage,
     AiCredentialService? credentials,
     DeepSeekClient? deepSeekClient,
+    BlueHeartModelClient? blueHeartClient,
   })  : _storage = storage ?? LocalStorageService(),
         _credentials = credentials ?? AiCredentialService(),
-        _deepSeekClient = deepSeekClient ?? DeepSeekClient();
+        _deepSeekClient = deepSeekClient ?? DeepSeekClient(),
+        _blueHeartClient = blueHeartClient ?? BlueHeartModelClient();
 
   final LocalStorageService _storage;
   final AiCredentialService _credentials;
   final DeepSeekClient _deepSeekClient;
+  final BlueHeartModelClient _blueHeartClient;
 
-  static const _courseKeywords = [
-    '数据库',
-    'Java',
-    'Python',
-    '高数',
-    '数学',
-    '英语',
-    '操作系统',
-    '网络',
-    '数据结构',
-    '算法',
-    '编译原理',
-    '软件工程',
-    '人工智能',
-    '机器学习',
-    '深度学习',
-    '计算机视觉',
-    '嵌入式',
-    '物联网',
-    '区块链',
-    '前端',
-    '后端',
-    '移动开发',
-    '测试',
-    '安全',
-  ];
+  static const _systemPrompt = '''
+你是 StudyTrace 的 AI 学习助手，StudyTrace 就是你正在运行的这个 App。
+你内置在 App 中，用户正在跟你对话。App 本身就有以下功能，你只需要告诉用户怎么用，并直接帮他们执行操作。
 
-  /// AI 生成结构化学习日志
-  ///
-  /// 用户输入自然语言描述，返回结构化学习日志结果。
+当用户说"打开计时器""开专注模式"时，你直接回复【ACTION:OPEN_TIMER】，App 会自动跳转到计时器页面。
+当用户说"查看闪卡""开始复习"时，回复【ACTION:OPEN_FLASHCARD】。
+当用户说"添加任务""创建任务"时，回复【ACTION:ADD_TASK】。
+当用户说"生成笔记""帮我总结"时，回复【ACTION:SUMMARY_NOTE】。
+
+重要规则：
+- 你运行在 StudyTrace App 内部，所有功能都在 App 里，不要建议用户去微信、浏览器或其他外部工具
+- 当用户想使用某个功能（计时器、闪卡、笔记、任务），直接在回复末尾给出对应的 ACTION 标签
+- 使用简单的 Markdown 格式：加粗用 **文字**，列表用 - 开头，代码用 `` 包裹
+- 不要用 Markdown 表格，用简短清晰的段落和列表
+- 回复要完整，不要省略，不超过500字
+
+StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
+1. 专注计时器 — 番茄钟倒计时，5/15/25/45/60 分钟可选
+2. 知识闪卡 — AI 生成问答卡片，帮助巩固知识点
+3. 学习笔记 — 多格式编辑器（标题/列表/待办/代码块）
+4. 学习任务 — 管理作业、实验报告、论文、项目、考试复习
+5. 学习日志 — 每日学习内容记录
+6. 学习日历 — 查看每日学习安排
+7. 周报分析 — AI 分析本周学习数据
+8. 课程管理 — 按课程分类管理内容''';
+
+  // ═══════════════════════════════════════════════════════════
+  // Public API
+  // ═══════════════════════════════════════════════════════════
+
   Future<AiGeneratedLog> generateStudyLog(String input) async {
-    final runtime = await _loadRuntime();
-    if (runtime == null) return _mockGenerateStudyLog(input);
-    return _deepSeekGenerateStudyLog(input, runtime);
+    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
+    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
+      try {
+        return await _blueHeartGenerateStudyLog(input, blueHeartKey);
+      } catch (_) {}
+    }
+    final runtime = await _loadDeepSeekRuntime();
+    if (runtime != null) return _deepSeekGenerateStudyLog(input, runtime);
+    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 
-  /// AI 拆解复杂学习任务
   Future<AiTaskPlan> generateTaskPlan(String input) async {
-    final runtime = await _loadRuntime();
-    if (runtime == null) return _mockGenerateTaskPlan(input);
-    return _deepSeekGenerateTaskPlan(input, runtime);
+    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
+    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
+      try {
+        return await _blueHeartGenerateTaskPlan(input, blueHeartKey);
+      } catch (_) {}
+    }
+    final runtime = await _loadDeepSeekRuntime();
+    if (runtime != null) return _deepSeekGenerateTaskPlan(input, runtime);
+    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 
-  /// AI 分析型周报生成
   Future<AiStudyAnalysis> generateWeeklyAnalysis({
     required List<StudyLogItem> logs,
     required List<StudyTaskItem> tasks,
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final runtime = await _loadRuntime();
-    if (runtime == null) {
-      return _mockGenerateWeeklyAnalysis(
-        logs: logs,
-        tasks: tasks,
-        startDate: startDate,
-        endDate: endDate,
-      );
+    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
+    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
+      try {
+        return await _blueHeartGenerateWeeklyAnalysis(
+            logs: logs, tasks: tasks,
+            startDate: startDate, endDate: endDate, apiKey: blueHeartKey);
+      } catch (_) {}
     }
-    return _deepSeekGenerateWeeklyAnalysis(
-      logs: logs,
-      tasks: tasks,
-      startDate: startDate,
-      endDate: endDate,
-      runtime: runtime,
-    );
+    final runtime = await _loadDeepSeekRuntime();
+    if (runtime != null) {
+      return _deepSeekGenerateWeeklyAnalysis(
+          logs: logs, tasks: tasks,
+          startDate: startDate, endDate: endDate, runtime: runtime);
+    }
+    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 
-  /// AI 学习风险提醒
   Future<List<AiRiskWarning>> generateRiskWarnings({
     required List<StudyLogItem> logs,
     required List<StudyTaskItem> tasks,
   }) async {
-    final runtime = await _loadRuntime();
-    if (runtime == null) {
-      return _mockGenerateRiskWarnings(logs: logs, tasks: tasks);
+    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
+    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
+      try {
+        return await _blueHeartGenerateRiskWarnings(
+            logs: logs, tasks: tasks, apiKey: blueHeartKey);
+      } catch (_) {}
     }
-    return _deepSeekGenerateRiskWarnings(
-      logs: logs,
-      tasks: tasks,
-      runtime: runtime,
-    );
+    final runtime = await _loadDeepSeekRuntime();
+    if (runtime != null) return _deepSeekGenerateRiskWarnings(
+        logs: logs, tasks: tasks, runtime: runtime);
+    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 
-  /// AI 生成知识闪卡
-  ///
-  /// 基于近期学习日志自动生成问答闪卡，帮助巩固知识点。
   Future<List<AiFlashCard>> generateFlashCards({
     required List<StudyLogItem> logs,
     int count = 5,
   }) async {
-    final runtime = await _loadRuntime();
-    if (runtime == null) return _mockGenerateFlashCards(logs: logs, count: count);
-    return _deepSeekGenerateFlashCards(logs: logs, count: count, runtime: runtime);
+    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
+    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
+      try {
+        return await _blueHeartGenerateFlashCards(
+            logs: logs, count: count, apiKey: blueHeartKey);
+      } catch (_) {}
+    }
+    final runtime = await _loadDeepSeekRuntime();
+    if (runtime != null) return _deepSeekGenerateFlashCards(
+        logs: logs, count: count, runtime: runtime);
+    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 
-  Future<_AiRuntime?> _loadRuntime() async {
+  Future<String> generateAssistantReply({
+    required String input,
+    List<String> context = const [],
+    List<Map<String, dynamic>> messages = const [],
+    String? imageBase64,
+    String purpose = 'chat',
+  }) async {
+    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
+    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
+      try {
+        return await _blueHeartGenerateAssistantReply(
+            input: input, context: context, messages: messages,
+            imageBase64: imageBase64, purpose: purpose, apiKey: blueHeartKey);
+      } catch (_) {}
+    }
+    final runtime = await _loadDeepSeekRuntime();
+    if (runtime != null) return _deepSeekGenerateAssistantReply(
+        input: input, context: context, purpose: purpose, runtime: runtime);
+    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
+  }
+
+  Stream<String> generateAssistantReplyStream({
+    required String input,
+    List<String> context = const [],
+    List<Map<String, dynamic>> messages = const [],
+    String? imageBase64,
+    String purpose = 'chat',
+    bool thinkingEnabled = false,
+  }) async* {
+    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
+    if (blueHeartKey == null || blueHeartKey.isEmpty) {
+      throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
+    }
+    try {
+      final config = await _storage.loadAiConfig();
+      final systemPrompt = switch (purpose) {
+        'note' => '你是 StudyTrace 的学习笔记整理助手。根据用户的收藏、对话和学习记录，生成可直接保存的学习笔记。',
+        'task' => '你是 StudyTrace 的任务编排助手。根据学习目标和上下文，给出可执行建议，并在需要时用【ACTION:OPEN_TIMER】、【ACTION:ADD_TASK】或【ACTION:SUMMARY_NOTE】标注动作。',
+        _ => _systemPrompt,
+      };
+      yield* _blueHeartClient.chatStream(
+        apiKey: blueHeartKey,
+        systemPrompt: systemPrompt,
+        userPrompt: messages.isEmpty ? input : null,
+        messages: messages.isEmpty ? null : [...messages, {'role': 'user', 'content': input}],
+        imageBase64: imageBase64,
+        model: config.blueHeartModel,
+        temperature: config.temperature,
+        maxTokens: config.maxTokens < 2000 ? 2000 : config.maxTokens,
+        topP: config.topP,
+        thinkingEnabled: thinkingEnabled || config.thinkingEnabled,
+        frequencyPenalty: config.frequencyPenalty,
+        presencePenalty: config.presencePenalty,
+        reasoningEffort: config.reasoningEffort,
+      );
+    } catch (e) {
+      yield 'AI 回复失败：$e';
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // DeepSeek 实现
+  // ═══════════════════════════════════════════════════════════
+
+  Future<_AiRuntime?> _loadDeepSeekRuntime() async {
     final config = await _storage.loadAiConfig();
     if (!config.isEnabled || config.provider != 'deepseek') return null;
     final apiKey = await _credentials.loadDeepSeekApiKey();
@@ -140,832 +216,304 @@ class AiStudyService {
     return _AiRuntime(config: config, apiKey: apiKey);
   }
 
-  Future<AiGeneratedLog> _deepSeekGenerateStudyLog(
-    String input,
-    _AiRuntime runtime,
-  ) async {
+  Future<AiGeneratedLog> _deepSeekGenerateStudyLog(String input, _AiRuntime runtime) async {
     if (input.trim().isEmpty) return const AiGeneratedLog();
     final result = await _deepSeekClient.chatJson(
-      config: runtime.config,
-      apiKey: runtime.apiKey,
-      systemPrompt: _systemPrompt(
-        '你需要把大学生的自然语言学习描述整理成结构化学习日志。',
-      ),
-      userPrompt: '''
-请根据输入生成 JSON，字段必须为：
-{
-  "courseName": "课程名或未归类",
-  "content": "今日学习内容，完整中文句子",
-  "problems": "遇到的问题",
-  "thoughts": "思考与收获",
-  "nextPlan": "下一步计划"
-}
-
-输入：
-$input
-''',
+      config: runtime.config, apiKey: runtime.apiKey,
+      systemPrompt: _sys('你需要把大学生的自然语言学习描述整理成结构化学习日志。'),
+      userPrompt: '请根据输入生成 JSON，字段必须为：\n{"courseName":"课程名或未归类","content":"今日学习内容","problems":"遇到的问题","thoughts":"思考与收获","nextPlan":"下一步计划"}\n\n输入：\n$input',
     );
     return AiGeneratedLog(
-      courseName: _requiredString(result, 'courseName'),
-      content: _requiredString(result, 'content'),
-      problems: _asString(result['problems']),
-      thoughts: _asString(result['thoughts']),
-      nextPlan: _asString(result['nextPlan']),
+      courseName: _req(result, 'courseName'), content: _req(result, 'content'),
+      problems: _str(result['problems']), thoughts: _str(result['thoughts']),
+      nextPlan: _str(result['nextPlan']),
     );
   }
 
-  Future<AiTaskPlan> _deepSeekGenerateTaskPlan(
-    String input,
-    _AiRuntime runtime,
-  ) async {
+  Future<AiTaskPlan> _deepSeekGenerateTaskPlan(String input, _AiRuntime runtime) async {
     if (input.trim().isEmpty) {
-      return AiTaskPlan(
-        mainTitle: '',
-        taskType: StudyTaskType.other,
-        courseName: '',
-        deadline: DateTime.now().add(const Duration(days: 7)),
-        subTasks: const [],
-        schedule: '',
-      );
+      return AiTaskPlan(mainTitle: '', taskType: StudyTaskType.other,
+          courseName: '', deadline: DateTime.now().add(const Duration(days: 7)),
+          subTasks: const [], schedule: '');
     }
     final result = await _deepSeekClient.chatJson(
-      config: runtime.config,
-      apiKey: runtime.apiKey,
-      systemPrompt: _systemPrompt(
-        '你需要把复杂学习任务拆成可执行计划。',
-      ),
-      userPrompt: '''
-今天日期和时间：${DateTime.now().toIso8601String()}
-请根据输入生成 JSON，字段必须为：
-{
-  "mainTitle": "主任务标题",
-  "taskType": "classHomework | paperReading | programmingHomework | labReport | projectDev | examReview | readingNotes | other",
-  "courseName": "课程名或未归类",
-  "deadline": "yyyy-MM-ddTHH:mm:ss（ISO 8601 本地时间）",
-  "difficulty": "较轻松 | 中等 | 困难",
-  "subTasks": ["子任务1", "子任务2"],
-  "plannedSubTasks": [
-    {
-      "title": "子任务标题",
-      "startAt": "yyyy-MM-ddTHH:mm:ss（开始时间，可选）",
-      "deadline": "yyyy-MM-ddTHH:mm:ss（截止时间）",
-      "note": "备注"
-    }
-  ],
-  "schedule": "按天安排，中文多行文本"
-}
-要求：plannedSubTasks 中每个子任务的 deadline 必须早于或等于主任务 deadline。
-      ''',
+      config: runtime.config, apiKey: runtime.apiKey,
+      systemPrompt: _sys('你需要把复杂学习任务拆成可执行计划。'),
+      userPrompt: '今天：${DateTime.now().toIso8601String()}\n请生成 JSON：{"mainTitle":"","taskType":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","courseName":"","deadline":"ISO8601","difficulty":"较轻松|中等|困难","subTasks":[""],"plannedSubTasks":[{"title":"","deadline":"ISO8601","note":""}],"schedule":""}\n输入：$input',
     );
-    final rawPlanned = result['plannedSubTasks'];
-    final List<AiPlannedSubTask> planned = [];
-    if (rawPlanned is List) {
-      for (final item in rawPlanned) {
-        if (item is Map<String, dynamic>) {
-          planned.add(AiPlannedSubTask.fromJson(item));
-        }
-      }
-    }
-    return AiTaskPlan.fromJson({
-      ...result,
-      'plannedSubTasks': rawPlanned ?? planned,
-    });
+    final raw = result['plannedSubTasks'];
+    final planned = raw is List ? raw.whereType<Map<String, dynamic>>().map((j) => AiPlannedSubTask.fromJson(j)).toList() : <AiPlannedSubTask>[];
+    return AiTaskPlan.fromJson({...result, 'plannedSubTasks': raw ?? planned});
   }
 
   Future<AiStudyAnalysis> _deepSeekGenerateWeeklyAnalysis({
-    required List<StudyLogItem> logs,
-    required List<StudyTaskItem> tasks,
-    required DateTime startDate,
-    required DateTime endDate,
-    required _AiRuntime runtime,
+    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks,
+    required DateTime startDate, required DateTime endDate, required _AiRuntime runtime,
   }) async {
     final result = await _deepSeekClient.chatJson(
-      config: runtime.config,
-      apiKey: runtime.apiKey,
-      systemPrompt: _systemPrompt(
-        '你需要根据学习日志和任务数据生成分析型学习周报。',
-      ),
-      userPrompt: '''
-分析周期：${_fmtDate(startDate)} 至 ${_fmtDate(endDate)}
-学习日志 JSON：
-${_logsJson(logs)}
-
-任务 JSON：
-${_tasksJson(tasks)}
-
-请生成 JSON，字段必须为：
-{
-  "mainTopics": "本周主要学习主题",
-  "courseDistribution": "各课程投入情况，允许多行",
-  "frequentProblems": "高频问题分析，允许多行",
-  "completedTasks": "任务完成情况，允许多行",
-  "riskTasks": "延期风险，允许多行",
-  "statusEvaluation": "学习状态评价",
-  "nextWeekPriority": "下周优先级建议，允许多行"
-}
-''',
+      config: runtime.config, apiKey: runtime.apiKey,
+      systemPrompt: _sys('你需要根据学习日志和任务数据生成分析型学习周报。'),
+      userPrompt: '分析周期：${_fmt(startDate)} 至 ${_fmt(endDate)}\n学习日志：${_logs(logs)}\n任务：${_tasks(tasks)}\n请生成 JSON：{"mainTopics":"","courseDistribution":"","frequentProblems":"","completedTasks":"","riskTasks":"","statusEvaluation":"","nextWeekPriority":""}',
       maxTokens: 2200,
     );
     return AiStudyAnalysis(
-      mainTopics: _asString(result['mainTopics']),
-      courseDistribution: _asString(result['courseDistribution']),
-      frequentProblems: _asString(result['frequentProblems']),
-      completedTasks: _asString(result['completedTasks']),
-      riskTasks: _asString(result['riskTasks']),
-      statusEvaluation: _asString(result['statusEvaluation']),
-      nextWeekPriority: _asString(result['nextWeekPriority']),
+      mainTopics: _str(result['mainTopics']), courseDistribution: _str(result['courseDistribution']),
+      frequentProblems: _str(result['frequentProblems']), completedTasks: _str(result['completedTasks']),
+      riskTasks: _str(result['riskTasks']), statusEvaluation: _str(result['statusEvaluation']),
+      nextWeekPriority: _str(result['nextWeekPriority']),
     );
   }
 
   Future<List<AiRiskWarning>> _deepSeekGenerateRiskWarnings({
-    required List<StudyLogItem> logs,
-    required List<StudyTaskItem> tasks,
-    required _AiRuntime runtime,
+    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks, required _AiRuntime runtime,
   }) async {
     final result = await _deepSeekClient.chatJson(
-      config: runtime.config,
-      apiKey: runtime.apiKey,
-      systemPrompt: _systemPrompt(
-        '你需要识别大学生学习计划中的风险，只输出明确可执行的提醒。',
-      ),
-      userPrompt: '''
-今天日期：${_fmtDate(DateTime.now())}
-学习日志 JSON：
-${_logsJson(logs)}
-
-任务 JSON：
-${_tasksJson(tasks)}
-
-请生成 JSON，字段必须为：
-{
-  "warnings": [
-    {
-      "title": "风险标题",
-      "description": "风险说明和建议",
-      "level": "low | medium | high",
-      "category": "deadline | gap | completionRate | logFrequency | repeatedProblem"
-    }
-  ]
-}
-没有风险时返回 {"warnings": []}。
-''',
+      config: runtime.config, apiKey: runtime.apiKey,
+      systemPrompt: _sys('你需要识别大学生学习计划中的风险，只输出明确可执行的提醒。'),
+      userPrompt: '今天：${_fmt(DateTime.now())}\n日志：${_logs(logs)}\n任务：${_tasks(tasks)}\n请生成 JSON：{"warnings":[{"title":"","description":"","level":"low|medium|high","category":"deadline|gap|completionRate|logFrequency|repeatedProblem"}]}\n没有风险返回 {"warnings":[]}',
       maxTokens: 1800,
     );
-    final rawWarnings = result['warnings'];
-    if (rawWarnings is! List) {
-      throw const AiServiceException('AI 返回格式异常');
-    }
-    return rawWarnings.map((item) {
+    final raw = result['warnings'];
+    if (raw is! List) throw const AiServiceException('AI 返回格式异常');
+    return raw.map((item) {
       if (item is! Map) throw const AiServiceException('AI 返回格式异常');
-      final map = item.cast<String, dynamic>();
+      final m = item.cast<String, dynamic>();
       return AiRiskWarning(
-        title: _requiredString(map, 'title'),
-        description: _requiredString(map, 'description'),
-        level: _riskLevelFromName(_asString(map['level'], fallback: 'medium')),
-        category: _asString(map['category'], fallback: 'deadline'),
+        title: _req(m, 'title'), description: _req(m, 'description'),
+        level: _riskLevel(_str(m['level'], fallback: 'medium')),
+        category: _str(m['category'], fallback: 'deadline'),
       );
     }).toList();
   }
 
   Future<List<AiFlashCard>> _deepSeekGenerateFlashCards({
-    required List<StudyLogItem> logs,
-    required int count,
-    required _AiRuntime runtime,
+    required List<StudyLogItem> logs, required int count, required _AiRuntime runtime,
   }) async {
     if (logs.isEmpty) return [];
     final result = await _deepSeekClient.chatJson(
-      config: runtime.config,
-      apiKey: runtime.apiKey,
-      systemPrompt: _systemPrompt(
-        '你需要根据学习日志生成问答闪卡，帮助巩固知识点。',
-      ),
-      userPrompt: '''
-近期学习日志 JSON：
-${_logsJson(logs)}
-
-请生成 JSON，字段必须为：
-{
-  "cards": [
-    {
-      "question": "问题",
-      "answer": "答案（简洁清晰）",
-      "courseName": "所属课程",
-      "hint": "提示（可选）"
-    }
-  ]
-}
-生成 $count 张闪卡，涵盖日志中不同课程的知识点。
-问题基于日志内容，答案简明扼要。
-''',
+      config: runtime.config, apiKey: runtime.apiKey,
+      systemPrompt: _sys('你需要根据学习日志生成问答闪卡，帮助巩固知识点。'),
+      userPrompt: '日志：${_logs(logs)}\n生成 $count 张闪卡，JSON：{"cards":[{"question":"","answer":"","courseName":"","hint":""}]}',
       maxTokens: 2000,
     );
-    final rawCards = result['cards'];
-    if (rawCards is! List) return [];
-    return rawCards.map((item) {
-      if (item is! Map) return null;
-      final map = item.cast<String, dynamic>();
+    final raw = result['cards'];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((item) {
+      final m = item.cast<String, dynamic>();
+      final now = DateTime.now();
       return AiFlashCard(
-        question: _asString(map['question'], fallback: ''),
-        answer: _asString(map['answer'], fallback: ''),
-        courseName: _asString(map['courseName'], fallback: ''),
-        hint: _asString(map['hint']),
+        id: 'fc_ds_${now.microsecondsSinceEpoch}_${now.millisecondsSinceEpoch}',
+        question: _str(m['question'], fallback: ''),
+        answer: _str(m['answer'], fallback: ''),
+        courseName: _str(m['courseName'], fallback: ''),
+        hint: _str(m['hint']),
+        createdAt: now,
       );
-    }).whereType<AiFlashCard>().where((c) => c.question.isNotEmpty).toList();
+    }).where((c) => c.question.isNotEmpty).toList();
   }
 
-  String _systemPrompt(String task) {
-    return '''
-你是 StudyTrace 的 AI 学习助手。$task
-只返回合法 JSON，不要返回 Markdown、注释或额外解释。
-字段内容使用简洁中文，适合大学生日常学习记录。
-''';
+  Future<String> _deepSeekGenerateAssistantReply({
+    required String input, required List<String> context,
+    required String purpose, required _AiRuntime runtime,
+  }) async {
+    final sp = switch (purpose) {
+      'note' => '你是 StudyTrace 的学习笔记整理助手。',
+      'task' => '你是 StudyTrace 的任务编排助手。',
+      _ => '你是 StudyTrace 的 AI 学习助手。在需要时用【ACTION:OPEN_TIMER】、【ACTION:ADD_TASK】、【ACTION:SUMMARY_NOTE】标注动作。',
+    };
+    return _deepSeekClient.chatText(
+      config: runtime.config, apiKey: runtime.apiKey, systemPrompt: sp,
+      userPrompt: [if (context.isNotEmpty) '上下文：\n${context.join('\n')}', '用户输入：$input',
+        if (purpose == 'note') '请输出简洁的学习笔记正文' else '请优先给出明确、可执行、简洁的回答。'].join('\n\n'),
+      maxTokens: purpose == 'note' ? 1800 : 1200,
+    );
   }
 
-  Future<AiGeneratedLog> _mockGenerateStudyLog(String input) async {
-    await Future.delayed(const Duration(milliseconds: 800));
+  // ═══════════════════════════════════════════════════════════
+  // 蓝心大模型实现
+  // ═══════════════════════════════════════════════════════════
 
+  Future<AiGeneratedLog> _blueHeartGenerateStudyLog(String input, String apiKey) async {
     if (input.trim().isEmpty) return const AiGeneratedLog();
-
-    final courseName = _extractCourse(input);
-
-    final content = '学习了 $input。'
-        '通过本次学习，对相关内容有了初步的理解和掌握。';
-
-    final problems = _mockProblems(input);
-
-    final thoughts = '通过今天的学习，认识到理论知识需要结合具体场景来理解。'
-        '对${courseName.isNotEmpty ? courseName : '该领域'}的核心概念有了更深入的认识。';
-
-    final nextPlan = '明天继续深入学习${courseName.isNotEmpty ? courseName : '相关知识'}，'
-        '重点关注${_extractNextFocus(input)}。';
-
+    final cfg = await _storage.loadAiConfig();
+    final result = await _blueHeartClient.chatJson(
+      apiKey: apiKey, model: cfg.blueHeartModel,
+      temperature: cfg.temperature, maxTokens: cfg.maxTokens,
+      topP: cfg.topP, thinkingEnabled: cfg.thinkingEnabled,
+      systemPrompt: _sys('你需要把大学生的自然语言学习描述整理成结构化学习日志。'),
+      userPrompt: '请根据输入生成 JSON：{"courseName":"","content":"","problems":"","thoughts":"","nextPlan":""}\n输入：$input',
+    );
     return AiGeneratedLog(
-      courseName: courseName,
-      content: content,
-      problems: problems,
-      thoughts: thoughts,
-      nextPlan: nextPlan,
+      courseName: _req(result, 'courseName'), content: _req(result, 'content'),
+      problems: _str(result['problems']), thoughts: _str(result['thoughts']),
+      nextPlan: _str(result['nextPlan']),
     );
   }
 
-  Future<AiTaskPlan> _mockGenerateTaskPlan(String input) async {
-    await Future.delayed(const Duration(milliseconds: 1000));
-
+  Future<AiTaskPlan> _blueHeartGenerateTaskPlan(String input, String apiKey) async {
     if (input.trim().isEmpty) {
-      return AiTaskPlan(
-        mainTitle: '',
-        taskType: StudyTaskType.other,
-        courseName: '',
-        deadline: DateTime.now().add(const Duration(days: 7)),
-        subTasks: [],
-        schedule: '',
-      );
+      return AiTaskPlan(mainTitle: '', taskType: StudyTaskType.other,
+          courseName: '', deadline: DateTime.now().add(const Duration(days: 7)),
+          subTasks: const [], schedule: '');
     }
-
-    final courseName = _extractCourse(input);
-    final taskType = _extractTaskType(input);
-    final deadline = _extractDeadline(input);
-    final now = DateTime.now();
-    final daysUntilDeadline = deadline.difference(now).inDays.clamp(1, 30);
-    final subTasks = _mockSubTasks(taskType, daysUntilDeadline);
-    final schedule = _mockSchedule(daysUntilDeadline, subTasks);
-    final difficulty = daysUntilDeadline <= 3
-        ? '困难'
-        : daysUntilDeadline <= 7
-            ? '中等'
-            : '较轻松';
-
-    // Generate timed sub-tasks
-    final totalSubs = subTasks.length;
-    final plannedSubTasks = <AiPlannedSubTask>[];
-    for (var i = 0; i < totalSubs; i++) {
-      final offsetDays = (daysUntilDeadline * i / totalSubs).round();
-      final subDeadline = now.add(Duration(days: offsetDays + 1));
-      plannedSubTasks.add(AiPlannedSubTask(
-        title: subTasks[i],
-        deadline: DateTime(subDeadline.year, subDeadline.month,
-            subDeadline.day, 22, 0),
-        note: '第 ${offsetDays + 1} 天完成',
-      ));
-    }
-
-    return AiTaskPlan(
-      mainTitle: input,
-      taskType: taskType,
-      courseName: courseName,
-      deadline: deadline,
-      difficulty: difficulty,
-      subTasks: subTasks,
-      plannedSubTasks: plannedSubTasks,
-      schedule: schedule,
+    final cfg = await _storage.loadAiConfig();
+    final result = await _blueHeartClient.chatJson(
+      apiKey: apiKey, model: cfg.blueHeartModel,
+      temperature: cfg.temperature, maxTokens: cfg.maxTokens,
+      topP: cfg.topP, thinkingEnabled: cfg.thinkingEnabled,
+      systemPrompt: _sys('你需要把复杂学习任务拆成可执行计划。'),
+      userPrompt: '今天：${DateTime.now().toIso8601String()}\n请生成：{"mainTitle":"","taskType":"classHomework|...|other","courseName":"","deadline":"ISO8601","subTasks":[""],"schedule":""}\n输入：$input',
     );
+    final raw = result['plannedSubTasks'];
+    final planned = raw is List ? raw.whereType<Map<String, dynamic>>().map((j) => AiPlannedSubTask.fromJson(j)).toList() : <AiPlannedSubTask>[];
+    return AiTaskPlan.fromJson({...result, 'plannedSubTasks': raw ?? planned});
   }
 
-  Future<AiStudyAnalysis> _mockGenerateWeeklyAnalysis({
-    required List<StudyLogItem> logs,
-    required List<StudyTaskItem> tasks,
-    required DateTime startDate,
-    required DateTime endDate,
+  Future<AiStudyAnalysis> _blueHeartGenerateWeeklyAnalysis({
+    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks,
+    required DateTime startDate, required DateTime endDate, required String apiKey,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 1200));
-
-    final periodLogs = logs
-        .where((l) => !l.date.isBefore(startDate) && !l.date.isAfter(endDate))
-        .toList();
-    final periodTasks = tasks
-        .where((t) =>
-            !t.deadline.isBefore(startDate) && !t.deadline.isAfter(endDate))
-        .toList();
-
-    final courseCount = <String, int>{};
-    for (final log in periodLogs) {
-      final course = log.courseName.isEmpty ? '未归类' : log.courseName;
-      courseCount[course] = (courseCount[course] ?? 0) + 1;
-    }
-    final sortedCourses = courseCount.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final totalLogs = periodLogs.length;
-
-    final completed =
-        periodTasks.where((t) => t.status == StudyTaskStatus.completed).length;
-    final total = periodTasks.length;
-    final rate = total > 0 ? (completed / total * 100).toInt() : 0;
-
-    final riskTasks = periodTasks
-        .where((t) =>
-            t.status != StudyTaskStatus.completed &&
-            t.deadline.isBefore(DateTime.now().add(const Duration(days: 3))))
-        .toList();
-
+    final cfg = await _storage.loadAiConfig();
+    final result = await _blueHeartClient.chatJson(
+      apiKey: apiKey, model: cfg.blueHeartModel,
+      temperature: cfg.temperature, topP: cfg.topP,
+      thinkingEnabled: cfg.thinkingEnabled,
+      systemPrompt: _sys('你需要根据学习日志和任务数据生成分析型学习周报。'),
+      userPrompt: '分析：${_fmt(startDate)}~${_fmt(endDate)}\n日志：${_logs(logs)}\n任务：${_tasks(tasks)}\nJSON：{"mainTopics":"","courseDistribution":"","frequentProblems":"","completedTasks":"","riskTasks":"","statusEvaluation":"","nextWeekPriority":""}',
+      maxTokens: 2200,
+    );
     return AiStudyAnalysis(
-      mainTopics: _mockMainTopics(sortedCourses, totalLogs),
-      courseDistribution: _mockCourseDistribution(sortedCourses),
-      frequentProblems: _mockFrequentProblems(periodLogs),
-      completedTasks: _mockCompletedTasks(total, completed, rate, periodTasks),
-      riskTasks: _mockRiskTasksText(riskTasks),
-      statusEvaluation:
-          _mockStatusEvaluation(rate, totalLogs, riskTasks.length),
-      nextWeekPriority: _mockNextWeekPriority(riskTasks, sortedCourses),
+      mainTopics: _str(result['mainTopics']), courseDistribution: _str(result['courseDistribution']),
+      frequentProblems: _str(result['frequentProblems']), completedTasks: _str(result['completedTasks']),
+      riskTasks: _str(result['riskTasks']), statusEvaluation: _str(result['statusEvaluation']),
+      nextWeekPriority: _str(result['nextWeekPriority']),
     );
   }
 
-  Future<List<AiRiskWarning>> _mockGenerateRiskWarnings({
-    required List<StudyLogItem> logs,
-    required List<StudyTaskItem> tasks,
+  Future<List<AiRiskWarning>> _blueHeartGenerateRiskWarnings({
+    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks, required String apiKey,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    final warnings = <AiRiskWarning>[];
-    final now = DateTime.now();
-
-    // 1. 临近截止但未开始
-    for (final task
-        in tasks.where((t) => t.status == StudyTaskStatus.notStarted)) {
-      final daysLeft = task.deadline.difference(now).inDays;
-      if (daysLeft >= 0 && daysLeft <= 2) {
-        warnings.add(AiRiskWarning(
-          title: '任务即将截止：「${task.title}」',
-          description: '还有 $daysLeft 天截止，当前仍为"未开始"。'
-              '建议今天至少完成初步准备。',
-          level: daysLeft <= 1 ? RiskLevel.high : RiskLevel.medium,
-          category: 'deadline',
-        ));
-      }
-    }
-
-    // 2. 临近截止但进度较低
-    for (final task
-        in tasks.where((t) => t.status == StudyTaskStatus.inProgress)) {
-      final daysLeft = task.deadline.difference(now).inDays;
-      if (daysLeft >= 0 && daysLeft <= 1) {
-        warnings.add(AiRiskWarning(
-          title: '进度偏低：「${task.title}」',
-          description: '还剩 $daysLeft 天，仍在进行中，建议集中时间尽快完成。',
-          level: RiskLevel.high,
-          category: 'deadline',
-        ));
-      }
-    }
-
-    // 3. 某门课程多日无记录
-    final courseLastDate = <String, DateTime>{};
-    for (final log in logs) {
-      if (log.courseName.isNotEmpty) {
-        final existing = courseLastDate[log.courseName];
-        if (existing == null || log.date.isAfter(existing)) {
-          courseLastDate[log.courseName] = log.date;
-        }
-      }
-    }
-    for (final entry in courseLastDate.entries) {
-      final daysSince = now.difference(entry.value).inDays;
-      if (daysSince >= 5) {
-        warnings.add(AiRiskWarning(
-          title: '学习断档：「${entry.key}」',
-          description: '已 $daysSince 天没有学习「${entry.key}」。'
-              '如有相关任务，建议安排一次复习。',
-          level: daysSince >= 7 ? RiskLevel.high : RiskLevel.medium,
-          category: 'gap',
-        ));
-      }
-    }
-
-    // 4. 本周完成率偏低
-    final weekAgo = now.subtract(const Duration(days: 7));
-    final weekTasks =
-        tasks.where((t) => !t.deadline.isBefore(weekAgo)).toList();
-    if (weekTasks.length >= 3) {
-      final weekDone =
-          weekTasks.where((t) => t.status == StudyTaskStatus.completed).length;
-      final weekRate = weekDone / weekTasks.length;
-      if (weekRate < 0.3) {
-        warnings.add(AiRiskWarning(
-          title: '本周任务完成率偏低',
-          description:
-              '本周 $weekDone/${weekTasks.length} 已完成（${(weekRate * 100).toInt()}%），'
-              '建议重新评估任务量。',
-          level: RiskLevel.medium,
-          category: 'completionRate',
-        ));
-      }
-    }
-
-    // 5. 学习记录过少
-    final weekLogCount = logs.where((l) => !l.date.isBefore(weekAgo)).length;
-    if (weekLogCount == 0) {
-      warnings.add(AiRiskWarning(
-        title: '本周无学习记录',
-        description: '过去 7 天没有学习记录，即使少量学习也值得记录。',
-        level: RiskLevel.medium,
-        category: 'logFrequency',
-      ));
-    }
-
-    return warnings;
+    final cfg = await _storage.loadAiConfig();
+    final result = await _blueHeartClient.chatJson(
+      apiKey: apiKey, model: cfg.blueHeartModel,
+      temperature: cfg.temperature, topP: cfg.topP,
+      thinkingEnabled: cfg.thinkingEnabled,
+      systemPrompt: _sys('你需要识别大学生学习计划中的风险，只输出明确可执行的提醒。'),
+      userPrompt: '今天：${_fmt(DateTime.now())}\n日志：${_logs(logs)}\n任务：${_tasks(tasks)}\nJSON：{"warnings":[{"title":"","description":"","level":"low|medium|high","category":"deadline|gap|completionRate|logFrequency|repeatedProblem"}]}',
+      maxTokens: 1800,
+    );
+    final raw = result['warnings'];
+    if (raw is! List) throw const AiServiceException('AI 返回格式异常');
+    return raw.map((item) {
+      if (item is! Map) throw const AiServiceException('AI 返回格式异常');
+      final m = item.cast<String, dynamic>();
+      return AiRiskWarning(
+        title: _req(m, 'title'), description: _req(m, 'description'),
+        level: _riskLevel(_str(m['level'], fallback: 'medium')),
+        category: _str(m['category'], fallback: 'deadline'),
+      );
+    }).toList();
   }
 
-  Future<List<AiFlashCard>> _mockGenerateFlashCards({
-    required List<StudyLogItem> logs,
-    required int count,
+  Future<List<AiFlashCard>> _blueHeartGenerateFlashCards({
+    required List<StudyLogItem> logs, required int count, required String apiKey,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 600));
     if (logs.isEmpty) return [];
-
-    final cards = <AiFlashCard>[];
-    final courseCards = <String, List<String>>{};
-
-    for (final log in logs) {
-      final course = log.courseName.isEmpty ? '未归类' : log.courseName;
-      courseCards.putIfAbsent(course, () => []).add(log.content);
-    }
-
-    for (final entry in courseCards.entries) {
-      if (cards.length >= count) break;
-      final contents = entry.value;
-      for (var i = 0; i < contents.length && cards.length < count; i++) {
-        final content = contents[i];
-        if (content.length < 6) continue;
-        cards.add(AiFlashCard(
-          question: '关于「${entry.key}」，今天学习了什么内容？',
-          answer: content.length > 60
-              ? '${content.substring(0, 60)}...'
-              : content,
-          courseName: entry.key,
-          hint: '回顾 ${entry.key} 的核心知识点',
-        ));
-        if (cards.length < count) {
-          cards.add(AiFlashCard(
-            question: '学习「${entry.key}」时遇到了哪些问题？',
-            answer: '回顾学习过程中遇到的关键难点和思考。',
-            courseName: entry.key,
-            hint: '关注不理解的概念',
-          ));
-        }
-      }
-    }
-
-    if (cards.isEmpty) {
-      cards.add(const AiFlashCard(
-        question: '今天学习了什么？',
-        answer: '记录一些学习内容，AI 会自动生成闪卡帮助你复习。',
-        courseName: '提示',
-        hint: '先去记录学习日志吧',
-      ));
-    }
-
-    return cards.take(count).toList(growable: false);
+    final cfg = await _storage.loadAiConfig();
+    final result = await _blueHeartClient.chatJson(
+      apiKey: apiKey, model: cfg.blueHeartModel,
+      temperature: cfg.temperature, topP: cfg.topP,
+      thinkingEnabled: cfg.thinkingEnabled,
+      systemPrompt: _sys('你需要根据学习日志生成问答闪卡，帮助巩固知识点。'),
+      userPrompt: '日志：${_logs(logs)}\n生成 $count 张闪卡：{"cards":[{"question":"","answer":"","courseName":"","hint":""}]}',
+      maxTokens: 2000,
+    );
+    final raw = result['cards'];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((item) {
+      final m = item.cast<String, dynamic>();
+      final now = DateTime.now();
+      return AiFlashCard(
+        id: 'fc_ds_${now.microsecondsSinceEpoch}_${now.millisecondsSinceEpoch}',
+        question: _str(m['question'], fallback: ''),
+        answer: _str(m['answer'], fallback: ''),
+        courseName: _str(m['courseName'], fallback: ''),
+        hint: _str(m['hint']),
+        createdAt: now,
+      );
+    }).where((c) => c.question.isNotEmpty).toList();
   }
 
-  // ========== Private helpers ==========
-
-  String _extractCourse(String input) {
-    for (final kw in _courseKeywords) {
-      if (input.contains(kw)) return kw;
-    }
-    return '未归类';
+  Future<String> _blueHeartGenerateAssistantReply({
+    required String input, required List<String> context,
+    List<Map<String, dynamic>> messages = const [],
+    String? imageBase64, required String purpose, required String apiKey,
+  }) async {
+    final sp = switch (purpose) {
+      'note' => '你是 StudyTrace 的学习笔记整理助手。根据用户输入生成可直接保存的学习笔记。',
+      'task' => '你是 StudyTrace 的任务编排助手。',
+      _ => _systemPrompt,
+    };
+    final cfg = await _storage.loadAiConfig();
+    return _blueHeartClient.chatText(
+      apiKey: apiKey, model: cfg.blueHeartModel,
+      temperature: cfg.temperature, topP: cfg.topP,
+      thinkingEnabled: cfg.thinkingEnabled,
+      frequencyPenalty: cfg.frequencyPenalty,
+      presencePenalty: cfg.presencePenalty,
+      reasoningEffort: cfg.reasoningEffort,
+      systemPrompt: messages.isEmpty ? sp : null,
+      userPrompt: messages.isEmpty
+          ? [if (context.isNotEmpty) '上下文：\n${context.join('\n')}', '用户输入：$input',
+              if (purpose == 'note') '请输出简洁的学习笔记正文' else '请优先给出明确、可执行、简洁的回答。'].join('\n\n')
+          : null,
+      messages: messages.isEmpty ? null : [...messages, {'role': 'user', 'content': input}],
+      imageBase64: imageBase64,
+      maxTokens: purpose == 'note' ? 1800 : 1200,
+    );
   }
 
-  String _mockProblems(String input) {
-    if (input.contains('不理解') || input.contains('不太理解')) {
-      return '对相关概念的理解还不够深入，停留在理论层面，需要结合实际应用场景进一步学习。';
-    }
-    if (input.contains('难') || input.contains('困难')) {
-      return '学习过程中遇到一些难点，需要结合更多实例和练习来加深理解。';
-    }
-    return '学习中遇到一些需要进一步消化的概念，目前理解还处于表面层次。';
-  }
+  // ═══════════════════════════════════════════════════════════
+  // Helpers
+  // ═══════════════════════════════════════════════════════════
 
-  String _extractNextFocus(String input) {
-    if (input.contains('索引') || input.contains('B+树')) return '查询优化和索引原理';
-    if (input.contains('算法') || input.contains('排序')) return '算法复杂度分析';
-    if (input.contains('编程') || input.contains('代码')) return '代码实践和调试技巧';
-    if (input.contains('实验')) return '实验报告的完整性和结果分析';
-    return '核心概念的深入理解和应用';
-  }
+  String _sys(String task) => '你是 StudyTrace 的 AI 学习助手。$task\n只返回合法 JSON，不要返回 Markdown、注释或额外解释。\n字段内容使用简洁中文，适合大学生日常学习记录。';
 
-  StudyTaskType _extractTaskType(String input) {
-    if (input.contains('实验报告') || input.contains('lab')) {
-      return StudyTaskType.labReport;
-    }
-    if (input.contains('PPT') || input.contains('项目') || input.contains('开发')) {
-      return StudyTaskType.projectDev;
-    }
-    if (input.contains('编程') || input.contains('代码') || input.contains('程序')) {
-      return StudyTaskType.programmingHomework;
-    }
-    if (input.contains('论文') || input.contains('阅读') || input.contains('文献')) {
-      return StudyTaskType.paperReading;
-    }
-    if (input.contains('复习') || input.contains('考试') || input.contains('期末')) {
-      return StudyTaskType.examReview;
-    }
-    if (input.contains('笔记') || input.contains('读书')) {
-      return StudyTaskType.readingNotes;
-    }
-    if (input.contains('视频') || input.contains('作业')) {
-      return StudyTaskType.classHomework;
-    }
-    return StudyTaskType.other;
-  }
-
-  DateTime _extractDeadline(String input) {
-    final now = DateTime.now();
-    if (input.contains('今天')) return now;
-    if (input.contains('明天')) return now.add(const Duration(days: 1));
-    if (input.contains('后天')) return now.add(const Duration(days: 2));
-    if (input.contains('下周五')) {
-      final daysUntilFriday = (DateTime.friday - now.weekday + 7) % 7;
-      return now
-          .add(Duration(days: daysUntilFriday == 0 ? 7 : daysUntilFriday));
-    }
-    if (input.contains('月底') || input.contains('月末')) {
-      return DateTime(now.year, now.month + 1, 0);
-    }
-    return now.add(const Duration(days: 7));
-  }
-
-  List<String> _mockSubTasks(StudyTaskType type, int days) {
-    final base = <String>[
-      '阅读任务要求和评分标准',
-      '整理所需参考资料',
-    ];
-
-    switch (type) {
-      case StudyTaskType.labReport:
-        base.addAll([
-          '搭建实验环境并完成配置',
-          '运行实验并记录数据',
-          '截图保存关键过程',
-          '撰写实验报告正文',
-          '总结问题与解决方法',
-          '检查格式并提交',
-        ]);
-      case StudyTaskType.projectDev:
-        base.addAll([
-          '确定技术方案',
-          '搭建项目框架',
-          '实现核心功能',
-          '编写测试用例',
-          '调试修复 Bug',
-          '撰写项目文档',
-          '准备答辩材料',
-        ]);
-      case StudyTaskType.programmingHomework:
-        base.addAll([
-          '理解题目要求',
-          '设计算法方案',
-          '编写代码实现',
-          '本地测试验证',
-          '优化代码性能',
-          '提交并确认',
-        ]);
-      case StudyTaskType.paperReading:
-        base.addAll([
-          '浏览全文了解结构',
-          '精读引言和背景',
-          '精读方法与实验',
-          '整理论文核心观点',
-          '撰写阅读笔记',
-        ]);
-      case StudyTaskType.classHomework:
-        base.addAll([
-          '明确作业要求',
-          '整理相关资料',
-          '完成作业内容',
-          '检查并修改',
-          '按时提交',
-        ]);
-      case StudyTaskType.examReview:
-        base.addAll([
-          '整理课程知识框架',
-          '复习重点章节',
-          '做历年真题',
-          '总结常见考点',
-          '模拟考试练习',
-          '查漏补缺',
-        ]);
-      case StudyTaskType.readingNotes:
-        base.addAll([
-          '浏览全书/全文了解结构',
-          '精读重点章节',
-          '提炼核心观点',
-          '摘抄关键段落',
-          '撰写个人感悟',
-        ]);
-      case StudyTaskType.other:
-        base.addAll([
-          '明确交付标准',
-          '制定执行计划',
-          '按计划执行',
-          '定期检查进度',
-          '复核交付物',
-        ]);
-    }
-    return base;
-  }
-
-  String _mockSchedule(int days, List<String> subTasks) {
-    final buffer = StringBuffer();
-    final chunkSize = (subTasks.length / days).ceil().clamp(1, subTasks.length);
-    for (var d = 0; d < days && d * chunkSize < subTasks.length; d++) {
-      final start = d * chunkSize;
-      final end = (start + chunkSize).clamp(0, subTasks.length);
-      buffer
-          .writeln('- 第 ${d + 1} 天：${subTasks.sublist(start, end).join('、')}');
-    }
-    return buffer.toString();
-  }
-
-  String _mockMainTopics(List<MapEntry<String, int>> sorted, int total) {
-    if (sorted.isEmpty) return '本周暂无学习记录。';
-    final names = sorted.map((e) => e.key).join('、');
-    final top = sorted.first;
-    return '本周学习内容主要集中在 $names 方向，'
-        '其中「${top.key}」相关记录最多（${top.value} 条），'
-        '显示本周学习重心偏向该方向。';
-  }
-
-  String _mockCourseDistribution(List<MapEntry<String, int>> sorted) {
-    if (sorted.isEmpty) return '暂无数据。';
-    return sorted.map((e) => '- ${e.key}：${e.value} 条记录').join('\n');
-  }
-
-  String _mockFrequentProblems(List<StudyLogItem> logs) {
-    final problems = logs
-        .where((l) => l.problems.isNotEmpty)
-        .map((l) => l.problems)
-        .toList();
-    if (problems.isEmpty) return '本周记录中未发现高频问题。';
-    return problems.take(3).map((p) => '- $p').join('\n');
-  }
-
-  String _mockCompletedTasks(
-      int total, int completed, int rate, List<StudyTaskItem> tasks) {
-    if (total == 0) return '本周暂无学习任务。';
-    final eval = rate >= 80
-        ? '整体推进顺利。'
-        : rate >= 50
-            ? '部分任务有进展，仍有提升空间。'
-            : '完成度偏低，建议重新评估任务量。';
-    final sb = StringBuffer('本周完成 $completed/$total 项任务（完成率 $rate%）。$eval');
-    for (final t in tasks) {
-      final mark = t.status == StudyTaskStatus.completed ? '✓' : ' ';
-      sb.writeln('\n- [$mark] ${t.title}（${t.type.label}）');
-    }
-    return sb.toString();
-  }
-
-  String _mockRiskTasksText(List<StudyTaskItem> riskTasks) {
-    if (riskTasks.isEmpty) return '本周暂无临近截止的未完成任务。';
-    return riskTasks
-        .map((t) =>
-            '- 「${t.title}」距截止还有 ${t.deadline.difference(DateTime.now()).inDays} 天，当前状态「${t.status.label}」。')
-        .join('\n');
-  }
-
-  String _mockStatusEvaluation(int rate, int totalLogs, int riskCount) {
-    final parts = <String>[
-      if (totalLogs >= 5)
-        '本周保持了较好的学习节奏。'
-      else if (totalLogs >= 3)
-        '有基本的学习记录，建议每天坚持。'
-      else
-        '学习记录偏少，建议养成每日记录习惯。',
-      if (rate >= 80)
-        '任务完成情况良好，执行力较强。'
-      else if (rate >= 50)
-        '任务完成情况一般，需抓紧推进。'
-      else
-        '任务完成率偏低，建议优先处理未完成任务。',
-      if (riskCount > 0) '有 $riskCount 项任务存在延期风险。',
-    ];
-    if (Random().nextBool()) {
-      parts.add('从记录来看，你开始从完成任务转向理解知识背后的原理，这是积极的变化。');
-    }
-    return parts.join('');
-  }
-
-  String _mockNextWeekPriority(
-    List<StudyTaskItem> riskTasks,
-    List<MapEntry<String, int>> sortedCourses,
-  ) {
-    final parts = <String>[];
-    if (riskTasks.isNotEmpty) {
-      parts.add('优先处理存在延期风险的任务：');
-      parts.addAll(riskTasks.map((t) => '- 「${t.title}」'));
-    }
-    if (sortedCourses.isNotEmpty) {
-      parts.add('建议对「${sortedCourses.first.key}」进行复盘巩固。');
-    }
-    parts.add('将大任务拆解到每天执行，避免集中赶工。');
-    return parts.join('\n');
-  }
-
-  String _requiredString(Map<String, dynamic> json, String key) {
-    final value = json[key];
-    if (value is String && value.trim().isNotEmpty) return value.trim();
+  String _req(Map<String, dynamic> json, String key) {
+    final v = json[key];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
     throw const AiServiceException('AI 返回格式异常');
   }
 
-  String _asString(Object? value, {String fallback = ''}) {
+  String _str(Object? value, {String fallback = ''}) {
     if (value == null) return fallback;
     if (value is String) return value.trim();
     return value.toString().trim();
   }
 
-  RiskLevel _riskLevelFromName(String value) {
-    switch (value.trim()) {
-      case 'low':
-        return RiskLevel.low;
-      case 'medium':
-        return RiskLevel.medium;
-      case 'high':
-        return RiskLevel.high;
-      default:
-        throw const AiServiceException('AI 返回格式异常');
-    }
-  }
+  RiskLevel _riskLevel(String value) => switch (value.trim()) {
+    'low' => RiskLevel.low, 'medium' => RiskLevel.medium,
+    'high' => RiskLevel.high,
+    _ => throw const AiServiceException('AI 返回格式异常'),
+  };
 
-  String _fmtDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
-  }
+  String _fmt(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  String _logsJson(List<StudyLogItem> logs) {
-    return jsonEncode(logs.map((log) {
-      return {
-        'date': _fmtDate(log.date),
-        'courseName': log.courseName,
-        'content': log.content,
-        'problems': log.problems,
-        'thoughts': log.thoughts,
-        'nextPlan': log.nextPlan,
-      };
-    }).toList());
-  }
+  String _logs(List<StudyLogItem> logs) => jsonEncode(logs.map((l) => {
+    'date': _fmt(l.date), 'courseName': l.courseName,
+    'content': l.content, 'problems': l.problems,
+    'thoughts': l.thoughts, 'nextPlan': l.nextPlan,
+  }).toList());
 
-  String _tasksJson(List<StudyTaskItem> tasks) {
-    return jsonEncode(tasks.map((task) {
-      return {
-        'title': task.title,
-        'type': task.type.name,
-        'typeLabel': task.type.label,
-        'courseName': task.courseName,
-        'deadline': _fmtDate(task.deadline),
-        'status': task.status.name,
-        'statusLabel': task.status.label,
-        'note': task.note,
-      };
-    }).toList());
-  }
+  String _tasks(List<StudyTaskItem> tasks) => jsonEncode(tasks.map((t) => {
+    'title': t.title, 'type': t.type.name, 'typeLabel': t.type.label,
+    'courseName': t.courseName, 'deadline': _fmt(t.deadline),
+    'status': t.status.name, 'statusLabel': t.status.label, 'note': t.note,
+  }).toList());
 }
 
 class _AiRuntime {
-  const _AiRuntime({
-    required this.config,
-    required this.apiKey,
-  });
-
+  const _AiRuntime({required this.config, required this.apiKey});
   final AiConfig config;
   final String apiKey;
 }

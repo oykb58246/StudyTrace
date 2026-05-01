@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/weekly_report_item.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
@@ -22,8 +24,12 @@ class CourseArchivePage extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final accent = controller.primaryColor;
         final courses = controller.courseNames;
-        final reports = controller.weeklyReports;
+        final allReports = controller.weeklyReports;
+        // 按 createdAt 倒序排列（最新的在前）
+        final reports = List<WeeklyReportItem>.from(allReports)
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
         return ListView(
           key: const Key('page_course_archive'),
@@ -39,13 +45,23 @@ class CourseArchivePage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             // --- Course List ---
-            Text(
-              '课程列表',
-              style: TextStyle(
-                color: isDarkMode ? Colors.white : Colors.black,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              children: [
+                Text(
+                  '课程列表',
+                  style: TextStyle(
+                    color: isDarkMode ? Colors.white : Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                IconButton.filledTonal(
+                  tooltip: '添加课程',
+                  onPressed: () => _showAddCourseDialog(context),
+                  icon: const Icon(Icons.add_rounded, size: 20),
+                ),
+              ],
             ),
             const SizedBox(height: 14),
             if (courses.isEmpty)
@@ -57,9 +73,8 @@ class CourseArchivePage extends StatelessWidget {
                 child: Text(
                   '尚无双课程。添加学习任务或学习记录时填写课程名，这里会自动汇总。',
                   style: TextStyle(
-                    color: isDarkMode
-                        ? const Color(0xFFC2C8D6)
-                        : AppColors.body,
+                    color:
+                        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
                     height: 1.55,
                   ),
                 ),
@@ -72,6 +87,8 @@ class CourseArchivePage extends StatelessWidget {
                     key: Key('course_item_$course'),
                     borderRadius: BorderRadius.circular(28),
                     onTap: () => onViewCourse(course),
+                    onLongPress: () =>
+                        _showDeleteCourseConfirm(context, course),
                     child: GlassCard(
                       color: isDarkMode
                           ? const Color(0xFF242B37).withValues(alpha: 0.9)
@@ -83,8 +100,8 @@ class CourseArchivePage extends StatelessWidget {
                             height: 44,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(14),
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
+                              gradient: LinearGradient(
+                                colors: [accent, const Color(0xFF8D5EFF)],
                               ),
                             ),
                             child: const Icon(
@@ -153,9 +170,8 @@ class CourseArchivePage extends StatelessWidget {
                 child: Text(
                   '暂无保存的周报。在首页生成周报后保存，就会出现在这里。',
                   style: TextStyle(
-                    color: isDarkMode
-                        ? const Color(0xFFC2C8D6)
-                        : AppColors.body,
+                    color:
+                        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
                     height: 1.55,
                   ),
                 ),
@@ -168,21 +184,22 @@ class CourseArchivePage extends StatelessWidget {
                   height: 44,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: isDarkMode
-                          ? Colors.white
-                          : const Color(0xFF7040F2),
+                      foregroundColor:
+                          isDarkMode ? Colors.white : accent,
                       side: BorderSide(
                         color: isDarkMode
                             ? Colors.white24
-                            : const Color(0x337040F2),
+                            : accent.withValues(alpha: 0.2),
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                     onPressed: () {
-                      final allContent = reports.map((r) =>
-                          '--- ${_fmtDate(r.startDate)} ~ ${_fmtDate(r.endDate)} ---\n${r.content}').join('\n\n');
+                      final allContent = reports
+                          .map((r) =>
+                              '--- ${_fmtDate(r.startDate)} ~ ${_fmtDate(r.endDate)} ---\n${r.content}')
+                          .join('\n\n');
                       Clipboard.setData(ClipboardData(text: allContent));
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('全部周报已复制到剪贴板')),
@@ -190,7 +207,8 @@ class CourseArchivePage extends StatelessWidget {
                     },
                     icon: const Icon(Icons.copy_all_rounded, size: 18),
                     label: const Text('复制全部周报',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600)),
                   ),
                 ),
               ),
@@ -285,17 +303,136 @@ class CourseArchivePage extends StatelessWidget {
               color: isDarkMode
                   ? const Color(0xFF242B37).withValues(alpha: 0.92)
                   : null,
-              child: Text(
-                content,
-                style: TextStyle(
-                  color: isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-                  height: 1.65,
-                  fontSize: 14,
+              child: MarkdownBody(
+                data: content,
+                selectable: true,
+                styleSheet: MarkdownStyleSheet(
+                  p: TextStyle(
+                    color:
+                        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
+                    height: 1.65,
+                    fontSize: 14,
+                  ),
+                  h1: TextStyle(
+                    color: isDarkMode ? Colors.white : AppColors.ink,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    height: 1.5,
+                  ),
+                  h2: TextStyle(
+                    color: isDarkMode ? Colors.white : AppColors.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    height: 1.5,
+                  ),
+                  h3: TextStyle(
+                    color: isDarkMode ? Colors.white : AppColors.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    height: 1.5,
+                  ),
+                  em: TextStyle(
+                    color:
+                        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  strong: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : AppColors.ink,
+                  ),
+                  blockquote: TextStyle(
+                    color: isDarkMode ? Colors.white54 : AppColors.muted,
+                    fontSize: 14,
+                  ),
+                  code: TextStyle(
+                    backgroundColor:
+                        isDarkMode ? Colors.black26 : const Color(0xFFE8ECFF),
+                    color: isDarkMode
+                        ? const Color(0xFFB0E0E6)
+                        : const Color(0xFF5A67D8),
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showAddCourseDialog(BuildContext context) {
+    final accent = controller.primaryColor;
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('添加课程'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: '课程名称',
+            filled: true,
+            fillColor: isDarkMode
+                ? Colors.white.withValues(alpha: 0.06)
+                : const Color(0xFFF2F5FC),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              final name = ctrl.text.trim();
+              if (name.isNotEmpty) {
+                controller.addCourse(name);
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteCourseConfirm(BuildContext context, String course) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('删除课程'),
+        content: Text('确定删除课程「$course」吗？\n\n仅删除课程标签，不会删除已有的任务和日志。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF6850),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              controller.deleteCourse(course);
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('删除'),
+          ),
+        ],
       ),
     );
   }
@@ -318,13 +455,13 @@ class CourseDetailPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final accent = controller.primaryColor;
         final tasks = controller.tasksForCourse(courseName);
         final logs = controller.logsForCourse(courseName);
 
         return Scaffold(
-          backgroundColor: isDarkMode
-              ? const Color(0xFF141923)
-              : const Color(0xFFF5F7FF),
+          backgroundColor:
+              isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             foregroundColor: isDarkMode ? Colors.white : AppColors.ink,
@@ -339,10 +476,10 @@ class CourseDetailPage extends StatelessWidget {
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(30),
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
+                    colors: [accent, const Color(0xFF8D5EFF)],
                   ),
                 ),
                 child: Column(
@@ -391,9 +528,8 @@ class CourseDetailPage extends StatelessWidget {
                   child: Text(
                     '该课程暂无相关任务。',
                     style: TextStyle(
-                      color: isDarkMode
-                          ? const Color(0xFFC2C8D6)
-                          : AppColors.body,
+                      color:
+                          isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
                     ),
                   ),
                 )
@@ -411,9 +547,8 @@ class CourseDetailPage extends StatelessWidget {
                             Text(
                               task.title,
                               style: TextStyle(
-                                color: isDarkMode
-                                    ? Colors.white
-                                    : AppColors.ink,
+                                color:
+                                    isDarkMode ? Colors.white : AppColors.ink,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -430,9 +565,8 @@ class CourseDetailPage extends StatelessWidget {
                         Text(
                           '${task.type.label} · 截止：$_fmtDate(task.deadline)',
                           style: TextStyle(
-                            color: isDarkMode
-                                ? Colors.white54
-                                : AppColors.muted,
+                            color:
+                                isDarkMode ? Colors.white54 : AppColors.muted,
                             fontSize: 12,
                           ),
                         ),
@@ -459,9 +593,8 @@ class CourseDetailPage extends StatelessWidget {
                   child: Text(
                     '该课程暂无学习记录。',
                     style: TextStyle(
-                      color: isDarkMode
-                          ? const Color(0xFFC2C8D6)
-                          : AppColors.body,
+                      color:
+                          isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
                     ),
                   ),
                 )
@@ -479,9 +612,8 @@ class CourseDetailPage extends StatelessWidget {
                             Text(
                               _fmtDate(log.date),
                               style: TextStyle(
-                                color: isDarkMode
-                                    ? Colors.white
-                                    : AppColors.ink,
+                                color:
+                                    isDarkMode ? Colors.white : AppColors.ink,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
                               ),

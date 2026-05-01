@@ -21,6 +21,7 @@ class StatisticsPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final accent = controller.primaryColor;
         final logs = controller.studyLogs;
         final tasks = controller.studyTasks;
 
@@ -81,7 +82,7 @@ class StatisticsPage extends StatelessWidget {
                   label: '总任务',
                   value: '$total',
                   icon: Icons.checklist_rounded,
-                  color: const Color(0xFF7040F2),
+                  color: accent,
                   isDarkMode: isDarkMode,
                 ),
                 const SizedBox(width: 10),
@@ -232,8 +233,9 @@ class StatisticsPage extends StatelessWidget {
   }
 
   List<PieChartSectionData> _buildPieSections(Map<String, int> data) {
+    final accent = controller.primaryColor;
     final colors = [
-      const Color(0xFF7040F2),
+      accent,
       const Color(0xFF7394F9),
       const Color(0xFF4BC4A1),
       const Color(0xFFF8AA5B),
@@ -262,8 +264,9 @@ class StatisticsPage extends StatelessWidget {
   }
 
   List<Widget> _buildLegend(Map<String, int> data) {
+    final accent = controller.primaryColor;
     final colors = [
-      const Color(0xFF7040F2),
+      accent,
       const Color(0xFF7394F9),
       const Color(0xFF4BC4A1),
       const Color(0xFFF8AA5B),
@@ -299,6 +302,7 @@ class StatisticsPage extends StatelessWidget {
   }
 
   List<BarChartGroupData> _buildBarGroups(Map<int, int> counts) {
+    final accent = controller.primaryColor;
     return counts.entries.toList().asMap().entries.map((entry) {
       final i = entry.key;
       final e = entry.value;
@@ -307,7 +311,7 @@ class StatisticsPage extends StatelessWidget {
         barRods: [
           BarChartRodData(
             toY: e.value.toDouble(),
-            color: const Color(0xFF7040F2),
+            color: accent,
             width: 20,
             borderRadius: const BorderRadius.vertical(
               top: Radius.circular(6),

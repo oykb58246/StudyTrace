@@ -54,6 +54,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
@@ -73,7 +74,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
               _isSaving ? '保存中...' : '保存',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
-                color: widget.isDarkMode ? Colors.white : const Color(0xFF7040F2),
+                color: widget.isDarkMode ? Colors.white : accent,
               ),
             ),
           ),
@@ -91,8 +92,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
                 height: 100,
                 decoration: BoxDecoration(
                   gradient: _avatarImagePath == null
-                      ? const LinearGradient(
-                          colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
+                      ? LinearGradient(
+                          colors: [accent, Color(0xFF8D5EFF)],
                         )
                       : null,
                   color: _avatarImagePath != null
@@ -103,7 +104,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF7040F2).withValues(alpha: _avatarImagePath == null ? 0.3 : 0.1),
+                      color: accent.withValues(alpha: _avatarImagePath == null ? 0.3 : 0.1),
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
@@ -355,6 +356,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
   }
 
   void _showEmojiPicker() {
+    final accent = widget.controller.primaryColor;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -401,14 +403,14 @@ class _UserProfilePageState extends State<UserProfilePage> {
                     height: 56,
                     decoration: BoxDecoration(
                       color: selected
-                          ? const Color(0xFF7040F2).withValues(alpha: 0.2)
+                          ? accent.withValues(alpha: 0.2)
                           : (widget.isDarkMode
                               ? Colors.white.withValues(alpha: 0.06)
                               : const Color(0xFFF2F5FC)),
                       borderRadius: BorderRadius.circular(16),
                       border: selected
                           ? Border.all(
-                              color: const Color(0xFF7040F2), width: 2)
+                              color: accent, width: 2)
                           : null,
                     ),
                     child: Center(

@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 import '../models/analysis_item.dart';
 import '../models/ai_config.dart';
@@ -16,6 +16,7 @@ import '../services/ai_credential_service.dart';
 import '../services/deepseek_client.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_service.dart';
+import '../services/sample_data_service.dart';
 import '../services/weekly_report_service.dart';
 
 class AppDataController extends ChangeNotifier {
@@ -46,11 +47,14 @@ class AppDataController extends ChangeNotifier {
   UserProfile _userProfile = const UserProfile();
   final List<StudyNote> _studyNotes = [];
   final List<AiFlashCard> _flashCards = [];
+  final List<String> _courses = [];
 
   bool _isLoaded = false;
   bool _darkMode = false;
+  bool _skinVivo = true; // true=vivo蓝, false=传统紫
   AiConfig _aiConfig = const AiConfig();
   bool _hasDeepSeekApiKey = false;
+  bool _hasBlueHeartAppKey = true; // 蓝心内置 AppKey，默认可用
 
   // --- legacy getters ---
   List<HistoryItem> get histories => List.unmodifiable(_histories);
@@ -66,9 +70,14 @@ class AppDataController extends ChangeNotifier {
 
   bool get isLoaded => _isLoaded;
   bool get darkMode => _darkMode;
+  bool get skinVivo => _skinVivo;
   AiConfig get aiConfig => _aiConfig;
+  Color get primaryColor =>
+      _skinVivo ? const Color(0xFF4470E8) : const Color(0xFF7040F2);
   bool get hasDeepSeekApiKey => _hasDeepSeekApiKey;
-  bool get isUsingRealAi => _aiConfig.isEnabled && _hasDeepSeekApiKey;
+  bool get hasBlueHeartAppKey => _hasBlueHeartAppKey;
+  bool get isUsingRealAi =>
+      (_aiConfig.isEnabled && _hasDeepSeekApiKey) || _hasBlueHeartAppKey;
 
   int get studyStreak {
     if (_studyLogs.isEmpty) return 0;
@@ -134,8 +143,14 @@ class AppDataController extends ChangeNotifier {
     final loadedLogs = await _storage.loadStudyLogs();
     final loadedReports = await _storage.loadWeeklyReports();
     _darkMode = await _storage.loadDarkMode();
+    _skinVivo = await _storage.loadSkinVivo();
     _aiConfig = await _storage.loadAiConfig();
     _hasDeepSeekApiKey = await _credentials.hasDeepSeekApiKey();
+    _hasBlueHeartAppKey = await _credentials.hasBlueHeartAppKey();
+    final loadedCourses = await _storage.loadCourses();
+    _courses
+      ..clear()
+      ..addAll(loadedCourses);
 
     _histories
       ..clear()
@@ -157,7 +172,33 @@ class AppDataController extends ChangeNotifier {
     _studyNotes
       ..clear()
       ..addAll(loadedNotes);
+    final loadedCards = await _storage.loadFlashCards();
+    _flashCards
+      ..clear()
+      ..addAll(loadedCards);
     _isLoaded = true;
+    notifyListeners();
+  }
+
+  /// Load sample data (for testing/demo purposes with credentials "123"/"123")
+  Future<void> loadSampleData() async {
+    final sampleData = SampleDataService.generateSampleData();
+
+    _studyTasks.clear();
+    _studyLogs.clear();
+    _weeklyReports.clear();
+    _flashCards.clear();
+
+    _studyTasks.addAll(sampleData.tasks);
+    _studyLogs.addAll(sampleData.logs);
+    _weeklyReports.addAll(sampleData.reports);
+    _flashCards.addAll(sampleData.flashCards);
+
+    await _storage.saveStudyTasks(_studyTasks);
+    await _storage.saveStudyLogs(_studyLogs);
+    await _storage.saveWeeklyReports(_weeklyReports);
+    await _storage.saveFlashCardBatch(_flashCards);
+
     notifyListeners();
   }
 
@@ -417,18 +458,29 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setSkinVivo(bool value) async {
+    _skinVivo = value;
+    await _storage.saveSkinVivo(value);
+    notifyListeners();
+  }
+
   // --- AI Settings ---
 
   Future<void> saveAiSettings({
     required AiConfig config,
     String? deepSeekApiKey,
+    String? blueHeartAppKey,
   }) async {
     _aiConfig = config;
     await _storage.saveAiConfig(config);
     if (deepSeekApiKey != null && deepSeekApiKey.trim().isNotEmpty) {
       await _credentials.saveDeepSeekApiKey(deepSeekApiKey);
     }
+    if (blueHeartAppKey != null && blueHeartAppKey.trim().isNotEmpty) {
+      await _credentials.saveBlueHeartAppKey(blueHeartAppKey);
+    }
     _hasDeepSeekApiKey = await _credentials.hasDeepSeekApiKey();
+    _hasBlueHeartAppKey = await _credentials.hasBlueHeartAppKey();
     notifyListeners();
   }
 
@@ -437,6 +489,12 @@ class AppDataController extends ChangeNotifier {
     _hasDeepSeekApiKey = false;
     _aiConfig = _aiConfig.copyWith(isEnabled: false);
     await _storage.saveAiConfig(_aiConfig);
+    notifyListeners();
+  }
+
+  Future<void> deleteBlueHeartAppKey() async {
+    await _credentials.deleteBlueHeartAppKey();
+    _hasBlueHeartAppKey = false;
     notifyListeners();
   }
 
@@ -525,10 +583,112 @@ class AppDataController extends ChangeNotifier {
     return _studyNotes.where((n) => n.parentId == folderId).toList();
   }
 
-  void saveFlashCards(List<AiFlashCard> cards) {
+  List<String> get flashCardGroups {
+    final groups = _flashCards
+        .where((c) => c.groupName.isNotEmpty)
+        .map((c) => c.groupName)
+        .toSet()
+        .toList()
+      ..sort();
+    return groups;
+  }
+
+  List<AiFlashCard> flashCardsByDate(DateTime date) =>
+      _flashCards.where((c) => _sameDay(c.createdAt, date)).toList();
+
+  Future<void> loadFlashCards() async {
+    final loaded = await _storage.loadFlashCards();
+    _flashCards
+      ..clear()
+      ..addAll(loaded);
+    notifyListeners();
+  }
+
+  Future<void> saveFlashCards(List<AiFlashCard> cards) async {
     _flashCards
       ..clear()
       ..addAll(cards);
+    await _storage.saveFlashCardBatch(_flashCards);
     notifyListeners();
   }
+
+  Future<void> addFlashCards(List<AiFlashCard> cards) async {
+    _flashCards.addAll(cards);
+    await _storage.saveFlashCardBatch(_flashCards);
+    notifyListeners();
+  }
+
+  Future<void> updateFlashCard(String cardId,
+      {bool? isStarred, String? groupName}) async {
+    final i = _flashCards.indexWhere((c) => c.id == cardId);
+    if (i == -1) return;
+    _flashCards[i] =
+        _flashCards[i].copyWith(isStarred: isStarred, groupName: groupName);
+    await _storage.saveFlashCardBatch(_flashCards);
+    notifyListeners();
+  }
+
+  Future<void> deleteFlashCard(String cardId) async {
+    _flashCards.removeWhere((c) => c.id == cardId);
+    await _storage.saveFlashCardBatch(_flashCards);
+    notifyListeners();
+  }
+
+  // --- Course Management ---
+
+  List<String> get courses => List.unmodifiable(_courses);
+
+  /// Get all courses from all sources (manual + tasks + logs)
+  List<String> get allCourses {
+    final set = <String>{
+      ..._courses,
+      for (final t in _studyTasks)
+        if (t.courseName.isNotEmpty) t.courseName,
+      for (final l in _studyLogs)
+        if (l.courseName.isNotEmpty) l.courseName,
+    };
+    final sorted = set.toList()..sort();
+    return sorted;
+  }
+
+  Future<void> addCourse(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || _courses.contains(trimmed)) return;
+    _courses.add(trimmed);
+    _courses.sort();
+    await _storage.saveCourses(_courses);
+    notifyListeners();
+  }
+
+  Future<void> deleteCourse(String name) async {
+    _courses.remove(name);
+    await _storage.saveCourses(_courses);
+    notifyListeners();
+  }
+
+  Future<void> renameCourse(String oldName, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty || trimmed == oldName) return;
+    final idx = _courses.indexOf(oldName);
+    if (idx >= 0) {
+      _courses[idx] = trimmed;
+      await _storage.saveCourses(_courses);
+    }
+    for (var i = 0; i < _studyTasks.length; i++) {
+      if (_studyTasks[i].courseName == oldName) {
+        _studyTasks[i] = _studyTasks[i].copyWith(courseName: trimmed);
+      }
+    }
+    await _storage.saveStudyTasks(_studyTasks);
+    for (var i = 0; i < _studyLogs.length; i++) {
+      if (_studyLogs[i].courseName == oldName) {
+        _studyLogs[i] = _studyLogs[i].copyWith(courseName: trimmed);
+      }
+    }
+    await _storage.saveStudyLogs(_studyLogs);
+    notifyListeners();
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 }

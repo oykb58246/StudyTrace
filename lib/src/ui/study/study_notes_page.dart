@@ -157,6 +157,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
   }
 
   Widget _noteTile(StudyNote note, Color textColor, Color bodyColor) {
+    final accent = widget.controller.primaryColor;
     final isFolder = note.isFolder;
     final hasBlocks = note.blocks.isNotEmpty;
     final isSelected = _selectedNoteIds.contains(note.id);
@@ -175,7 +176,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
           onLongPress: () => _selectionMode ? _toggleNoteSelection(note) : _showNoteMenu(note),
           child: GlassCard(
             color: isSelected
-                ? const Color(0xFF7040F2).withValues(alpha: widget.isDarkMode ? 0.2 : 0.12)
+                ? accent.withValues(alpha: widget.isDarkMode ? 0.2 : 0.12)
                 : widget.isDarkMode
                     ? const Color(0xFF242B37).withValues(alpha: 0.9)
                     : null,
@@ -187,20 +188,20 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
                   child: Icon(
                     isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
                     size: 22,
-                    color: isSelected ? const Color(0xFF7040F2) : bodyColor,
+                    color: isSelected ? accent : bodyColor,
                   ),
                 ),
               ],
               Container(
                 width: 36, height: 36,
                 decoration: BoxDecoration(
-                  color: isFolder ? const Color(0xFFF8AA5B).withValues(alpha: 0.15) : const Color(0xFF7040F2).withValues(alpha: 0.12),
+                  color: isFolder ? const Color(0xFFF8AA5B).withValues(alpha: 0.15) : accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   isFolder ? Icons.folder_rounded : (hasBlocks ? Icons.article_rounded : Icons.notes_rounded),
                   size: 18,
-                  color: isFolder ? const Color(0xFFF8AA5B) : const Color(0xFF7040F2),
+                  color: isFolder ? const Color(0xFFF8AA5B) : accent,
                 ),
               ),
               const SizedBox(width: 14),
@@ -248,7 +249,9 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
         ]),
       );
 
-  Widget _buildFab() => Padding(
+  Widget _buildFab() {
+    final accent = widget.controller.primaryColor;
+    return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           FloatingActionButton.small(
@@ -261,15 +264,17 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
           const SizedBox(height: 10),
           FloatingActionButton(
             heroTag: 'new_note',
-            backgroundColor: const Color(0xFF7040F2),
+            backgroundColor: accent,
             foregroundColor: Colors.white,
             onPressed: () => _openEditor(),
             child: const Icon(Icons.add_rounded),
           ),
         ]),
       );
+  }
 
   void _createFolder() {
+    final accent = widget.controller.primaryColor;
     final ctrl = TextEditingController();
     showDialog(
       context: context,
@@ -289,7 +294,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('取消')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7040F2), foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.white),
             onPressed: () {
               final title = ctrl.text.trim();
               if (title.isNotEmpty) {
@@ -318,6 +323,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
   }
 
   void _showNoteMenu(StudyNote note) {
+    final accent = widget.controller.primaryColor;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -331,7 +337,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
           Container(width: 40, height: 4, decoration: BoxDecoration(color: widget.isDarkMode ? Colors.white24 : Colors.black26, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 18),
           ListTile(
-            leading: const Icon(Icons.edit_rounded, color: Color(0xFF7040F2)),
+            leading: Icon(Icons.edit_rounded, color: accent),
             title: const Text('打开编辑'),
             onTap: () { Navigator.of(ctx).pop(); _openEditor(note: note); },
           ),
@@ -620,6 +626,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
 
     return PopScope(
@@ -653,111 +660,150 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
               tooltip: _previewMode ? '编辑' : '预览',
               onPressed: () => setState(() => _previewMode = !_previewMode),
             ),
-            TextButton(onPressed: _save, child: const Text('保存', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF7040F2)))),
+            TextButton(onPressed: _save, child: Text('保存', style: TextStyle(fontWeight: FontWeight.w800, color: accent))),
           ],
         ),
-        body: Scrollbar(
-          controller: _scrollCtrl,
-          child: ListView(
-            controller: _scrollCtrl,
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.fromLTRB(22, 8, 22, 160),
-            children: [
-              // Title
-              TextField(
-                controller: _titleCtrl,
-                style: TextStyle(color: textColor, fontSize: 26, fontWeight: FontWeight.w800, height: 1.3),
-                decoration: InputDecoration(
-                  hintText: '无标题',
-                  hintStyle: TextStyle(color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.2) : Colors.black26),
-                  border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero,
+        body: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: _buildBody(textColor),
+        ),
+        bottomNavigationBar: _previewMode
+            ? null
+            : Container(
+                color: widget.isDarkMode ? const Color(0xFF1A1F2E) : Colors.white,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                child: SafeArea(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _blockTypes.map((t) => Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: GestureDetector(
+                              onTap: () => _addBlock(t),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF2F5FC),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Icon(_blockIcon(t), size: 14, color: textColor.withValues(alpha: 0.6)),
+                                  const SizedBox(width: 6),
+                                  Text(t.label, style: TextStyle(color: textColor.withValues(alpha: 0.6), fontSize: 12)),
+                                ]),
+                              ),
+                            ),
+                          ))
+                          .toList(),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 18),
-              // Blocks
-              if (_previewMode)
-                ..._blocks.map((b) => _blockPreview(_blocks.indexOf(b), b))
-              else ...[
-                ReorderableListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  buildDefaultDragHandles: false,
-                  itemCount: _blocks.length,
-                  onReorder: (oldIndex, newIndex) {
-                    setState(() {
-                      final block = _blocks.removeAt(oldIndex);
-                      _blocks.insert(newIndex > oldIndex ? newIndex - 1 : newIndex, block);
-                    });
-                  },
-                  itemBuilder: (context, i) {
-                    final block = _blocks[i];
-                    return Padding(
-                      key: ValueKey(block.id),
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        // Drag handle — tap for type menu, hold to drag reorder
-                        ReorderableDragStartListener(
-                          index: i,
-                          child: GestureDetector(
-                            onTap: () => _showBlockTypeMenu(i),
-                            child: Container(
-                              width: 28, height: 28,
-                              margin: const EdgeInsets.only(top: 6, right: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.transparent,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Opacity(
-                                opacity: block.type == NoteBlockType.text ? 0.45 : 0.7,
-                                child: Icon(
-                                  block.type == NoteBlockType.text ? Icons.drag_indicator_rounded : _blockIcon(block.type),
-                                  size: 14,
-                                  color: block.type == NoteBlockType.text ? textColor : const Color(0xFF7040F2),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(child: _blockEditor(i, block)),
-                        if (block.type != NoteBlockType.divider)
-                          GestureDetector(
-                            onTap: () => _removeBlock(i),
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 8, left: 4),
-                              child: Icon(Icons.close_rounded, size: 16, color: textColor.withValues(alpha: 0.2)),
-                            ),
-                          ),
-                      ]),
-                    );
-                  },
-                ),
-                // Add block buttons
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 6, runSpacing: 6,
-                  children: _blockTypes.map((t) => GestureDetector(
-                        onTap: () => _addBlock(t),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF2F5FC),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(_blockIcon(t), size: 14, color: textColor.withValues(alpha: 0.6)),
-                            const SizedBox(width: 6),
-                            Text(t.label, style: TextStyle(color: textColor.withValues(alpha: 0.6), fontSize: 12)),
-                          ]),
-                        ),
-                      ))
-                      .toList(),
-                ),
-              ],
-            ],
+      ),
+    );
+  }
+
+  Widget _buildBody(Color textColor) {
+    final accent = widget.controller.primaryColor;
+    if (_previewMode) {
+      return ListView(
+        controller: _scrollCtrl,
+        padding: const EdgeInsets.fromLTRB(22, 8, 22, 160),
+        children: [
+          TextField(
+            controller: _titleCtrl,
+            style: TextStyle(color: textColor, fontSize: 26, fontWeight: FontWeight.w800, height: 1.3),
+            decoration: InputDecoration(
+              hintText: '无标题',
+              hintStyle: TextStyle(color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.2) : Colors.black26),
+              border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero,
+            ),
+          ),
+          const SizedBox(height: 20),
+          ..._blocks.map((b) => _blockPreview(_blocks.indexOf(b), b)),
+        ],
+      );
+    }
+
+    return ReorderableListView.builder(
+      padding: const EdgeInsets.fromLTRB(22, 8, 22, 160),
+      buildDefaultDragHandles: false,
+      proxyDecorator: (child, index, animation) {
+        return AnimatedBuilder(
+          animation: animation,
+          builder: (_, child) => Material(
+            color: Colors.transparent,
+            child: Transform.scale(
+              scale: 1.02 + 0.02 * animation.value,
+              child: child,
+            ),
+          ),
+          child: child,
+        );
+      },
+      header: Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: TextField(
+          controller: _titleCtrl,
+          style: TextStyle(color: textColor, fontSize: 26, fontWeight: FontWeight.w800, height: 1.3),
+          decoration: InputDecoration(
+            hintText: '无标题',
+            hintStyle: TextStyle(color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.2) : Colors.black26),
+            border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero,
           ),
         ),
       ),
-    );
+      itemCount: _blocks.length,
+      onReorder: (oldIndex, newIndex) {
+        setState(() {
+          final moved = _blocks.removeAt(oldIndex);
+          final insertAt = newIndex > oldIndex ? newIndex - 1 : newIndex;
+          _blocks.insert(insertAt, moved);
+        });
+      },
+      itemBuilder: (context, i) {
+        final block = _blocks[i];
+        return Padding(
+          key: ValueKey(block.id),
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ReorderableDragStartListener(
+              index: i,
+              child: GestureDetector(
+                onTap: () => _showBlockTypeMenu(i),
+                child: Container(
+                  width: 28, height: 28,
+                  margin: const EdgeInsets.only(top: 6, right: 6),
+                  decoration: BoxDecoration(
+                    color: block.type == NoteBlockType.text
+                        ? Colors.transparent
+                        : accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Opacity(
+                    opacity: block.type == NoteBlockType.text ? 0.45 : 0.7,
+                    child: Icon(
+                      block.type == NoteBlockType.text ? Icons.drag_indicator_rounded : _blockIcon(block.type),
+                      size: 14,
+                      color: block.type == NoteBlockType.text ? textColor : accent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(child: _blockEditor(i, block)),
+            if (block.type != NoteBlockType.divider)
+              GestureDetector(
+                onTap: () => _removeBlock(i),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 4),
+                  child: Icon(Icons.close_rounded, size: 16, color: textColor.withValues(alpha: 0.2)),
+                ),
+              ),
+          ]),
+        );
+      },
+      );
   }
 
   IconData _blockIcon(NoteBlockType t) {
@@ -772,6 +818,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
   }
 
   void _showBlockTypeMenu(int index) {
+    final accent = widget.controller.primaryColor;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -782,7 +829,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
           Container(width: 40, height: 4, decoration: BoxDecoration(color: widget.isDarkMode ? Colors.white24 : Colors.black26, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 18),
           ..._blockTypes.map((t) => ListTile(
-                leading: Icon(_blockIcon(t), color: const Color(0xFF7040F2)),
+                leading: Icon(_blockIcon(t), color: accent),
                 title: Text(t.label),
                 onTap: () {
                   setState(() => _blocks[index] = _blocks[index].copyWith(type: t));

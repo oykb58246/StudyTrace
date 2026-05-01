@@ -5,7 +5,6 @@ import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 import '../study/ai_assistant_page.dart';
 import '../study/ai_settings_page.dart';
-import '../study/flash_card_page.dart';
 import '../study/learning_dashboard_page.dart';
 import '../study/statistics_page.dart';
 import '../study/task_planning_page.dart';
@@ -46,10 +45,7 @@ class AdminSectionPage extends StatelessWidget {
 
     // For flash card page
     if (section == AdminSection.flashCard && controller != null) {
-      return FlashCardPage(
-        isDarkMode: isDarkMode,
-        controller: controller!,
-      );
+      return const SizedBox.shrink();
     }
 
     // For AI assistant page
@@ -80,7 +76,7 @@ class AdminSectionPage extends StatelessWidget {
         controller: controller!,
       );
     }
-    final config = _configFor(section);
+    final config = _configFor(section, controller: controller);
 
     return ListView(
       key: Key('page_admin_${section.name}'),
@@ -167,7 +163,7 @@ class _AdminConfig {
   final String heroSubtitle;
 }
 
-_AdminConfig _configFor(AdminSection section) {
+_AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
   switch (section) {
     case AdminSection.overview:
       return const _AdminConfig(
@@ -177,8 +173,8 @@ _AdminConfig _configFor(AdminSection section) {
         heroSubtitle: '欢迎页、底部导航到侧边管理菜单，快速了解学习状态与各功能入口。',
       );
     case AdminSection.aiAssistant:
-      return const _AdminConfig(
-        accent: Color(0xFF7040F2),
+      return _AdminConfig(
+        accent: controller?.primaryColor ?? const Color(0xFF4470E8),
         subtitle: 'AI 学习日志生成、任务拆解、周报分析和风险提醒。',
         heroTitle: 'AI 学习助手',
         heroSubtitle:
@@ -192,8 +188,8 @@ _AdminConfig _configFor(AdminSection section) {
         heroSubtitle: '自由书写课堂重点、代码片段、学习心得，按课程分类管理，支持搜索和回顾。',
       );
     case AdminSection.statistics:
-      return const _AdminConfig(
-        accent: Color(0xFF7040F2),
+      return _AdminConfig(
+        accent: controller?.primaryColor ?? const Color(0xFF4470E8),
         subtitle: '学习数据统计图表与完成率分析。',
         heroTitle: '学习统计看板',
         heroSubtitle: '课程分布饼图、近7天学习趋势、任务完成率一目了然。',

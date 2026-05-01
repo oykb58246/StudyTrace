@@ -194,11 +194,11 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.overview:
         return const Color(0xFF7D9BFF);
       case AdminSection.aiAssistant:
-        return const Color(0xFF7040F2);
+        return const Color(0xFF4470E8);
       case AdminSection.notes:
         return const Color(0xFF4CB9FF);
       case AdminSection.statistics:
-        return const Color(0xFF7040F2);
+        return const Color(0xFF4470E8);
       case AdminSection.timer:
         return const Color(0xFF4BC4A1);
       case AdminSection.flashCard:

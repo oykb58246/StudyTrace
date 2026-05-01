@@ -101,6 +101,16 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       return;
     }
 
+    // Check if credentials are filled
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() => _ctaState = _CtaState.error);
+      await Future<void>.delayed(const Duration(milliseconds: 520));
+      if (mounted) {
+        setState(() => _ctaState = _CtaState.idle);
+      }
+      return;
+    }
+
     setState(() => _ctaState = _CtaState.loading);
     await Future<void>.delayed(const Duration(milliseconds: 820));
     if (!mounted) {
@@ -119,11 +129,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       return;
     }
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => const AppShell(),
-      ),
-    );
+    // Check if this is the sample data account
+    final shouldLoadSampleData =
+        _emailController.text == '123' && _passwordController.text == '123';
+
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => AppShell(
+            shouldLoadSampleData: shouldLoadSampleData,
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -211,7 +229,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               valueListenable: _pageIndex,
                               builder: (context, pageIndex, _) {
                                 return _PrimaryActionButton(
-                                  key: ValueKey('primary_button_${pageIndex}_$_isRegisterMode'),
+                                  key: ValueKey(
+                                      'primary_button_${pageIndex}_$_isRegisterMode'),
                                   progress: progress,
                                   isLoginPage: pageIndex == 1,
                                   isRegisterMode: _isRegisterMode,
@@ -488,7 +507,8 @@ class _LoginPageState extends State<_LoginPage> {
             ),
           const SizedBox(height: 16),
           TextFormField(
-            key: ValueKey(isRegister ? 'signup_password_field' : 'login_password_field'),
+            key: ValueKey(
+                isRegister ? 'signup_password_field' : 'login_password_field'),
             controller: widget.passwordController,
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
@@ -511,7 +531,7 @@ class _LoginPageState extends State<_LoginPage> {
             child: Text(
               isRegister ? '已有账号？去登录' : '没有账号？去注册',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF7040F2),
+                    color: const Color(0xFF4470E8),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -572,8 +592,7 @@ class _AnimatedPrimaryActionButton extends StatefulWidget {
 }
 
 class _AnimatedPrimaryActionButtonState
-    extends State<_AnimatedPrimaryActionButton>
-    with TickerProviderStateMixin {
+    extends State<_AnimatedPrimaryActionButton> with TickerProviderStateMixin {
   late final AnimationController _pressController;
   late final Animation<double> _pressScale;
   late final Animation<double> _shineOffset;
@@ -761,7 +780,9 @@ class _AnimatedPrimaryActionButtonState
                                       ),
                                     if (isLoading)
                                       Text(
-                                        widget.isRegisterMode ? '注册中...' : '登录中...',
+                                        widget.isRegisterMode
+                                            ? '注册中...'
+                                            : '登录中...',
                                         maxLines: 1,
                                         overflow: TextOverflow.fade,
                                         softWrap: false,
@@ -788,46 +809,48 @@ class _AnimatedPrimaryActionButtonState
                               ),
                             ),
                             const SizedBox(width: 10),
-                              SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: ExcludeSemantics(
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 180),
-                                    child: isSuccess
-                                        ? const SafeRiveAsset(
-                                            key: ValueKey('cta_success_icon'),
-                                            asset: AppAssets.check,
-                                            artboard: 'check_artboard',
-                                            animations: ['Check'],
-                                            width: 20,
-                                            height: 20,
-                                          )
-                                        : isError
-                                            ? _RiveStatusIcon(
-                                                key: ValueKey(
-                                                  'cta_status_${widget.state.name}',
+                            SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: ExcludeSemantics(
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 180),
+                                  child: isSuccess
+                                      ? const SafeRiveAsset(
+                                          key: ValueKey('cta_success_icon'),
+                                          asset: AppAssets.check,
+                                          artboard: 'check_artboard',
+                                          animations: ['Check'],
+                                          width: 20,
+                                          height: 20,
+                                        )
+                                      : isError
+                                          ? _RiveStatusIcon(
+                                              key: ValueKey(
+                                                'cta_status_${widget.state.name}',
+                                              ),
+                                              state: widget.state,
+                                            )
+                                          : isLoading
+                                              ? const SafeRiveAsset(
+                                                  key: ValueKey(
+                                                      'cta_loading_icon'),
+                                                  asset: AppAssets.button,
+                                                  artboard: 'main',
+                                                  animations: ['active'],
+                                                  width: 20,
+                                                  height: 20,
+                                                )
+                                              : const Icon(
+                                                  Icons.arrow_forward_rounded,
+                                                  key: ValueKey(
+                                                      'cta_arrow_icon'),
+                                                  color: Colors.white,
+                                                  size: 18,
                                                 ),
-                                                state: widget.state,
-                                              )
-                                            : isLoading
-                                                ? const SafeRiveAsset(
-                                                    key: ValueKey('cta_loading_icon'),
-                                                    asset: AppAssets.button,
-                                                    artboard: 'main',
-                                                    animations: ['active'],
-                                                    width: 20,
-                                                    height: 20,
-                                                  )
-                                                : const Icon(
-                                                    Icons.arrow_forward_rounded,
-                                                    key: ValueKey('cta_arrow_icon'),
-                                                    color: Colors.white,
-                                                    size: 18,
-                                                  ),
-                                  ),
                                 ),
                               ),
+                            ),
                           ],
                         ),
                       ],

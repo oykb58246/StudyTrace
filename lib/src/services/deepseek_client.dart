@@ -20,31 +20,36 @@ class DeepSeekClient {
 
   final http.Client _httpClient;
 
-  Future<Map<String, dynamic>> chatJson({
+  Future<String> chatText({
     required AiConfig config,
     required String apiKey,
     required String systemPrompt,
     required String userPrompt,
-    double temperature = 0.2,
-    int maxTokens = 1800,
+    double temperature = 0.7,
+    int maxTokens = 1200,
+    bool includeJsonResponseFormat = false,
   }) async {
     final uri = Uri.parse(_joinUrl(config.baseUrl, '/chat/completions'));
+    final payload = <String, dynamic>{
+      'model': config.model,
+      'messages': [
+        {'role': 'system', 'content': systemPrompt},
+        {'role': 'user', 'content': userPrompt},
+      ],
+      'temperature': temperature,
+      'max_tokens': maxTokens,
+    };
+    if (includeJsonResponseFormat) {
+      payload['response_format'] = {'type': 'json_object'};
+    }
+
     final response = await _httpClient.post(
       uri,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $apiKey',
       },
-      body: jsonEncode({
-        'model': config.model,
-        'messages': [
-          {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': userPrompt},
-        ],
-        'response_format': {'type': 'json_object'},
-        'temperature': temperature,
-        'max_tokens': maxTokens,
-      }),
+      body: jsonEncode(payload),
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -71,6 +76,26 @@ class DeepSeekClient {
     if (content is! String || content.trim().isEmpty) {
       throw const AiServiceException('AI 返回格式异常');
     }
+    return content.trim();
+  }
+
+  Future<Map<String, dynamic>> chatJson({
+    required AiConfig config,
+    required String apiKey,
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.2,
+    int maxTokens = 1800,
+  }) async {
+    final content = await chatText(
+      config: config,
+      apiKey: apiKey,
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      temperature: temperature,
+      maxTokens: maxTokens,
+      includeJsonResponseFormat: true,
+    );
     return _decodeJsonObject(content);
   }
 

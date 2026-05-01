@@ -3,6 +3,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/study_log_item.dart';
+import '../../models/study_task_item.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
@@ -41,11 +42,17 @@ class _CalendarPageState extends State<CalendarPage> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
+        final accent = widget.controller.primaryColor;
         final logs = widget.controller.studyLogs;
+        final tasks = widget.controller.studyTasks;
         final logsByDate = _groupLogsByDate(logs);
+        final tasksByDate = _groupTasksByDate(tasks);
         final selectedDayLogs = _selectedDay != null
             ? logsByDate[_selectedDay!] ?? []
             : <StudyLogItem>[];
+        final selectedDayTasks = _selectedDay != null
+            ? tasksByDate[_selectedDay!] ?? []
+            : <StudyTaskItem>[];
 
         return ListView(
           key: const Key('page_calendar'),
@@ -103,21 +110,21 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                   formatButtonDecoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
-                    color: const Color(0xFF7040F2).withValues(alpha: 0.15),
+                    color: accent.withValues(alpha: 0.15),
                   ),
-                  formatButtonTextStyle: const TextStyle(
-                    color: Color(0xFF7040F2),
+                  formatButtonTextStyle: TextStyle(
+                    color: accent,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
                 ),
                 calendarStyle: CalendarStyle(
-                  selectedDecoration: const BoxDecoration(
-                    color: Color(0xFF7040F2),
+                  selectedDecoration: BoxDecoration(
+                    color: accent,
                     shape: BoxShape.circle,
                   ),
                   todayDecoration: BoxDecoration(
-                    color: const Color(0xFF7040F2).withValues(alpha: 0.3),
+                    color: accent.withValues(alpha: 0.3),
                     shape: BoxShape.circle,
                   ),
                   markerDecoration: const BoxDecoration(
@@ -160,13 +167,39 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 ),
               ),
-            if (selectedDayLogs.isEmpty && _selectedDay != null)
+            if (selectedDayTasks.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '日程任务',
+                  style: TextStyle(
+                    color: widget.isDarkMode ? Colors.white70 : AppColors.muted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ...selectedDayTasks.map((t) => _taskCard(t)),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '学习记录',
+                  style: TextStyle(
+                    color: widget.isDarkMode ? Colors.white70 : AppColors.muted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+            if (selectedDayLogs.isEmpty && selectedDayTasks.isEmpty && _selectedDay != null)
               GlassCard(
                 color: widget.isDarkMode
                     ? const Color(0xFF242B37).withValues(alpha: 0.9)
                     : null,
                 child: Text(
-                  '当天没有学习记录。',
+                  '当天没有学习记录或任务。',
                   style: TextStyle(
                     color: widget.isDarkMode
                         ? const Color(0xFFC2C8D6)
@@ -175,7 +208,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 ),
               )
-            else
+            else if (selectedDayLogs.isNotEmpty)
               for (final log in selectedDayLogs) ...[
                 GlassCard(
                   color: widget.isDarkMode
@@ -226,6 +259,92 @@ class _CalendarPageState extends State<CalendarPage> {
           ],
         );
       },
+    );
+  }
+
+  Map<DateTime, List<StudyTaskItem>> _groupTasksByDate(
+    List<StudyTaskItem> tasks,
+  ) {
+    final map = <DateTime, List<StudyTaskItem>>{};
+    for (final task in tasks) {
+      final day = DateTime(
+          task.deadline.year, task.deadline.month, task.deadline.day);
+      map.putIfAbsent(day, () => []).add(task);
+    }
+    return map;
+  }
+
+  Widget _taskCard(StudyTaskItem task) {
+    final statusColor = switch (task.status) {
+      StudyTaskStatus.completed => const Color(0xFF4BC4A1),
+      StudyTaskStatus.inProgress => const Color(0xFFF8AA5B),
+      StudyTaskStatus.notStarted => const Color(0xFFF77D8E),
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GlassCard(
+        color: widget.isDarkMode
+            ? const Color(0xFF242B37).withValues(alpha: 0.9)
+            : null,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 36,
+              decoration: BoxDecoration(
+                color: statusColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title,
+                    style: TextStyle(
+                      color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (task.courseName.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${task.type.label} · ${task.courseName}',
+                      style: TextStyle(
+                        color: widget.isDarkMode
+                            ? Colors.white38
+                            : Colors.black38,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: statusColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                task.status.label,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

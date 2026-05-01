@@ -17,18 +17,21 @@ class HomePage extends StatelessWidget {
     required this.controller,
     required this.onGenerateReport,
     this.onOpenAiAssistant,
+    this.onOpenAiChat,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
   final VoidCallback onGenerateReport;
   final VoidCallback? onOpenAiAssistant;
+  final VoidCallback? onOpenAiChat;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final accent = controller.primaryColor;
         final logs = controller.studyLogs;
         final tasks = controller.studyTasks;
 
@@ -88,7 +91,7 @@ class HomePage extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      const Color(0xFF7040F2),
+                      accent,
                       const Color(0xFF8D5EFF).withValues(alpha: 0.85),
                     ],
                   ),
@@ -132,10 +135,23 @@ class HomePage extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: Colors.white.withValues(alpha: 0.7),
-                      size: 16,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onOpenAiChat != null)
+                          IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: onOpenAiChat,
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Colors.white),
+                            tooltip: '直接对话',
+                          ),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          size: 16,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -226,10 +242,10 @@ class HomePage extends StatelessWidget {
               padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(30),
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
+                  colors: [accent, const Color(0xFF8D5EFF)],
                 ),
               ),
               child: Column(
@@ -266,7 +282,7 @@ class HomePage extends StatelessWidget {
                       key: const Key('generate_report_button'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF7040F2),
+                        foregroundColor: accent,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(18),
                         ),
@@ -319,8 +335,8 @@ class HomePage extends StatelessWidget {
                         totalTasks > 0
                             ? '${(progress * 100).toInt()}%'
                             : '0%',
-                        style: const TextStyle(
-                          color: Color(0xFF7040F2),
+                        style: TextStyle(
+                          color: accent,
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
                         ),
@@ -336,7 +352,7 @@ class HomePage extends StatelessWidget {
                         backgroundColor: isDarkMode
                             ? Colors.white.withValues(alpha: 0.1)
                             : const Color(0xFFE8EBF5),
-                        color: const Color(0xFF7040F2),
+                        color: accent,
                         minHeight: 8,
                       ),
                     ),
@@ -464,13 +480,14 @@ class _QuickActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = controller.primaryColor;
     return Row(
       children: [
         Expanded(
           child: _ActionButton(
             icon: Icons.keyboard_voice_rounded,
             label: '语音创建任务',
-            color: const Color(0xFF7040F2),
+            color: accent,
             isDarkMode: isDarkMode,
             onTap: () => _startVoiceTask(context),
           ),
@@ -539,7 +556,7 @@ class _ActionButton extends StatelessWidget {
                 ? null
                 : [
                     BoxShadow(
-                      color: const Color(0xFF7040F2).withValues(alpha: 0.08),
+                      color: color.withValues(alpha: 0.08),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -728,6 +745,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
@@ -775,7 +793,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
               height: 48,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7040F2),
+                  backgroundColor: accent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -829,19 +847,18 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: _isListening
-                        ? const LinearGradient(colors: [
-                            Color(0xFFFF6B35),
-                            Color(0xFF7040F2),
+                        ? LinearGradient(colors: [
+                            const Color(0xFFFF6B35),
+                            accent,
                           ])
-                        : const LinearGradient(colors: [
-                            Color(0xFF7040F2),
-                            Color(0xFF8D5EFF),
+                        : LinearGradient(colors: [
+                            accent,
+                            const Color(0xFF8D5EFF),
                           ]),
                     boxShadow: _isListening
                         ? [
                             BoxShadow(
-                              color: const Color(0xFF7040F2)
-                                  .withValues(alpha: 0.4),
+                              color: accent.withValues(alpha: 0.4),
                               blurRadius: 24,
                               offset: const Offset(0, 8),
                             ),
@@ -893,7 +910,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
                 height: 48,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7040F2),
+                    backgroundColor: accent,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16)),

@@ -44,6 +44,7 @@ class TaskPlanningPage extends StatelessWidget {
                 t.deadline.isBefore(weekEnd))
             .toList();
 
+        final accent = controller.primaryColor;
         final textColor = isDarkMode ? Colors.white : AppColors.ink;
         final bodyColor =
             isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
@@ -61,21 +62,21 @@ class TaskPlanningPage extends StatelessWidget {
             if (overdueTasks.isNotEmpty) ...[
               _sectionHeader('⚠️ 逾期任务', const Color(0xFFEF6850), textColor),
               const SizedBox(height: 10),
-              ...overdueTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor)),
+              ...overdueTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor, accent)),
               const SizedBox(height: 18),
             ],
             // Today
             if (todayTasks.isNotEmpty) ...[
               _sectionHeader('📅 今日待办', const Color(0xFFF8AA5B), textColor),
               const SizedBox(height: 10),
-              ...todayTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor)),
+              ...todayTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor, accent)),
               const SizedBox(height: 18),
             ],
             // This week
             if (weekTasks.isNotEmpty) ...[
               _sectionHeader('📆 本周待办', const Color(0xFF7394F9), textColor),
               const SizedBox(height: 10),
-              ...weekTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor)),
+              ...weekTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor, accent)),
             ],
             if (overdueTasks.isEmpty && todayTasks.isEmpty && weekTasks.isEmpty)
               GlassCard(
@@ -101,14 +102,14 @@ Widget _sectionHeader(String title, Color color, Color textColor) {
   );
 }
 
-Widget _planTaskCard(StudyTaskItem task, bool isDarkMode, Color textColor, Color bodyColor) {
+Widget _planTaskCard(StudyTaskItem task, bool isDarkMode, Color textColor, Color bodyColor, Color accent) {
   final progress = task.progress;
   final progressColor =
       task.effectiveStatus == StudyTaskStatus.completed
           ? const Color(0xFF4BC4A1)
           : task.deadline.isBefore(DateTime.now())
               ? const Color(0xFFEF6850)
-              : const Color(0xFF7040F2);
+              : accent;
 
   return GlassCard(
     color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,

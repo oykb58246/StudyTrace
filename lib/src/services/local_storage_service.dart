@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ai_config.dart';
+import '../models/ai_flash_card.dart';
 import '../models/history_item.dart';
 import '../models/study_log_item.dart';
 import '../models/study_note.dart';
@@ -18,6 +19,7 @@ class LocalStorageService {
   static const _studyLogsKey = 'studytrace_logs_v1';
   static const _weeklyReportsKey = 'studytrace_weekly_reports_v1';
   static const _darkModeKey = 'studytrace_dark_mode_v1';
+  static const _skinVivoKey = 'studytrace_skin_vivo_v1';
   static const _aiConfigKey = 'studytrace_ai_config_v1';
 
   // --- Histories ---
@@ -153,6 +155,16 @@ class LocalStorageService {
     await prefs.setBool(_darkModeKey, value);
   }
 
+  Future<bool> loadSkinVivo() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_skinVivoKey) ?? true; // 默认vivo蓝
+  }
+
+  Future<void> saveSkinVivo(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_skinVivoKey, value);
+  }
+
   // --- AI Config ---
 
   Future<AiConfig> loadAiConfig() async {
@@ -217,5 +229,54 @@ class LocalStorageService {
     final prefs = await SharedPreferences.getInstance();
     final raw = jsonEncode(notes.map((item) => item.toJson()).toList());
     await prefs.setString(_notesKey, raw);
+  }
+
+  // --- Flash Cards ---
+  static const _flashCardsKey = 'studytrace_flash_cards_v1';
+
+  Future<List<AiFlashCard>> loadFlashCards() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_flashCardsKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((item) => AiFlashCard.fromJson(item.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveFlashCardBatch(List<AiFlashCard> cards) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = jsonEncode(cards.map((c) => c.toJson()).toList());
+    await prefs.setString(_flashCardsKey, raw);
+  }
+
+  Future<String?> getString(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(key);
+  }
+
+  Future<void> setString(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, value);
+  }
+
+  // --- 课程管理 ---
+  static const _coursesKey = 'studytrace_courses_v1';
+
+  Future<List<String>> loadCourses() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_coursesKey);
+    return raw ?? const [];
+  }
+
+  Future<void> saveCourses(List<String> courses) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_coursesKey, courses);
   }
 }

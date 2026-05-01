@@ -42,14 +42,26 @@ class _TimerPageState extends State<TimerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
-    return ListView(
-      key: const Key('page_timer'),
-      padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
-      children: [
+    return Scaffold(
+      backgroundColor:
+          widget.isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: titleColor,
+        title: const Text(
+          '学习计时器',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: ListView(
+        key: const Key('page_timer'),
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 124),
+        children: [
         Text('学习计时器',
             style: TextStyle(
                 color: titleColor, fontSize: 24, fontWeight: FontWeight.w700)),
@@ -67,7 +79,7 @@ class _TimerPageState extends State<TimerPage> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                    color: const Color(0xFF7040F2).withValues(alpha: 0.3),
+                    color: accent.withValues(alpha: 0.3),
                     width: 3),
                 color: widget.isDarkMode
                     ? Colors.white.withValues(alpha: 0.04)
@@ -116,7 +128,7 @@ class _TimerPageState extends State<TimerPage> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   color: isSelected
-                      ? const Color(0xFF7040F2)
+                      ? accent
                       : widget.isDarkMode
                           ? const Color(0xFF2A3040)
                           : const Color(0xFFEEF1FA),
@@ -187,7 +199,7 @@ class _TimerPageState extends State<TimerPage> {
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: titleColor,
-                side: BorderSide(color: widget.isDarkMode ? Colors.white24 : const Color(0x337040F2)),
+                side: BorderSide(color: widget.isDarkMode ? Colors.white24 : accent.withValues(alpha: 0.2)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               onPressed: () {
@@ -197,6 +209,7 @@ class _TimerPageState extends State<TimerPage> {
                       isDarkMode: widget.isDarkMode,
                       sessions: _sessionHistory,
                       totalCount: _sessionCount,
+                      accentColor: accent,
                     ),
                   ),
                 );
@@ -242,11 +255,13 @@ class _TimerPageState extends State<TimerPage> {
               ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
   void _showCustomTimePicker() {
+    final accent = widget.controller.primaryColor;
     final controller = TextEditingController(text: '$_customMinutes');
     showDialog(
       context: context,
@@ -292,7 +307,7 @@ class _TimerPageState extends State<TimerPage> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF7040F2),
+              backgroundColor: accent,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
@@ -414,6 +429,7 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
   }
 
   void _showCompleteDialog() {
+    final accent = widget.controller.primaryColor;
     HapticFeedback.heavyImpact();
     showDialog(
       context: context,
@@ -468,7 +484,7 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF7040F2),
+              backgroundColor: accent,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
@@ -488,6 +504,7 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
   }
 
   Future<void> _showAiLogSheet() async {
+    final accent = widget.controller.primaryColor;
     final descriptionController = TextEditingController();
     AiGeneratedLog? generatedLog;
     var isGenerating = false;
@@ -569,7 +586,7 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                   height: 44,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7040F2),
+                      backgroundColor: accent,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14)),
@@ -958,10 +975,12 @@ class _FocusHistoryPage extends StatelessWidget {
     required this.isDarkMode,
     required this.sessions,
     required this.totalCount,
+    required this.accentColor,
   });
   final bool isDarkMode;
   final List<_FocusSession> sessions;
   final int totalCount;
+  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -991,7 +1010,7 @@ class _FocusHistoryPage extends StatelessWidget {
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(24),
-                    gradient: const LinearGradient(colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)]),
+                    gradient: LinearGradient(colors: [accentColor, const Color(0xFF8D5EFF)]),
                   ),
                   child: Row(
                     children: [

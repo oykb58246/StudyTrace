@@ -7,6 +7,9 @@ class AiCredentialService {
   }) : _storage = storage ?? const FlutterSecureStorage();
 
   static const _deepSeekApiKey = 'studytrace_deepseek_api_key_v1';
+  static const _blueHeartAppKey = 'studytrace_blueheart_app_key_v1';
+  // 蓝心 AppKey - 已内置
+  static const _embeddedBlueHeartAppKey = 'sk-xuanji-2026702831-aXhDYXVUY3lVSlZLZUhRcA==';
 
   final FlutterSecureStorage _storage;
 
@@ -40,6 +43,51 @@ class AiCredentialService {
   Future<void> deleteDeepSeekApiKey() async {
     try {
       await _storage.delete(key: _deepSeekApiKey);
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  Future<String?> loadBlueHeartAppKey() async {
+    try {
+      final value = await _storage.read(key: _blueHeartAppKey);
+      if (value == null || value.trim().isEmpty) {
+        return _embeddedBlueHeartAppKey.trim().isNotEmpty
+            ? _embeddedBlueHeartAppKey.trim()
+            : null;
+      }
+      return value.trim();
+    } on MissingPluginException {
+      return _embeddedBlueHeartAppKey.trim().isNotEmpty
+          ? _embeddedBlueHeartAppKey.trim()
+          : null;
+    } on PlatformException {
+      return _embeddedBlueHeartAppKey.trim().isNotEmpty
+          ? _embeddedBlueHeartAppKey.trim()
+          : null;
+    }
+  }
+
+  Future<bool> hasBlueHeartAppKey() async {
+    final key = await loadBlueHeartAppKey();
+    return key != null && key.isNotEmpty;
+  }
+
+  Future<void> saveBlueHeartAppKey(String appKey) async {
+    final cleaned = appKey.trim();
+    if (cleaned.isEmpty) return;
+    try {
+      await _storage.write(key: _blueHeartAppKey, value: cleaned);
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<void> deleteBlueHeartAppKey() async {
+    try {
+      await _storage.delete(key: _blueHeartAppKey);
     } on MissingPluginException {
       return;
     } on PlatformException {

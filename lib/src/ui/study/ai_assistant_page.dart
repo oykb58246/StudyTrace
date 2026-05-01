@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -15,6 +17,7 @@ import '../../services/ai_study_service.dart';
 import '../../services/deepseek_client.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
+import 'ai_chat_page.dart';
 
 enum _SmartInputTarget { log, task }
 
@@ -70,6 +73,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final titleColor = widget.isDarkMode ? Colors.white : Colors.black;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
@@ -86,11 +90,11 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
               height: 44,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                color: const Color(0xFF7040F2).withValues(alpha: 0.15),
+                color: accent.withValues(alpha: 0.15),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.auto_awesome_rounded,
-                color: Color(0xFF7040F2),
+                color: accent,
                 size: 24,
               ),
             ),
@@ -114,6 +118,21 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AiChatPage(
+                      isDarkMode: widget.isDarkMode,
+                      controller: widget.controller,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+              label: const Text('AI 对话'),
             ),
           ],
         ),
@@ -199,7 +218,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         // 2. AI 拆解学习任务
         _buildSectionCard(
           icon: Icons.account_tree_rounded,
-          iconColor: const Color(0xFF7040F2),
+          iconColor: accent,
           title: 'AI 拆解学习任务',
           subtitle: '输入复杂任务描述，自动生成子任务和安排建议',
           child: Column(
@@ -227,7 +246,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 height: 44,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7040F2),
+                    backgroundColor: accent,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
@@ -262,6 +281,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
             isDarkMode: widget.isDarkMode,
             plan: _taskPlan!,
             onAddTask: _handleAddTask,
+            accentColor: accent,
           ),
         ],
 
@@ -450,11 +470,23 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
   Widget _buildAiModeBanner() {
     final usingRealAi = widget.controller.isUsingRealAi;
-    final color =
-        usingRealAi ? const Color(0xFF4BC4A1) : const Color(0xFFF8AA5B);
+    final hasBlueHeart = widget.controller.hasBlueHeartAppKey;
+    final hasDeepSeek = widget.controller.hasDeepSeekApiKey;
+    final color = hasBlueHeart
+        ? const Color(0xFF4470E8)
+        : hasDeepSeek && widget.controller.aiConfig.isEnabled
+            ? const Color(0xFF4BC4A1)
+            : const Color(0xFFF8AA5B);
     final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+
+    final (String label, String detail) = hasBlueHeart
+        ? ('蓝心大模型', widget.controller.aiConfig.blueHeartModel)
+        : hasDeepSeek && widget.controller.aiConfig.isEnabled
+            ? ('DeepSeek', widget.controller.aiConfig.model)
+            : ('未配置 AI', '请在设置中配置 AI 服务');
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -475,7 +507,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  usingRealAi ? 'DeepSeek 已启用' : '演示模式',
+                  label,
                   style: TextStyle(
                     color: textColor,
                     fontWeight: FontWeight.w800,
@@ -484,9 +516,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  usingRealAi
-                      ? widget.controller.aiConfig.model
-                      : '配置 API Key 后使用真实模型',
+                  detail,
                   style: TextStyle(color: bodyColor, fontSize: 12),
                 ),
               ],
@@ -543,7 +573,8 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     required VoidCallback onPressed,
     bool isActive = false,
   }) {
-    final color = isActive ? const Color(0xFFF77D8E) : const Color(0xFF7040F2);
+    final accent = widget.controller.primaryColor;
+    final color = isActive ? const Color(0xFFF77D8E) : accent;
     return Tooltip(
       message: tooltip,
       child: SizedBox(
@@ -606,23 +637,37 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         return;
       }
 
+      // 优先使用蓝心 Vision（图片理解），回退到 OCR
+      final bytes = await picked.readAsBytes();
+      final imageBase64 = base64Encode(bytes);
       String text;
       try {
-        final recognizer = TextRecognizer(
-          script: TextRecognitionScript.chinese,
-        );
-        final result = await recognizer.processImage(inputImage);
-        await recognizer.close();
-        text = result.text.trim();
+        if (widget.controller.hasBlueHeartAppKey) {
+          // 蓝心 Vision：AI 分析图片内容
+          text = await _aiService.generateAssistantReply(
+            input: target == _SmartInputTarget.log
+                ? '请详细描述这张图片的内容，提取关键信息用于学习记录'
+                : '请分析这张图片的任务要求，提取关键信息',
+            imageBase64: imageBase64,
+          );
+        } else {
+          // 回退到设备端 OCR
+          final recognizer = TextRecognizer(
+            script: TextRecognitionScript.chinese,
+          );
+          final result = await recognizer.processImage(inputImage);
+          await recognizer.close();
+          text = result.text.trim();
+        }
       } catch (_) {
-        // Fallback: try Latin recognizer if Chinese not available
+        // Fallback OCR
         try {
           final recognizer = TextRecognizer();
           final result = await recognizer.processImage(inputImage);
           await recognizer.close();
           text = result.text.trim();
         } catch (e) {
-          _showSnack('文字识别服务暂不可用，请确保已安装 Google Play 服务');
+          _showSnack('图片识别失败，请重试');
           return;
         }
       }
@@ -833,6 +878,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   }
 
   Future<void> _handleAddTask() async {
+    final accent = widget.controller.primaryColor;
     if (_taskPlan == null) return;
     final plan = _taskPlan!;
 
@@ -875,9 +921,9 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('AI 任务已添加到任务列表'),
-        backgroundColor: Color(0xFF7040F2),
+      SnackBar(
+        content: const Text('AI 任务已添加到任务列表'),
+        backgroundColor: accent,
       ),
     );
     setState(() {
@@ -1188,11 +1234,13 @@ class _TaskPlanResultCard extends StatelessWidget {
   final bool isDarkMode;
   final AiTaskPlan plan;
   final VoidCallback onAddTask;
+  final Color accentColor;
 
   const _TaskPlanResultCard({
     required this.isDarkMode,
     required this.plan,
     required this.onAddTask,
+    required this.accentColor,
   });
 
   @override
@@ -1208,8 +1256,8 @@ class _TaskPlanResultCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.account_tree_rounded,
-                  color: Color(0xFF7040F2), size: 18),
+              Icon(Icons.account_tree_rounded,
+                  color: accentColor, size: 18),
               const SizedBox(width: 8),
               Text('AI 拆解结果',
                   style: TextStyle(
@@ -1220,12 +1268,12 @@ class _TaskPlanResultCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF7040F2).withValues(alpha: 0.15),
+                  color: accentColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(plan.difficulty,
-                    style: const TextStyle(
-                        color: Color(0xFF7040F2),
+                    style: TextStyle(
+                        color: accentColor,
                         fontSize: 11,
                         fontWeight: FontWeight.w700)),
               ),
@@ -1342,7 +1390,7 @@ class _TaskPlanResultCard extends StatelessWidget {
             height: 44,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7040F2),
+                backgroundColor: accentColor,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),

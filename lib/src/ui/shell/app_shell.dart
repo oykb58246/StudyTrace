@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../theme/app_theme.dart';
 import '../study/calendar_page.dart';
+import '../study/ai_chat_page.dart';
+import '../study/flash_card_page.dart';
 import '../study/study_notes_page.dart';
 import '../study/user_profile_page.dart';
 import 'admin_section_page.dart';
@@ -23,11 +25,13 @@ class AppShell extends StatefulWidget {
     this.debugMenuInitiallyOpen = false,
     this.debugInitialPrimaryTab,
     this.debugInitialAdminSection,
+    this.shouldLoadSampleData = false,
   });
 
   final bool debugMenuInitiallyOpen;
   final PrimaryTab? debugInitialPrimaryTab;
   final AdminSection? debugInitialAdminSection;
+  final bool shouldLoadSampleData;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -61,7 +65,11 @@ class _AppShellState extends State<AppShell>
   }
 
   Future<void> _loadData() async {
-    await _appDataController.load();
+    if (widget.shouldLoadSampleData) {
+      await _appDataController.loadSampleData();
+    } else {
+      await _appDataController.load();
+    }
     if (mounted) {
       setState(() => _isDarkMode = _appDataController.darkMode);
     }
@@ -86,6 +94,17 @@ class _AppShellState extends State<AppShell>
     } else {
       _openMenu();
     }
+  }
+
+  void _openAiChat() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AiChatPage(
+          isDarkMode: _isDarkMode,
+          controller: _appDataController,
+        ),
+      ),
+    );
   }
 
   void _handleDragStart(DragStartDetails details) {
@@ -129,11 +148,21 @@ class _AppShellState extends State<AppShell>
         _primaryTab = PrimaryTab.assistant;
       });
     } else if (section == AdminSection.notes) {
-      // Open notes as full-screen page to avoid shell overlay
       _closeMenu();
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => StudyNotesPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ),
+      );
+      return;
+    } else if (section == AdminSection.flashCard) {
+      _closeMenu();
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => FlashCardPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
           ),
@@ -192,8 +221,8 @@ class _AppShellState extends State<AppShell>
           isDarkMode: _isDarkMode,
           controller: _appDataController,
           onGenerateReport: _openWeeklyReport,
-          onOpenAiAssistant: () =>
-              _selectAdminSection(AdminSection.aiAssistant),
+          onOpenAiAssistant: () => _selectAdminSection(AdminSection.aiAssistant),
+          onOpenAiChat: _openAiChat,
         );
       case PrimaryTab.scenarios:
         return StudyLogsPage(
@@ -324,6 +353,7 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.controller.primaryColor;
     final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
@@ -381,6 +411,7 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
                   date: _startDate,
                   isDarkMode: widget.isDarkMode,
                   onPick: (picked) => setState(() => _startDate = picked),
+                  accentColor: accent,
                 ),
               ),
               Padding(
@@ -395,6 +426,7 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
                   date: _endDate,
                   isDarkMode: widget.isDarkMode,
                   onPick: (picked) => setState(() => _endDate = picked),
+                  accentColor: accent,
                 ),
               ),
             ],
@@ -405,7 +437,7 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
             child: ElevatedButton(
               key: const Key('do_generate_report_button'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7040F2),
+                backgroundColor: accent,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
@@ -470,20 +502,22 @@ class _DateButton extends StatelessWidget {
     required this.date,
     required this.isDarkMode,
     required this.onPick,
+    required this.accentColor,
   });
 
   final String label;
   final DateTime date;
   final bool isDarkMode;
   final ValueChanged<DateTime> onPick;
+  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
     return OutlinedButton(
       style: OutlinedButton.styleFrom(
-        foregroundColor: isDarkMode ? Colors.white : const Color(0xFF7040F2),
+        foregroundColor: isDarkMode ? Colors.white : accentColor,
         side: BorderSide(
-          color: isDarkMode ? Colors.white24 : const Color(0x337040F2),
+          color: isDarkMode ? Colors.white24 : accentColor.withValues(alpha: 0.2),
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
@@ -623,7 +657,7 @@ class _ForegroundSurface extends StatelessWidget {
                 ),
                 Positioned(
                   left: 16,
-                  top: 48,
+                  top: 38,
                   child: _MenuButton(
                     isDarkMode: isDarkMode,
                     isMenuOpen: isMenuOpen,
@@ -795,7 +829,7 @@ class _MenuButtonState extends State<_MenuButton>
               icon: AnimatedIcons.menu_close,
               progress: _iconController,
               color: widget.isDarkMode ? Colors.white : AppColors.ink,
-              size: 20,
+              size: 30,
             ),
           ),
         ),
@@ -850,13 +884,32 @@ class _BottomNav extends StatelessWidget {
                       borderRadius: BorderRadius.circular(18),
                       onTap: () => onSelected(tab),
                       child: SizedBox(
-                        height: 44,
-                        child: Center(
-                          child: _BottomNavIcon(
-                            tab: tab,
-                            isActive: currentTab == tab,
-                            isDarkMode: isDarkMode,
-                          ),
+                        height: 52,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _BottomNavIcon(
+                              tab: tab,
+                              isActive: currentTab == tab,
+                              isDarkMode: isDarkMode,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              tab.label,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: currentTab == tab
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: currentTab == tab
+                                    ? Colors.white
+                                    : isDarkMode
+                                        ? Colors.white54
+                                        : Colors.white70,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -925,6 +978,7 @@ class _SideMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = controller.primaryColor;
     final offset = lerpDouble(-36, 0, progress)!;
     const browse = [
       AdminSection.overview,
@@ -972,28 +1026,39 @@ class _SideMenu extends StatelessWidget {
                         borderRadius: BorderRadius.circular(18),
                         onTap: onOpenProfile,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 4, horizontal: 4),
                           child: Row(
                             children: [
                               Container(
                                 width: 42,
                                 height: 42,
                                 decoration: BoxDecoration(
-                                  gradient: controller.userProfile.avatarImagePath == null
-                                      ? const LinearGradient(
-                                          colors: [Color(0xFF7040F2), Color(0xFF8D5EFF)],
-                                        )
-                                      : null,
+                                  gradient:
+                                      controller.userProfile.avatarImagePath ==
+                                              null
+                                          ? LinearGradient(
+                                              colors: [
+                                                accent,
+                                                const Color(0xFF8D5EFF)
+                                              ],
+                                            )
+                                          : null,
                                   shape: BoxShape.circle,
                                 ),
                                 clipBehavior: Clip.antiAlias,
-                                child: controller.userProfile.avatarImagePath != null
+                                child: controller.userProfile.avatarImagePath !=
+                                        null
                                     ? Image.file(
-                                        File(controller.userProfile.avatarImagePath!),
+                                        File(controller
+                                            .userProfile.avatarImagePath!),
                                         fit: BoxFit.cover,
                                         errorBuilder: (_, __, ___) => Center(
-                                          child: Text(controller.userProfile.avatarEmoji,
-                                              style: const TextStyle(fontSize: 22)),
+                                          child: Text(
+                                              controller
+                                                  .userProfile.avatarEmoji,
+                                              style: const TextStyle(
+                                                  fontSize: 22)),
                                         ),
                                       )
                                     : Center(
