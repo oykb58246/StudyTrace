@@ -122,8 +122,10 @@ StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
       } catch (_) {}
     }
     final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) return _deepSeekGenerateRiskWarnings(
-        logs: logs, tasks: tasks, runtime: runtime);
+    if (runtime != null) {
+      return _deepSeekGenerateRiskWarnings(
+          logs: logs, tasks: tasks, runtime: runtime);
+    }
     throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 
@@ -139,8 +141,10 @@ StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
       } catch (_) {}
     }
     final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) return _deepSeekGenerateFlashCards(
-        logs: logs, count: count, runtime: runtime);
+    if (runtime != null) {
+      return _deepSeekGenerateFlashCards(
+          logs: logs, count: count, runtime: runtime);
+    }
     throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 
@@ -160,8 +164,10 @@ StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
       } catch (_) {}
     }
     final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) return _deepSeekGenerateAssistantReply(
-        input: input, context: context, purpose: purpose, runtime: runtime);
+    if (runtime != null) {
+      return _deepSeekGenerateAssistantReply(
+          input: input, context: context, purpose: purpose, runtime: runtime);
+    }
     throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
   }
 

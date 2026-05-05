@@ -62,8 +62,47 @@ StudyTrace 是一款面向大学生的 Flutter 跨平台应用，支持课程任
 
 ### 前置要求
 - Flutter SDK >= 3.0.0
-- Android Studio 或 VS Code + Flutter 插件
+- Android Studio（建议安装 Flutter、Dart 插件）或 VS Code + Flutter 插件
 - Android 模拟器或真机
+
+### 在 Android Studio 中运行
+
+1. 安装并配置 Flutter SDK
+   - 先安装 Flutter SDK，并把 `flutter/bin` 加入系统 `PATH`
+   - 在终端运行 `flutter doctor`，按提示补齐 Android toolchain、Chrome、设备等环境
+   - 打开 Android Studio → Settings/Preferences → Plugins，安装 Flutter 插件；Dart 插件会随 Flutter 插件一起启用
+
+2. 克隆并打开项目
+   ```bash
+   git clone https://github.com/oykb58246/StudyTrace.git
+   ```
+   - Android Studio → File → Open，选择克隆后的 `StudyTrace` 项目根目录
+   - 如果弹出 “Trust Project” 或 Flutter SDK 路径提示，选择信任项目并指向本机 Flutter SDK
+
+3. 安装依赖
+   - Android Studio 顶部通常会提示 `Pub get`，点击即可
+   - 也可以在底部 Terminal 执行：
+     ```bash
+     flutter pub get
+     ```
+
+4. 选择运行设备
+   - 模拟器：Tools → Device Manager → Create device，创建并启动 Android 模拟器
+   - 真机：打开开发者选项和 USB 调试，连接电脑后在设备列表中选择手机
+
+5. 启动 App
+   - 确认运行入口是 `lib/main.dart`
+   - 点击 Android Studio 顶部绿色 Run 按钮
+   - 或在 Terminal 执行：
+     ```bash
+     flutter run
+     ```
+
+6. 常见问题
+   - 依赖缺失：重新执行 `flutter pub get`
+   - 找不到设备：执行 `flutter devices`，确认模拟器已启动或真机已授权
+   - Android toolchain 报错：执行 `flutter doctor --android-licenses` 并接受协议
+   - 分析报错：执行 `flutter analyze --no-pub` 查看具体 Dart/Flutter 问题
 
 ### 运行
 

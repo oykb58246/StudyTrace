@@ -127,4 +127,16 @@ class _FakeCredentials extends AiCredentialService {
 
   @override
   Future<void> deleteDeepSeekApiKey() async {}
+
+  @override
+  Future<String?> loadBlueHeartAppKey() async => null;
+
+  @override
+  Future<bool> hasBlueHeartAppKey() async => false;
+
+  @override
+  Future<void> saveBlueHeartAppKey(String appKey) async {}
+
+  @override
+  Future<void> deleteBlueHeartAppKey() async {}
 }

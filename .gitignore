@@ -44,3 +44,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local analysis/test artifacts
+analyze_result.txt
+test-flash.err
+
+# Local deployment/tool cache
+/tool/

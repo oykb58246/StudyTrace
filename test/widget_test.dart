@@ -4,12 +4,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:studytrace/app/app.dart';
 import 'package:studytrace/src/controllers/app_data_controller.dart';
+import 'package:studytrace/src/models/ai_flash_card.dart';
 import 'package:studytrace/src/models/study_log_item.dart';
 import 'package:studytrace/src/models/study_task_item.dart';
 
 import 'package:studytrace/src/services/weekly_report_service.dart';
 import 'package:studytrace/src/ui/shell/app_shell.dart';
 import 'package:studytrace/src/ui/shell/navigation_models.dart';
+import 'package:studytrace/src/ui/study/flash_card_page.dart';
 
 void main() {
   setUp(() {
@@ -78,8 +80,7 @@ void main() {
     expect(find.byKey(const Key('page_course_archive')), findsOneWidget);
   });
 
-  testWidgets('shell renders admin section page',
-      (WidgetTester tester) async {
+  testWidgets('shell renders admin section page', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -306,4 +307,148 @@ void main() {
     final mathLogs = controller.logsForCourse('高等数学');
     expect(mathLogs, hasLength(1));
   });
+
+  testWidgets('flash card page groups by date and merges short final shelf',
+      (WidgetTester tester) async {
+    final controller = AppDataController();
+    final date = DateTime(2026, 4, 28);
+    await controller.saveFlashCards(_flashCards(10, date: date));
+
+    await _pumpFlashCards(tester, controller);
+
+    expect(find.byKey(const Key('flash_card_date_group_2026-04-28')),
+        findsOneWidget);
+    expect(
+        find.byKey(const Key('flash_card_shelf_2026-04-28_0')), findsOneWidget);
+    expect(
+        find.byKey(const Key('flash_card_shelf_2026-04-28_1')), findsNothing);
+    expect(find.byKey(const Key('flash_card_mini_card_10')), findsOneWidget);
+  });
+
+  testWidgets('flash card page splits shelves after eight cards',
+      (WidgetTester tester) async {
+    final controller = AppDataController();
+    final date = DateTime(2026, 4, 28);
+    await controller.saveFlashCards(_flashCards(11, date: date));
+
+    await _pumpFlashCards(tester, controller);
+
+    expect(
+        find.byKey(const Key('flash_card_shelf_2026-04-28_0')), findsOneWidget);
+    expect(
+        find.byKey(const Key('flash_card_shelf_2026-04-28_1')), findsOneWidget);
+  });
+
+  testWidgets('flash card page toggles star and manages groups',
+      (WidgetTester tester) async {
+    final controller = AppDataController();
+    final date = DateTime(2026, 4, 28);
+    await controller.saveFlashCards([
+      AiFlashCard(
+        id: 'target',
+        question: '待分组卡',
+        answer: '答案',
+        createdAt: date,
+      ),
+      AiFlashCard(
+        id: 'group_source',
+        question: '已有分组卡',
+        answer: '答案',
+        groupName: '复习组',
+        createdAt: date,
+      ),
+    ]);
+
+    await _pumpFlashCards(tester, controller);
+
+    await tester.tap(find.byKey(const Key('flash_card_star_target')));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(
+      controller.flashCards.firstWhere((c) => c.id == 'target').isStarred,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const Key('flash_card_group_menu_target')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('flash_card_group_option_复习组')));
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      controller.flashCards.firstWhere((c) => c.id == 'target').groupName,
+      '复习组',
+    );
+
+    await tester.tap(find.byKey(const Key('flash_card_group_menu_target')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('flash_card_group_option_new')));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.enterText(
+      find.byKey(const Key('flash_card_new_group_field')),
+      '考前冲刺',
+    );
+    await tester.tap(find.byKey(const Key('flash_card_create_group_button')));
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      controller.flashCards.firstWhere((c) => c.id == 'target').groupName,
+      '考前冲刺',
+    );
+
+    await tester.tap(find.byKey(const Key('flash_card_group_menu_target')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('flash_card_group_option_remove')));
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      controller.flashCards.firstWhere((c) => c.id == 'target').groupName,
+      isEmpty,
+    );
+  });
+
+  testWidgets('tapping a mini flash card opens scoped browse mode',
+      (WidgetTester tester) async {
+    final controller = AppDataController();
+    final date = DateTime(2026, 4, 28);
+    await controller.saveFlashCards(_flashCards(3, date: date));
+
+    await _pumpFlashCards(tester, controller);
+    await tester.tap(find.byKey(const Key('flash_card_mini_card_2')));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('闪卡浏览'), findsOneWidget);
+    expect(find.text('2 / 3'), findsOneWidget);
+    expect(find.text('问题 2'), findsOneWidget);
+  });
+}
+
+List<AiFlashCard> _flashCards(int count, {required DateTime date}) {
+  return List.generate(
+    count,
+    (i) => AiFlashCard(
+      id: 'card_${i + 1}',
+      question: '问题 ${i + 1}',
+      answer: '答案 ${i + 1}',
+      courseName: '高等数学',
+      createdAt: date.add(Duration(minutes: i)),
+    ),
+  );
+}
+
+Future<void> _pumpFlashCards(
+  WidgetTester tester,
+  AppDataController controller,
+) async {
+  tester.view.physicalSize = const Size(390, 844);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: FlashCardPage(
+        isDarkMode: false,
+        controller: controller,
+        autoGenerate: false,
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 120));
 }

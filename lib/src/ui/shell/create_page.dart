@@ -608,6 +608,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                               lastDate: DateTime(2030),
                             );
                             if (picked != null) {
+                              if (!ctx.mounted) return;
                               final time = await showTimePicker(
                                 context: ctx,
                                 initialTime: TimeOfDay.fromDateTime(
