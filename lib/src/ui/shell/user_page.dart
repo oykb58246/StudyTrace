@@ -4,6 +4,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/weekly_report_item.dart';
+import '../../services/report_export_service.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
@@ -212,13 +213,42 @@ class CourseArchivePage extends StatelessWidget {
                   ),
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: isDarkMode ? Colors.white : accent,
+                      side: BorderSide(
+                        color: isDarkMode
+                            ? Colors.white24
+                            : accent.withValues(alpha: 0.2),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => _exportAllReportsMarkdown(
+                      context,
+                      reports,
+                    ),
+                    icon: const Icon(Icons.description_rounded, size: 18),
+                    label: const Text(
+                      '导出全部 Markdown',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
               for (final report in reports) ...[
                 Material(
                   color: Colors.transparent,
                   child: InkWell(
                     key: Key('report_item_${report.id}'),
                     borderRadius: BorderRadius.circular(28),
-                    onTap: () => _showReportDetail(context, report.content),
+                    onTap: () => _showReportDetail(context, report),
                     child: GlassCard(
                       color: isDarkMode
                           ? const Color(0xFF242B37).withValues(alpha: 0.9)
@@ -285,10 +315,10 @@ class CourseArchivePage extends StatelessWidget {
     );
   }
 
-  void _showReportDetail(BuildContext context, String content) {
+  void _showReportDetail(BuildContext context, WeeklyReportItem report) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => Scaffold(
+        builder: (detailContext) => Scaffold(
           backgroundColor:
               isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
           appBar: AppBar(
@@ -296,6 +326,31 @@ class CourseArchivePage extends StatelessWidget {
             foregroundColor: isDarkMode ? Colors.white : AppColors.ink,
             title: const Text('周报详情',
                 style: TextStyle(fontWeight: FontWeight.w800)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.copy_rounded),
+                tooltip: '复制周报',
+                onPressed: () => _copyReportContent(detailContext, report),
+              ),
+              IconButton(
+                icon: const Icon(Icons.description_rounded),
+                tooltip: '导出 Markdown',
+                onPressed: () => _exportReport(
+                  detailContext,
+                  report,
+                  asPdf: false,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.picture_as_pdf_rounded),
+                tooltip: '导出 PDF',
+                onPressed: () => _exportReport(
+                  detailContext,
+                  report,
+                  asPdf: true,
+                ),
+              ),
+            ],
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(22),
@@ -304,7 +359,7 @@ class CourseArchivePage extends StatelessWidget {
                   ? const Color(0xFF242B37).withValues(alpha: 0.92)
                   : null,
               child: MarkdownBody(
-                data: content,
+                data: report.content,
                 selectable: true,
                 styleSheet: MarkdownStyleSheet(
                   p: TextStyle(
@@ -359,6 +414,69 @@ class CourseArchivePage extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  void _copyReportContent(BuildContext context, WeeklyReportItem report) {
+    Clipboard.setData(ClipboardData(text: report.content));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('周报已复制到剪贴板')),
+    );
+  }
+
+  Future<void> _exportReport(
+    BuildContext context,
+    WeeklyReportItem report, {
+    required bool asPdf,
+  }) async {
+    try {
+      final service = const ReportExportService();
+      final file = asPdf
+          ? await service.exportWeeklyReportPdf(report)
+          : await service.exportWeeklyReportMarkdown(report);
+      await _showExportResult(
+        context,
+        kind: asPdf ? 'PDF' : 'Markdown',
+        path: file.path,
+      );
+    } catch (error) {
+      _showExportError(context, error);
+    }
+  }
+
+  Future<void> _exportAllReportsMarkdown(
+    BuildContext context,
+    List<WeeklyReportItem> reports,
+  ) async {
+    try {
+      final service = const ReportExportService();
+      final file = await service.exportAllReportsMarkdown(reports);
+      await _showExportResult(
+        context,
+        kind: '全部 Markdown',
+        path: file.path,
+      );
+    } catch (error) {
+      _showExportError(context, error);
+    }
+  }
+
+  Future<void> _showExportResult(
+    BuildContext context, {
+    required String kind,
+    required String path,
+  }) async {
+    await Clipboard.setData(ClipboardData(text: path));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已导出 $kind，文件路径已复制：$path')),
+    );
+  }
+
+  void _showExportError(BuildContext context, Object error) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('导出失败：$error')),
     );
   }
 

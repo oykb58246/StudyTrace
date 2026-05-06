@@ -8,10 +8,29 @@ class AiCredentialService {
 
   static const _deepSeekApiKey = 'studytrace_deepseek_api_key_v1';
   static const _blueHeartAppKey = 'studytrace_blueheart_app_key_v1';
+  static const _authTokenKey = 'studytrace_auth_token_v1';
   // 蓝心 AppKey - 已内置
   static const _embeddedBlueHeartAppKey = 'sk-xuanji-2026702831-aXhDYXVUY3lVSlZLZUhRcA==';
 
   final FlutterSecureStorage _storage;
+
+  Future<String?> getAuthToken() async {
+    try {
+      return await _storage.read(key: _authTokenKey);
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  Future<void> saveAuthToken(String token) async {
+    await _storage.write(key: _authTokenKey, value: token);
+  }
+
+  Future<void> clearAuthToken() async {
+    await _storage.delete(key: _authTokenKey);
+  }
 
   Future<String?> loadDeepSeekApiKey() async {
     try {

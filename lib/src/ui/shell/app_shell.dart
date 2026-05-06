@@ -6,6 +6,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../controllers/app_data_controller.dart';
+import '../../models/weekly_report_item.dart';
+import '../../services/report_export_service.dart';
 import '../../theme/app_theme.dart';
 import '../study/calendar_page.dart';
 import '../study/ai_chat_page.dart';
@@ -221,7 +223,8 @@ class _AppShellState extends State<AppShell>
           isDarkMode: _isDarkMode,
           controller: _appDataController,
           onGenerateReport: _openWeeklyReport,
-          onOpenAiAssistant: () => _selectAdminSection(AdminSection.aiAssistant),
+          onOpenAiAssistant: () =>
+              _selectAdminSection(AdminSection.aiAssistant),
           onOpenAiChat: _openAiChat,
         );
       case PrimaryTab.scenarios:
@@ -269,7 +272,7 @@ class _AppShellState extends State<AppShell>
                   isDarkMode: _isDarkMode,
                   controller: _appDataController,
                   onOpenSettings: () =>
-                      _selectAdminSection(AdminSection.settings),
+                      _selectAdminSection(AdminSection.aiSettings),
                 )
               : _primaryPageFor(_primaryTab);
 
@@ -326,10 +329,12 @@ class _WeeklyReportPage extends StatefulWidget {
 }
 
 class _WeeklyReportPageState extends State<_WeeklyReportPage> {
+  final ReportExportService _exportService = const ReportExportService();
   late DateTime _startDate;
   late DateTime _endDate;
   String? _reportContent;
   bool _isGenerating = false;
+  bool _isExporting = false;
 
   @override
   void initState() {
@@ -379,6 +384,19 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
                   const SnackBar(content: Text('已复制到剪贴板')),
                 );
               },
+            ),
+          if (_reportContent != null)
+            IconButton(
+              icon: const Icon(Icons.description_rounded),
+              tooltip: '导出 Markdown',
+              onPressed:
+                  _isExporting ? null : () => _exportReport(asPdf: false),
+            ),
+          if (_reportContent != null)
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_rounded),
+              tooltip: '导出 PDF',
+              onPressed: _isExporting ? null : () => _exportReport(asPdf: true),
             ),
           if (_reportContent != null)
             IconButton(
@@ -494,6 +512,45 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
       ),
     );
   }
+
+  WeeklyReportItem _previewReportItem() {
+    final now = DateTime.now();
+    return WeeklyReportItem(
+      id: 'preview_${now.microsecondsSinceEpoch}',
+      startDate: _startDate,
+      endDate: _endDate,
+      content: _reportContent ?? '',
+      sourceLogIds: const [],
+      createdAt: now,
+    );
+  }
+
+  Future<void> _exportReport({required bool asPdf}) async {
+    if (_reportContent == null) return;
+    setState(() => _isExporting = true);
+    try {
+      final report = _previewReportItem();
+      final file = asPdf
+          ? await _exportService.exportWeeklyReportPdf(report)
+          : await _exportService.exportWeeklyReportMarkdown(report);
+      await Clipboard.setData(ClipboardData(text: file.path));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '已导出${asPdf ? ' PDF' : ' Markdown'}，文件路径已复制：${file.path}',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败：$error')),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
 }
 
 class _DateButton extends StatelessWidget {
@@ -517,7 +574,8 @@ class _DateButton extends StatelessWidget {
       style: OutlinedButton.styleFrom(
         foregroundColor: isDarkMode ? Colors.white : accentColor,
         side: BorderSide(
-          color: isDarkMode ? Colors.white24 : accentColor.withValues(alpha: 0.2),
+          color:
+              isDarkMode ? Colors.white24 : accentColor.withValues(alpha: 0.2),
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
@@ -958,7 +1016,7 @@ class _BottomNavIconState extends State<_BottomNavIcon> {
   }
 }
 
-class _SideMenu extends StatelessWidget {
+class _SideMenu extends StatefulWidget {
   const _SideMenu({
     required this.currentSection,
     required this.progress,
@@ -977,20 +1035,38 @@ class _SideMenu extends StatelessWidget {
   final VoidCallback onOpenProfile;
 
   @override
+  State<_SideMenu> createState() => _SideMenuState();
+}
+
+class _SideMenuState extends State<_SideMenu> {
+  bool _learningAppsExpanded = false;
+
+  static const _learningApps = [
+    AdminSection.notes,
+    AdminSection.timer,
+    AdminSection.flashCard,
+    AdminSection.studyGroup,
+    AdminSection.leaderboard,
+  ];
+
+  @override
   Widget build(BuildContext context) {
-    final accent = controller.primaryColor;
-    final offset = lerpDouble(-36, 0, progress)!;
-    const browse = [
+    final accent = widget.controller.primaryColor;
+    final offset = lerpDouble(-36, 0, widget.progress)!;
+    final learningAppsExpanded =
+        _learningAppsExpanded || _learningApps.contains(widget.currentSection);
+    const overview = [
       AdminSection.overview,
-      AdminSection.aiAssistant,
-      AdminSection.notes,
-      AdminSection.statistics,
-      AdminSection.timer,
-      AdminSection.flashCard,
     ];
-    const manage = [
-      AdminSection.automations,
+    const aiManage = [
+      AdminSection.aiAssistant,
+      AdminSection.aiSettings,
+    ];
+    const dataAndAutomation = [
       AdminSection.analytics,
+      AdminSection.automations,
+    ];
+    const systemArea = [
       AdminSection.settings,
     ];
 
@@ -999,15 +1075,16 @@ class _SideMenu extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 14, 56, 14),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color:
-                (isDarkMode ? const Color(0xFF070A11) : const Color(0xFF1C2442))
-                    .withValues(alpha: 0.96),
+            color: (widget.isDarkMode
+                    ? const Color(0xFF070A11)
+                    : const Color(0xFF1C2442))
+                .withValues(alpha: 0.96),
             borderRadius: BorderRadius.circular(28),
           ),
           child: Transform.translate(
             offset: Offset(offset, 0),
             child: Opacity(
-              opacity: lerpDouble(0.15, 1, progress)!,
+              opacity: lerpDouble(0.15, 1, widget.progress)!,
               child: SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
@@ -1024,7 +1101,7 @@ class _SideMenu extends StatelessWidget {
                       ),
                       InkWell(
                         borderRadius: BorderRadius.circular(18),
-                        onTap: onOpenProfile,
+                        onTap: widget.onOpenProfile,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                               vertical: 4, horizontal: 4),
@@ -1034,36 +1111,38 @@ class _SideMenu extends StatelessWidget {
                                 width: 42,
                                 height: 42,
                                 decoration: BoxDecoration(
-                                  gradient:
-                                      controller.userProfile.avatarImagePath ==
-                                              null
-                                          ? LinearGradient(
-                                              colors: [
-                                                accent,
-                                                const Color(0xFF8D5EFF)
-                                              ],
-                                            )
-                                          : null,
+                                  gradient: widget.controller.userProfile
+                                              .avatarImagePath ==
+                                          null
+                                      ? LinearGradient(
+                                          colors: [
+                                            accent,
+                                            const Color(0xFF8D5EFF)
+                                          ],
+                                        )
+                                      : null,
                                   shape: BoxShape.circle,
                                 ),
                                 clipBehavior: Clip.antiAlias,
-                                child: controller.userProfile.avatarImagePath !=
+                                child: widget.controller.userProfile
+                                            .avatarImagePath !=
                                         null
                                     ? Image.file(
-                                        File(controller
-                                            .userProfile.avatarImagePath!),
+                                        File(widget.controller.userProfile
+                                            .avatarImagePath!),
                                         fit: BoxFit.cover,
                                         errorBuilder: (_, __, ___) => Center(
                                           child: Text(
-                                              controller
-                                                  .userProfile.avatarEmoji,
+                                              widget.controller.userProfile
+                                                  .avatarEmoji,
                                               style: const TextStyle(
                                                   fontSize: 22)),
                                         ),
                                       )
                                     : Center(
                                         child: Text(
-                                          controller.userProfile.avatarEmoji,
+                                          widget.controller.userProfile
+                                              .avatarEmoji,
                                           style: const TextStyle(fontSize: 22),
                                         ),
                                       ),
@@ -1074,7 +1153,7 @@ class _SideMenu extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      controller.userProfile.nickname,
+                                      widget.controller.userProfile.nickname,
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 17,
@@ -1083,7 +1162,7 @@ class _SideMenu extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      controller.userProfile.bio,
+                                      widget.controller.userProfile.bio,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
@@ -1103,56 +1182,48 @@ class _SideMenu extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 34),
-                      const Text(
-                        'BROWSE',
-                        style: TextStyle(
-                          color: Color(0x99FFFFFF),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2,
-                        ),
+                      const SizedBox(height: 20),
+                      _SideMenuGroup(
+                        title: '总览',
+                        sections: overview,
+                        currentSection: widget.currentSection,
+                        onSelected: widget.onSelected,
                       ),
-                      const SizedBox(height: 14),
-                      for (var i = 0; i < browse.length; i++) ...[
-                        _SideMenuItem(
-                          section: browse[i],
-                          selected: currentSection == browse[i],
-                          onTap: () => onSelected(browse[i]),
-                        ),
-                        if (i != browse.length - 1)
-                          const Divider(color: Color(0x22FFFFFF), height: 18),
-                      ],
-                      const SizedBox(height: 28),
-                      const Text(
-                        '管理',
-                        style: TextStyle(
-                          color: Color(0x99FFFFFF),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2,
-                        ),
+                      _SideMenuGroup(
+                        title: 'AI 管理',
+                        sections: aiManage,
+                        currentSection: widget.currentSection,
+                        onSelected: widget.onSelected,
                       ),
-                      const SizedBox(height: 14),
-                      for (var i = 0; i < manage.length; i++) ...[
-                        _SideMenuItem(
-                          section: manage[i],
-                          selected: currentSection == manage[i],
-                          onTap: () => onSelected(manage[i]),
-                        ),
-                        if (i != manage.length - 1)
-                          const Divider(color: Color(0x22FFFFFF), height: 18),
-                      ],
-                      const SizedBox(height: 28),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: SizedBox(
-                          width: 214,
-                          child: _ThemeModeSwitchTile(
-                            value: isDarkMode,
-                            onChanged: onDarkModeChanged,
-                          ),
-                        ),
+                      _SideMenuGroup(
+                        title: '学习应用',
+                        sections: _learningApps,
+                        currentSection: widget.currentSection,
+                        onSelected: widget.onSelected,
+                        collapsible: true,
+                        expanded: learningAppsExpanded,
+                        onHeaderTap: () {
+                          setState(() {
+                            _learningAppsExpanded = !learningAppsExpanded;
+                          });
+                        },
+                      ),
+                      _SideMenuGroup(
+                        title: '数据与编排',
+                        sections: dataAndAutomation,
+                        currentSection: widget.currentSection,
+                        onSelected: widget.onSelected,
+                      ),
+                      _SideMenuGroup(
+                        title: '系统',
+                        sections: systemArea,
+                        currentSection: widget.currentSection,
+                        onSelected: widget.onSelected,
+                      ),
+                      const SizedBox(height: 16),
+                      _ThemeModeButton(
+                        value: widget.isDarkMode,
+                        onChanged: widget.onDarkModeChanged,
                       ),
                     ],
                   ),
@@ -1183,7 +1254,7 @@ class _SideMenuItem extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
-        height: 54,
+        height: 44,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: selected
@@ -1214,8 +1285,100 @@ class _SideMenuItem extends StatelessWidget {
   }
 }
 
-class _ThemeModeSwitchTile extends StatelessWidget {
-  const _ThemeModeSwitchTile({
+class _SideMenuGroup extends StatelessWidget {
+  const _SideMenuGroup({
+    required this.title,
+    required this.sections,
+    required this.currentSection,
+    required this.onSelected,
+    this.collapsible = false,
+    this.expanded = true,
+    this.onHeaderTap,
+  });
+
+  final String title;
+  final List<AdminSection> sections;
+  final AdminSection currentSection;
+  final ValueChanged<AdminSection> onSelected;
+  final bool collapsible;
+  final bool expanded;
+  final VoidCallback? onHeaderTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleText = Text(
+      title,
+      style: const TextStyle(
+        color: Color(0x99FFFFFF),
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 1.2,
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (collapsible)
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: onHeaderTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    titleText,
+                    const SizedBox(width: 4),
+                    AnimatedRotation(
+                      turns: expanded ? 0 : 0.5,
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.fastOutSlowIn,
+                      child: const Icon(
+                        Icons.keyboard_arrow_up_rounded,
+                        color: Color(0x99FFFFFF),
+                        size: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            titleText,
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.fastOutSlowIn,
+            alignment: Alignment.topCenter,
+            child: expanded
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 8),
+                      for (var i = 0; i < sections.length; i++) ...[
+                        _SideMenuItem(
+                          section: sections[i],
+                          selected: currentSection == sections[i],
+                          onTap: () => onSelected(sections[i]),
+                        ),
+                        if (i != sections.length - 1)
+                          const SizedBox(height: 4),
+                      ],
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeModeButton extends StatelessWidget {
+  const _ThemeModeButton({
     required this.value,
     required this.onChanged,
   });
@@ -1224,46 +1387,41 @@ class _ThemeModeSwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = value ? '夜间' : '日间';
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => onChanged(!value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: value ? 0.12 : 0.08),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                value ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  '夜间模式',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: value ? 0.12 : 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
               ),
-              Switch(
-                value: value,
-                onChanged: onChanged,
-                activeThumbColor: Colors.white,
-                activeTrackColor: const Color(0xFF7394F9),
-                inactiveThumbColor: Colors.white,
-                inactiveTrackColor: Colors.white24,
+              child: Icon(
+                value ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                color: Colors.white,
+                size: 22,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xCCFFFFFF),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

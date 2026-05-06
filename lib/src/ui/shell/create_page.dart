@@ -287,6 +287,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                       deadline: task.deadline,
                       status: task.status,
                       note: task.note,
+                      reminderTime: task.reminderTime,
                       subTasks: updated,
                     );
                   },
@@ -311,9 +312,20 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
     var deadline =
         existing?.deadline ?? DateTime.now().add(const Duration(days: 7));
     var reminderTime = existing?.reminderTime;
-    var didSave = false;
     final subTaskControllers = <TextEditingController>[];
     final subTaskDeadlines = <DateTime>[];
+    var controllersDisposed = false;
+    void disposeControllers() {
+      if (controllersDisposed) return;
+      controllersDisposed = true;
+      titleController.dispose();
+      courseController.dispose();
+      noteController.dispose();
+      for (final c in subTaskControllers) {
+        c.dispose();
+      }
+    }
+
     if (existing?.subTasks != null) {
       for (final st in existing!.subTasks) {
         subTaskControllers.add(TextEditingController(text: st.title));
@@ -651,10 +663,13 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                         IconButton(
                           icon: const Icon(Icons.close_rounded, size: 18),
                           onPressed: () {
+                            late final TextEditingController removedController;
                             setSheetState(() {
-                              subTaskControllers[i].dispose();
-                              subTaskControllers.removeAt(i);
+                              removedController = subTaskControllers.removeAt(i);
                               subTaskDeadlines.removeAt(i);
+                            });
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              removedController.dispose();
                             });
                           },
                         ),
@@ -740,11 +755,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                           subTasks: subTasks,
                         );
                       }
-                      didSave = true;
                       if (ctx.mounted) Navigator.of(ctx).pop();
-                      for (final c in subTaskControllers) {
-                        c.dispose();
-                      }
                     },
                     child: Text(
                       isEditing ? '更新任务' : '保存任务',
@@ -760,13 +771,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
           );
         },
       ),
-    ).whenComplete(() {
-      if (!didSave) {
-        for (final c in subTaskControllers) {
-          c.dispose();
-        }
-      }
-    });
+    ).whenComplete(disposeControllers);
   }
 
   void _showEditForm(BuildContext context, StudyTaskItem task) {
@@ -841,18 +846,23 @@ class _CourseSelector extends StatefulWidget {
 
 class _CourseSelectorState extends State<_CourseSelector> {
   bool _showDropdown = false;
-  late List<String> _suggestions;
+  List<String> _suggestions = const [];
 
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_updateSuggestions);
     _updateSuggestions();
   }
 
   @override
   void didUpdateWidget(_CourseSelector oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.allCourses != widget.allCourses) {
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_updateSuggestions);
+      widget.controller.addListener(_updateSuggestions);
+      _updateSuggestions();
+    } else if (oldWidget.allCourses != widget.allCourses) {
       _updateSuggestions();
     }
   }

@@ -18,10 +18,13 @@ enum SecondaryTab {
 enum AdminSection {
   overview,
   aiAssistant,
+  aiSettings,
   notes,
   statistics,
   timer,
   flashCard,
+  studyGroup,
+  leaderboard,
   automations,
   analytics,
   settings,
@@ -126,6 +129,8 @@ extension AdminSectionMeta on AdminSection {
         return '作品总览';
       case AdminSection.aiAssistant:
         return 'AI 学习助手';
+      case AdminSection.aiSettings:
+        return 'AI 设置';
       case AdminSection.notes:
         return '学习笔记';
       case AdminSection.statistics:
@@ -134,6 +139,10 @@ extension AdminSectionMeta on AdminSection {
         return '专注计时';
       case AdminSection.flashCard:
         return '知识闪卡';
+      case AdminSection.studyGroup:
+        return '学习小组';
+      case AdminSection.leaderboard:
+        return '排行榜';
       case AdminSection.automations:
         return '任务编排';
       case AdminSection.analytics:
@@ -149,6 +158,8 @@ extension AdminSectionMeta on AdminSection {
         return '学习数据总览与周报入口。';
       case AdminSection.aiAssistant:
         return 'AI 学习日志生成、任务拆解、周报分析和风险提醒。';
+      case AdminSection.aiSettings:
+        return '模型、Key、推理参数与高级 AI 选项。';
       case AdminSection.notes:
         return '记录课堂笔记、学习心得与知识整理。';
       case AdminSection.statistics:
@@ -157,6 +168,10 @@ extension AdminSectionMeta on AdminSection {
         return '番茄钟计时器，帮助保持专注学习节奏。';
       case AdminSection.flashCard:
         return 'AI 从学习记录生成知识闪卡，巩固复习。';
+      case AdminSection.studyGroup:
+        return '参与学习小组，与同伴交流讨论，共同进步。';
+      case AdminSection.leaderboard:
+        return '查看全站或好友学习榜单，激发学习动力。';
       case AdminSection.automations:
         return '编排自动任务流、触发条件与执行记录。';
       case AdminSection.analytics:
@@ -172,6 +187,8 @@ extension AdminSectionMeta on AdminSection {
         return Icons.home_outlined;
       case AdminSection.aiAssistant:
         return Icons.auto_awesome_rounded;
+      case AdminSection.aiSettings:
+        return Icons.tune_rounded;
       case AdminSection.notes:
         return Icons.menu_book_rounded;
       case AdminSection.statistics:
@@ -180,6 +197,10 @@ extension AdminSectionMeta on AdminSection {
         return Icons.timer_rounded;
       case AdminSection.flashCard:
         return Icons.style_rounded;
+      case AdminSection.studyGroup:
+        return Icons.groups_rounded;
+      case AdminSection.leaderboard:
+        return Icons.leaderboard_rounded;
       case AdminSection.automations:
         return Icons.alt_route_rounded;
       case AdminSection.analytics:
@@ -195,6 +216,8 @@ extension AdminSectionMeta on AdminSection {
         return const Color(0xFF7D9BFF);
       case AdminSection.aiAssistant:
         return const Color(0xFF4470E8);
+      case AdminSection.aiSettings:
+        return const Color(0xFF8C7CFF);
       case AdminSection.notes:
         return const Color(0xFF4CB9FF);
       case AdminSection.statistics:
@@ -203,6 +226,10 @@ extension AdminSectionMeta on AdminSection {
         return const Color(0xFF4BC4A1);
       case AdminSection.flashCard:
         return const Color(0xFFF8AA5B);
+      case AdminSection.studyGroup:
+        return const Color(0xFFFF7C7C);
+      case AdminSection.leaderboard:
+        return const Color(0xFFFFC043);
       case AdminSection.automations:
         return const Color(0xFF4BC4A1);
       case AdminSection.analytics:

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/analysis_item.dart';
 import '../models/ai_config.dart';
 import '../models/ai_flash_card.dart';
+import '../models/daily_reminder_settings.dart';
 import '../models/history_item.dart';
 import '../models/study_log_item.dart';
 import '../models/note_block.dart';
@@ -52,6 +53,9 @@ class AppDataController extends ChangeNotifier {
   bool _isLoaded = false;
   bool _darkMode = false;
   bool _skinVivo = true; // true=vivo蓝, false=传统紫
+  String _apiBaseUrl = 'http://localhost:3000';
+  bool _isLoggedIn = false;
+
   AiConfig _aiConfig = const AiConfig();
   bool _hasDeepSeekApiKey = false;
   bool _hasBlueHeartAppKey = true; // 蓝心内置 AppKey，默认可用
@@ -71,6 +75,9 @@ class AppDataController extends ChangeNotifier {
   bool get isLoaded => _isLoaded;
   bool get darkMode => _darkMode;
   bool get skinVivo => _skinVivo;
+  String get apiBaseUrl => _apiBaseUrl;
+  bool get isLoggedIn => _isLoggedIn;
+
   AiConfig get aiConfig => _aiConfig;
   Color get primaryColor =>
       _skinVivo ? const Color(0xFF4470E8) : const Color(0xFF7040F2);
@@ -144,6 +151,9 @@ class AppDataController extends ChangeNotifier {
     final loadedReports = await _storage.loadWeeklyReports();
     _darkMode = await _storage.loadDarkMode();
     _skinVivo = await _storage.loadSkinVivo();
+    _apiBaseUrl = await _storage.loadServerBaseUrl() ?? 'http://localhost:3000';
+    final token = await _credentials.getAuthToken();
+    _isLoggedIn = token != null && token.isNotEmpty;
     _aiConfig = await _storage.loadAiConfig();
     _hasDeepSeekApiKey = await _credentials.hasDeepSeekApiKey();
     _hasBlueHeartAppKey = await _credentials.hasBlueHeartAppKey();
@@ -178,6 +188,7 @@ class AppDataController extends ChangeNotifier {
       ..addAll(loadedCards);
     _isLoaded = true;
     notifyListeners();
+    await NotificationService().rescheduleForTasks(_studyTasks);
   }
 
   /// Load sample data (for testing/demo purposes with credentials "123"/"123")
@@ -200,6 +211,7 @@ class AppDataController extends ChangeNotifier {
     await _storage.saveFlashCardBatch(_flashCards);
 
     notifyListeners();
+    await NotificationService().rescheduleForTasks(_studyTasks);
   }
 
   // --- legacy ---
@@ -311,7 +323,7 @@ class AppDataController extends ChangeNotifier {
     _studyTasks.insert(0, task);
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
-    NotificationService().scheduleForTask(task);
+    await NotificationService().scheduleForTask(task);
     return task;
   }
 
@@ -328,7 +340,9 @@ class AppDataController extends ChangeNotifier {
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
     if (status == StudyTaskStatus.completed) {
-      NotificationService().cancelForTask(_studyTasks[index]);
+      await NotificationService().cancelForTask(_studyTasks[index]);
+    } else {
+      await NotificationService().scheduleForTask(_studyTasks[index]);
     }
   }
 
@@ -345,32 +359,50 @@ class AppDataController extends ChangeNotifier {
   }) async {
     final index = _studyTasks.indexWhere((t) => t.id == taskId);
     if (index == -1) return;
-    _studyTasks[index] = _studyTasks[index].copyWith(
+    final previous = _studyTasks[index];
+    await NotificationService().cancelForTask(previous);
+    _studyTasks[index] = StudyTaskItem(
+      id: previous.id,
       title: title,
       type: type,
       courseName: courseName,
       deadline: deadline,
       status: status,
-      reminderTime: reminderTime,
       note: note,
-      subTasks: subTasks,
+      subTasks: subTasks ?? previous.subTasks,
+      reminderTime: reminderTime,
+      createdAt: previous.createdAt,
       updatedAt: DateTime.now(),
     );
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
-    NotificationService().scheduleForTask(_studyTasks[index]);
+    await NotificationService().scheduleForTask(_studyTasks[index]);
   }
 
   Future<void> deleteStudyTask(String taskId) async {
     final task = _studyTasks.cast<StudyTaskItem?>().firstWhere(
           (t) => t?.id == taskId,
           orElse: () => null,
-        );
+    );
     if (task != null) {
-      NotificationService().cancelForTask(task);
+      await NotificationService().cancelForTask(task);
     }
     _studyTasks.removeWhere((t) => t.id == taskId);
     await _storage.saveStudyTasks(_studyTasks);
+    notifyListeners();
+  }
+
+  Future<DailyReminderSettings> loadDailyReminderSettings() {
+    return NotificationService().loadDailyReminderSettings();
+  }
+
+  Future<void> saveDailyReminderSettings(
+    DailyReminderSettings settings,
+  ) async {
+    await NotificationService().setDailyLearningReminder(
+      enabled: settings.enabled,
+      time: settings.time,
+    );
     notifyListeners();
   }
 
@@ -461,6 +493,24 @@ class AppDataController extends ChangeNotifier {
   Future<void> setSkinVivo(bool value) async {
     _skinVivo = value;
     await _storage.saveSkinVivo(value);
+    notifyListeners();
+  }
+
+  Future<void> setApiBaseUrl(String url) async {
+    _apiBaseUrl = url;
+    await _storage.saveServerBaseUrl(url);
+    notifyListeners();
+  }
+
+  Future<void> logout() async {
+    _isLoggedIn = false;
+    await _credentials.clearAuthToken();
+    notifyListeners();
+  }
+
+  Future<void> login(String token) async {
+    _isLoggedIn = true;
+    await _credentials.saveAuthToken(token);
     notifyListeners();
   }
 

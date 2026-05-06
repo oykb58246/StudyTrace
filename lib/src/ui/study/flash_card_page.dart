@@ -291,23 +291,35 @@ class _FlashCardPageState extends State<FlashCardPage> {
     required Color textColor,
     required Color bodyColor,
   }) {
+    const cardWidth = 220.0;
+    const overlap = 24.0;
     return SizedBox(
       key: Key('flash_card_shelf_${date}_$shelfIndex'),
-      height: 174,
-      child: ListView.separated(
+      height: 192,
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        padding: const EdgeInsets.only(right: 48),
         itemCount: cards.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, index) => Transform.translate(
-          offset: const Offset(-8, 0),
-          child: _miniCard(
-          card: cards[index],
-          scopeCards: cards,
-          scopeIndex: index,
-          textColor: textColor,
-          bodyColor: bodyColor,
-        ),
-      ),
+        itemBuilder: (_, index) {
+          final isLast = index == cards.length - 1;
+          return SizedBox(
+            width: isLast ? cardWidth : cardWidth - overlap,
+            child: OverflowBox(
+              alignment: Alignment.centerLeft,
+              minWidth: cardWidth,
+              maxWidth: cardWidth,
+              child: _miniCard(
+                card: cards[index],
+                scopeCards: cards,
+                scopeIndex: index,
+                stackIndex: index,
+                textColor: textColor,
+                bodyColor: bodyColor,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -316,72 +328,101 @@ class _FlashCardPageState extends State<FlashCardPage> {
     required AiFlashCard card,
     required List<AiFlashCard> scopeCards,
     required int scopeIndex,
+    required int stackIndex,
     required Color textColor,
     required Color bodyColor,
   }) {
     final accent = widget.controller.primaryColor;
-    return SizedBox(
-      key: Key('flash_card_mini_${card.id}'),
-      width: 220,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: () => _openBrowse(scopeCards, scopeIndex),
-          child: GlassCard(
-            color: widget.isDarkMode
-                ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                : null,
-            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-            child: Stack(fit: StackFit.expand, children: [
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  _starButton(card, bodyColor),
-                  _groupButton(card, bodyColor),
-                ]),
+    final isOdd = stackIndex.isOdd;
+    final cardColor = widget.isDarkMode
+        ? (isOdd
+            ? const Color(0xFF2B3144).withValues(alpha: 0.96)
+            : const Color(0xFF242B37).withValues(alpha: 0.96))
+        : (isOdd ? const Color(0xFFF2F5FF) : Colors.white);
+    final shadowColor = widget.isDarkMode
+        ? Colors.black.withValues(alpha: 0.32)
+        : accent.withValues(alpha: 0.14);
+    final verticalOffset = stackIndex.isEven ? 0.0 : 7.0;
+    final scale = stackIndex.isEven ? 1.0 : 0.985;
+
+    return Transform.translate(
+      offset: Offset(0, verticalOffset),
+      child: Transform.scale(
+        scale: scale,
+        child: Container(
+          key: Key('flash_card_mini_${card.id}'),
+          width: 220,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: shadowColor,
+                blurRadius: 18,
+                offset: const Offset(-8, 8),
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 36),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.help_outline_rounded,
-                      color: const Color(0xFFF8AA5B).withValues(alpha: 0.9),
-                      size: 22,
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: Text(
-                        card.question,
-                        style: TextStyle(
-                          color: textColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          height: 1.35,
-                        ),
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(22),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: () => _openBrowse(scopeCards, scopeIndex),
+              child: GlassCard(
+                color: cardColor,
+                padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                child: Stack(fit: StackFit.expand, children: [
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      _starButton(card, bodyColor),
+                      _groupButton(card, bodyColor),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 36),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (card.courseName.isNotEmpty)
-                          _miniTag(card.courseName, accent),
-                        if (card.groupName.isNotEmpty)
-                          _miniTag(card.groupName, const Color(0xFF7394F9)),
+                        Icon(
+                          Icons.help_outline_rounded,
+                          color:
+                              const Color(0xFFF8AA5B).withValues(alpha: 0.9),
+                          size: 22,
+                        ),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: Text(
+                            card.question,
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              height: 1.35,
+                            ),
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            if (card.courseName.isNotEmpty)
+                              _miniTag(card.courseName, accent),
+                            if (card.groupName.isNotEmpty)
+                              _miniTag(
+                                  card.groupName, const Color(0xFF7394F9)),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                ]),
               ),
-            ]),
+            ),
           ),
         ),
       ),
@@ -618,15 +659,19 @@ class _FlashCardPageState extends State<FlashCardPage> {
     return Column(children: [
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Text(
-            '${_browseIndex + 1} / ${list.length}',
-            style: TextStyle(
-              color: bodyColor,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
+        child: Row(children: [
+          Expanded(
+            child: Text(
+              '${_browseIndex + 1} / ${list.length}',
+              style: TextStyle(
+                color: bodyColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
+          _starButton(card, bodyColor),
+          _groupButton(card, bodyColor),
         ]),
       ),
       Expanded(

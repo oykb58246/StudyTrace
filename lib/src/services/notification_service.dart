@@ -1,11 +1,14 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 
+import '../models/daily_reminder_settings.dart';
 import '../models/study_task_item.dart';
+import 'local_storage_service.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._();
@@ -14,36 +17,107 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  final LocalStorageService _storage = LocalStorageService();
 
   static const _scheduledKey = 'studytrace_notification_ids_v1';
+  static const _dailyReminderId = 250000;
   final Set<int> _scheduledIds = {};
   bool _initialized = false;
 
   Future<void> init() async {
     if (_initialized) return;
     tz_data.initializeTimeZones();
+
     try {
       const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-    const settings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      const settings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
 
       await _plugin.initialize(
         settings: settings,
         onDidReceiveNotificationResponse: _onTap,
       );
+      await _requestPlatformPermissions();
       await _loadScheduled();
       _initialized = true;
     } catch (_) {
-      // ignore: notifications require a real device
+      // Notifications require platform services; keep tests/simulators safe.
       _initialized = false;
+    }
+  }
+
+  Future<DailyReminderSettings> loadDailyReminderSettings() {
+    return _storage.loadDailyReminderSettings();
+  }
+
+  Future<void> setDailyLearningReminder({
+    required bool enabled,
+    required TimeOfDay time,
+  }) async {
+    final settings = DailyReminderSettings(enabled: enabled, time: time);
+    await _storage.saveDailyReminderSettings(settings);
+
+    if (!enabled) {
+      await cancelDailyLearningReminder();
+      return;
+    }
+    await _scheduleDailyLearningReminder(time);
+  }
+
+  Future<void> cancelDailyLearningReminder() async {
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+      await _plugin.cancel(id: _dailyReminderId);
+    } catch (_) {
+      // ignore: platform notification services may be unavailable in tests
+    }
+  }
+
+  Future<void> rescheduleForTasks(List<StudyTaskItem> tasks) async {
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+
+      final previousIds = Set<int>.from(_scheduledIds);
+      for (final id in previousIds) {
+        await _plugin.cancel(id: id);
+      }
+      _scheduledIds.clear();
+      await _saveScheduled();
+
+      for (final task in tasks) {
+        if (task.effectiveStatus != StudyTaskStatus.completed) {
+          await scheduleForTask(task);
+        }
+      }
+
+      final daily = await loadDailyReminderSettings();
+      if (daily.enabled) {
+        await _scheduleDailyLearningReminder(daily.time);
+      } else {
+        await cancelDailyLearningReminder();
+      }
+    } catch (_) {
+      // ignore: do not let notification recovery block app startup
+    }
+  }
+
+  Future<void> _requestPlatformPermissions() async {
+    try {
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
+    } catch (_) {
+      // ignore: permission APIs are platform/version dependent
     }
   }
 
@@ -52,9 +126,7 @@ class NotificationService {
     final raw = prefs.getString(_scheduledKey);
     if (raw == null || raw.isEmpty) return;
     try {
-      final list = (jsonDecode(raw) as List<dynamic>)
-          .map((e) => e as int)
-          .toSet();
+      final list = (jsonDecode(raw) as List<dynamic>).map((e) => e as int);
       _scheduledIds.addAll(list);
     } catch (_) {}
   }
@@ -66,38 +138,33 @@ class NotificationService {
 
   void _onTap(NotificationResponse? response) {}
 
-  /// Schedule a notification for a task's reminder time
+  /// Schedule a notification for a task's reminder time.
   Future<int?> scheduleTaskReminder(StudyTaskItem task) async {
     final reminderTime = task.reminderTime;
     if (reminderTime == null) return null;
     if (reminderTime.isBefore(DateTime.now())) return null;
 
-    final id = task.id.hashCode.abs() % 100000;
-
-    final androidDetails = AndroidNotificationDetails(
-      'studytrace_task_reminder',
-      '任务提醒',
-      channelDescription: '学习任务截止和提醒通知',
-      importance: Importance.high,
-      priority: Priority.high,
-      showWhen: true,
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
+    final id = _taskReminderId(task);
     final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
+      android: AndroidNotificationDetails(
+        'studytrace_task_reminder',
+        '任务提醒',
+        channelDescription: '学习任务提醒通知',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+      ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
     );
 
     final tzDate = tz.TZDateTime.from(reminderTime, tz.local);
     await _plugin.zonedSchedule(
       id: id,
-      title: '📋 ${task.title}',
+      title: task.title,
       body: _formatReminderBody(task),
       scheduledDate: tzDate,
       notificationDetails: details,
@@ -110,7 +177,7 @@ class NotificationService {
     return id;
   }
 
-  /// Schedule a notification for task deadline
+  /// Schedule a notification before a task deadline.
   Future<int?> scheduleDeadlineReminder(StudyTaskItem task) async {
     final deadline = task.deadline;
     final now = DateTime.now();
@@ -120,7 +187,6 @@ class NotificationService {
       deadline.month,
       deadline.day - 1,
       9,
-      0,
     );
 
     if (notifyTime.isBefore(now)) {
@@ -128,33 +194,28 @@ class NotificationService {
     }
     if (notifyTime.isBefore(now)) return null;
 
-    final id = (task.id.hashCode.abs() % 100000) + 100000;
-
-    final androidDetails = AndroidNotificationDetails(
-      'studytrace_deadline',
-      '截止提醒',
-      channelDescription: '任务截止日期提醒',
-      importance: Importance.high,
-      priority: Priority.high,
-      showWhen: true,
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
+    final id = _deadlineReminderId(task);
     final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
+      android: AndroidNotificationDetails(
+        'studytrace_deadline',
+        '截止提醒',
+        channelDescription: '任务截止日期提醒',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+      ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
     );
 
     final tzDate = tz.TZDateTime.from(notifyTime, tz.local);
     await _plugin.zonedSchedule(
       id: id,
-      title: '⏰ 截止提醒：${task.title}',
-      body: '截止时间：${_fmtDate(task.deadline)}\n状态：${task.status.label}',
+      title: '截止提醒：${task.title}',
+      body: '截止时间：${_fmtDate(task.deadline)}\n状态：${task.effectiveStatus.label}',
       scheduledDate: tzDate,
       notificationDetails: details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
@@ -166,31 +227,105 @@ class NotificationService {
     return id;
   }
 
-  /// Schedule all notifications for a task
+  /// Schedule all notifications for a task.
   Future<void> scheduleForTask(StudyTaskItem task) async {
-    if (!_initialized || task.status == StudyTaskStatus.completed) return;
-    await scheduleTaskReminder(task);
-    await scheduleDeadlineReminder(task);
+    try {
+      if (!_initialized) await init();
+      if (!_initialized || task.effectiveStatus == StudyTaskStatus.completed) {
+        return;
+      }
+      await scheduleTaskReminder(task);
+      await scheduleDeadlineReminder(task);
+    } catch (_) {
+      // ignore: notification scheduling should never break task saving
+    }
   }
 
-  /// Cancel all notifications for a task
+  /// Cancel all notifications for a task.
   Future<void> cancelForTask(StudyTaskItem task) async {
-    if (!_initialized) return;
-    final id1 = task.id.hashCode.abs() % 100000;
-    final id2 = (task.id.hashCode.abs() % 100000) + 100000;
-    await _plugin.cancel(id: id1);
-    await _plugin.cancel(id: id2);
-    _scheduledIds.remove(id1);
-    _scheduledIds.remove(id2);
-    await _saveScheduled();
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+      final reminderId = _taskReminderId(task);
+      final deadlineId = _deadlineReminderId(task);
+      await _plugin.cancel(id: reminderId);
+      await _plugin.cancel(id: deadlineId);
+      _scheduledIds.remove(reminderId);
+      _scheduledIds.remove(deadlineId);
+      await _saveScheduled();
+    } catch (_) {
+      // ignore: platform notification services may be unavailable in tests
+    }
   }
 
-  /// Cancel all scheduled notifications
+  /// Cancel all scheduled notifications.
   Future<void> cancelAll() async {
-    await _plugin.cancelAll();
-    _scheduledIds.clear();
-    await _saveScheduled();
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+      await _plugin.cancelAll();
+      _scheduledIds.clear();
+      await _saveScheduled();
+    } catch (_) {
+      // ignore: platform notification services may be unavailable in tests
+    }
   }
+
+  Future<void> _scheduleDailyLearningReminder(TimeOfDay time) async {
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+
+      final details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          'studytrace_daily_learning',
+          '每日学习提醒',
+          channelDescription: '每日学习记录提醒',
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+          showWhen: true,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
+
+      final scheduledDate = _nextDailyTime(time);
+      await _plugin.zonedSchedule(
+        id: _dailyReminderId,
+        title: '学习提醒',
+        body: '今天也记录一下学习进展吧。',
+        scheduledDate: scheduledDate,
+        notificationDetails: details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } catch (_) {
+      // ignore: do not let notification errors break settings UI
+    }
+  }
+
+  tz.TZDateTime _nextDailyTime(TimeOfDay time) {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    return scheduled;
+  }
+
+  int _taskReminderId(StudyTaskItem task) => task.id.hashCode.abs() % 100000;
+
+  int _deadlineReminderId(StudyTaskItem task) => _taskReminderId(task) + 100000;
 
   String _formatReminderBody(StudyTaskItem task) {
     final buf = StringBuffer();

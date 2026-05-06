@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ai_config.dart';
 import '../models/ai_flash_card.dart';
+import '../models/daily_reminder_settings.dart';
 import '../models/history_item.dart';
 import '../models/study_log_item.dart';
 import '../models/study_note.dart';
@@ -20,7 +22,14 @@ class LocalStorageService {
   static const _weeklyReportsKey = 'studytrace_weekly_reports_v1';
   static const _darkModeKey = 'studytrace_dark_mode_v1';
   static const _skinVivoKey = 'studytrace_skin_vivo_v1';
+  static const _serverBaseUrlKey = 'studytrace_server_base_url_v1';
   static const _aiConfigKey = 'studytrace_ai_config_v1';
+  static const _dailyReminderEnabledKey =
+      'studytrace_daily_learning_reminder_enabled_v1';
+  static const _dailyReminderHourKey =
+      'studytrace_daily_learning_reminder_hour_v1';
+  static const _dailyReminderMinuteKey =
+      'studytrace_daily_learning_reminder_minute_v1';
 
   // --- Histories ---
 
@@ -164,7 +173,15 @@ class LocalStorageService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_skinVivoKey, value);
   }
+  Future<String?> loadServerBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_serverBaseUrlKey);
+  }
 
+  Future<void> saveServerBaseUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_serverBaseUrlKey, url);
+  }
   // --- AI Config ---
 
   Future<AiConfig> loadAiConfig() async {
@@ -183,6 +200,38 @@ class LocalStorageService {
   Future<void> saveAiConfig(AiConfig config) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_aiConfigKey, jsonEncode(config.toJson()));
+  }
+
+  // --- Daily Learning Reminder ---
+
+  Future<DailyReminderSettings> loadDailyReminderSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled =
+        prefs.getBool(_dailyReminderEnabledKey) ??
+            DailyReminderSettings.defaults.enabled;
+    final hour =
+        prefs.getInt(_dailyReminderHourKey) ??
+            DailyReminderSettings.defaults.time.hour;
+    final minute =
+        prefs.getInt(_dailyReminderMinuteKey) ??
+            DailyReminderSettings.defaults.time.minute;
+
+    return DailyReminderSettings(
+      enabled: enabled,
+      time: TimeOfDay(
+        hour: hour.clamp(0, 23).toInt(),
+        minute: minute.clamp(0, 59).toInt(),
+      ),
+    );
+  }
+
+  Future<void> saveDailyReminderSettings(
+    DailyReminderSettings settings,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_dailyReminderEnabledKey, settings.enabled);
+    await prefs.setInt(_dailyReminderHourKey, settings.time.hour);
+    await prefs.setInt(_dailyReminderMinuteKey, settings.time.minute);
   }
 
   // --- User Profile ---

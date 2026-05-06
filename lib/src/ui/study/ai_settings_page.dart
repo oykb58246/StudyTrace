@@ -1,21 +1,28 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/ai_config.dart';
+import '../../models/daily_reminder_settings.dart';
 import '../../services/blueheart_model_client.dart';
 import '../../services/deepseek_client.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
+
+enum AiSettingsMode { ai, system }
 
 class AiSettingsPage extends StatefulWidget {
   const AiSettingsPage({
     super.key,
     required this.isDarkMode,
     required this.controller,
+    this.mode = AiSettingsMode.ai,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
+  final AiSettingsMode mode;
 
   @override
   State<AiSettingsPage> createState() => _AiSettingsPageState();
@@ -25,6 +32,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   late final TextEditingController _deepSeekApiKeyController;
   late final TextEditingController _blueHeartAppKeyController;
   late final TextEditingController _baseUrlController;
+  late final TextEditingController _serverBaseUrlController;
   late final TextEditingController _appIdController;
   late final TextEditingController _maxTokensController;
   late String _deepSeekModel;
@@ -40,7 +48,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   bool _obscureBlueHeartKey = true;
   bool _isSaving = false;
   bool _isTesting = false;
+  bool _isTestingBackend = false;
   bool _showAdvanced = false;
+  DailyReminderSettings _dailyReminderSettings =
+      DailyReminderSettings.defaults;
+  bool _isLoadingReminder = true;
+  bool _isSavingReminder = false;
 
   static const _deepSeekModels = [
     'deepseek-v4-flash',
@@ -54,6 +67,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     _deepSeekApiKeyController = TextEditingController();
     _blueHeartAppKeyController = TextEditingController();
     _baseUrlController = TextEditingController(text: config.baseUrl);
+    _serverBaseUrlController = TextEditingController(text: widget.controller.apiBaseUrl);
     _appIdController = TextEditingController(text: config.appId);
     _maxTokensController =
         TextEditingController(text: config.maxTokens.toString());
@@ -66,6 +80,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     _presencePenalty = config.presencePenalty;
     _reasoningEffort = config.reasoningEffort;
     _isEnabled = config.isEnabled;
+    _loadDailyReminderSettings();
   }
 
   @override
@@ -73,6 +88,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     _deepSeekApiKeyController.dispose();
     _blueHeartAppKeyController.dispose();
     _baseUrlController.dispose();
+    _serverBaseUrlController.dispose();
     _appIdController.dispose();
     _maxTokensController.dispose();
     super.dispose();
@@ -88,6 +104,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       animation: widget.controller,
       builder: (context, _) {
         final accent = widget.controller.primaryColor;
+        if (widget.mode == AiSettingsMode.system) {
+          return _buildSystemSettingsView(
+            titleColor: titleColor,
+            bodyColor: bodyColor,
+          );
+        }
+
         return ListView(
           key: const Key('page_ai_settings'),
           padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
@@ -106,8 +129,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               style: TextStyle(color: bodyColor, fontSize: 15, height: 1.5),
             ),
             const SizedBox(height: 18),
-            _skinSelector(),
-            const SizedBox(height: 14),
             _statusCard(),
             const SizedBox(height: 14),
 
@@ -544,6 +565,52 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     );
   }
 
+  Widget _buildSystemSettingsView({
+    required Color titleColor,
+    required Color bodyColor,
+  }) {
+    return ListView(
+      key: const Key('page_system_settings'),
+      padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
+      children: [
+        Text(
+          '系统设置',
+          style: TextStyle(
+            color: titleColor,
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '账号同步、本地通知与应用偏好集中管理。',
+          style: TextStyle(color: bodyColor, fontSize: 15, height: 1.5),
+        ),
+        const SizedBox(height: 18),
+        _buildAccountSyncSection(),
+        const SizedBox(height: 14),
+        _buildServerApiSection(),
+        const SizedBox(height: 14),
+        _skinSelector(),
+        const SizedBox(height: 14),
+        _buildNotificationSection(),
+        const SizedBox(height: 14),
+        _buildSectionCard(
+          icon: Icons.settings_suggest_rounded,
+          iconColor: const Color(0xFF7D9BFF),
+          title: '其他设置',
+          subtitle: '通用偏好与后续系统选项',
+          children: [
+            Text(
+              '深色模式可在侧边栏快捷切换；隐私、导出与备份偏好后续会统一收纳在这里。',
+              style: TextStyle(color: bodyColor, fontSize: 13, height: 1.5),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildSectionCard({
     required IconData icon,
     required Color iconColor,
@@ -626,6 +693,174 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           ...children,
         ],
       ),
+    );
+  }
+
+  Widget _buildServerApiSection() {
+    return _buildSectionCard(
+      icon: Icons.dns_rounded,
+      iconColor: const Color(0xFFF8AA5B),
+      title: '后端服务代理与 API',
+      subtitle: '配置以链接云同步、学习小组与 AI 管理',
+      children: [
+        _buildTextField(
+          controller: _serverBaseUrlController,
+          label: 'NestJS 后端地址',
+          hintText: '如: http://10.0.2.2:3000 等',
+          onChanged: (val) {
+            widget.controller.setApiBaseUrl(val.trim());
+          },
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            if (_isTestingBackend)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            TextButton.icon(
+              onPressed: _isTestingBackend ? null : _testBackendConnection,
+              icon: const Icon(Icons.wifi_protected_setup_rounded, size: 18),
+              label: const Text('测试连接'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFF8AA5B),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountSyncSection() {
+    final accent = widget.controller.primaryColor;
+    final isLoggedIn = widget.controller.isLoggedIn;
+    
+    return _buildSectionCard(
+      icon: Icons.cloud_sync_rounded,
+      iconColor: const Color(0xFF4CB9FF),
+      title: '账号登录与云同步',
+      subtitle: '备份学习数据到云端，多端共享',
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                isLoggedIn ? '已登录: 测试账号\n可以进行云同步任务。' : '尚未登录\n请配置后端服务后在此登录',
+                style: TextStyle(
+                  color: widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            ElevatedButton(
+              onPressed: () {
+                if (isLoggedIn) {
+                  widget.controller.logout();
+                } else {
+                  // Simulate Login for now
+                  widget.controller.login('fake-jwt-token-12345');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isLoggedIn ? Colors.redAccent : accent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(isLoggedIn ? '退出登录' : '去登录'),
+            )
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotificationSection() {
+    final accent = widget.controller.primaryColor;
+    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor =
+        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final timeLabel = _dailyReminderSettings.time.format(context);
+
+    return _buildSectionCard(
+      icon: Icons.notifications_active_rounded,
+      iconColor: const Color(0xFF4BC4A1),
+      title: '本地通知',
+      subtitle: '任务截止提醒和每日学习提醒',
+      children: [
+        SwitchListTile(
+          value: _dailyReminderSettings.enabled,
+          onChanged: _isLoadingReminder || _isSavingReminder
+              ? null
+              : (value) => _saveDailyReminder(
+                    _dailyReminderSettings.copyWith(enabled: value),
+                  ),
+          contentPadding: EdgeInsets.zero,
+          activeThumbColor: Colors.white,
+          activeTrackColor: accent,
+          title: Text(
+            '每日学习提醒',
+            style: TextStyle(
+              color: titleColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Text(
+            '默认 20:00，可根据学习节奏调整',
+            style: TextStyle(color: bodyColor, fontSize: 12),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '提醒时间',
+                style: TextStyle(
+                  color: titleColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _isLoadingReminder || _isSavingReminder
+                  ? null
+                  : _pickDailyReminderTime,
+              icon: const Icon(Icons.schedule_rounded, size: 18),
+              label: Text(timeLabel),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: widget.isDarkMode ? Colors.white : accent,
+                side: BorderSide(
+                  color: widget.isDarkMode
+                      ? Colors.white24
+                      : accent.withValues(alpha: 0.22),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Android 13 及以上会在初始化时请求通知权限；任务提醒会在任务完成、删除或修改时自动同步。',
+          style: TextStyle(color: bodyColor, fontSize: 12, height: 1.45),
+        ),
+        if (_isSavingReminder) ...[
+          const SizedBox(height: 12),
+          LinearProgressIndicator(color: accent, minHeight: 2),
+        ],
+      ],
     );
   }
 
@@ -758,10 +993,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     required String hintText,
     bool obscureText = false,
     Widget? suffixIcon,
+    ValueChanged<String>? onChanged,
   }) {
     return TextField(
       controller: controller,
       obscureText: obscureText,
+      onChanged: onChanged,
       style: TextStyle(
         color: widget.isDarkMode ? Colors.white : AppColors.ink,
         fontSize: 14,
@@ -812,6 +1049,50 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     );
   }
 
+  Future<void> _loadDailyReminderSettings() async {
+    try {
+      final settings = await widget.controller.loadDailyReminderSettings();
+      if (!mounted) return;
+      setState(() {
+        _dailyReminderSettings = settings;
+        _isLoadingReminder = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingReminder = false);
+    }
+  }
+
+  Future<void> _pickDailyReminderTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _dailyReminderSettings.time,
+    );
+    if (!mounted || picked == null) return;
+    await _saveDailyReminder(
+      _dailyReminderSettings.copyWith(enabled: true, time: picked),
+    );
+  }
+
+  Future<void> _saveDailyReminder(DailyReminderSettings settings) async {
+    setState(() => _isSavingReminder = true);
+    try {
+      await widget.controller.saveDailyReminderSettings(settings);
+      if (!mounted) return;
+      setState(() => _dailyReminderSettings = settings);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(settings.enabled ? '每日学习提醒已开启' : '每日学习提醒已关闭'),
+          backgroundColor: const Color(0xFF4BC4A1),
+        ),
+      );
+    } catch (error) {
+      _showError('通知设置保存失败：$error');
+    } finally {
+      if (mounted) setState(() => _isSavingReminder = false);
+    }
+  }
+
   Future<void> _save() async {
     setState(() => _isSaving = true);
     try {
@@ -831,6 +1112,36 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _testBackendConnection() async {
+    setState(() => _isTestingBackend = true);
+    final urlStr = _serverBaseUrlController.text.trim();
+    try {
+      if (urlStr.isEmpty) {
+        _showError('NestJS 后端地址不能为空');
+        return;
+      }
+      final uri = Uri.parse('$urlStr/api'); // try to ping some endpoint or just the root
+      final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (resp.statusCode == 200 || resp.statusCode == 404) {
+        // Even 404 means the server exists and is reachable
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('测试成功！服务已连通 (Status状态码: ${resp.statusCode})'),
+            backgroundColor: const Color(0xFF4BC4A1),
+          ),
+        );
+      } else {
+        _showError('后端服务暂无正常响应，状态码: ${resp.statusCode}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showError('连接失败：$e');
+    } finally {
+      if (mounted) setState(() => _isTestingBackend = false);
     }
   }
 

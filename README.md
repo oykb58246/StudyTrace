@@ -1,237 +1,193 @@
 # StudyTrace 学迹
 
-> 大学生课程任务管理与 AI 学习助手 App
+> 面向大学生的学习任务管理、AI 学习助手与学习数据看板 App
 
-StudyTrace 是一款面向大学生的 Flutter 跨平台应用，支持课程任务管理、每日学习记录、番茄钟计时、学习数据统计，并深度集成**蓝心大模型**和 **DeepSeek** AI 能力——流式对话、图片理解、自动生成结构化学习日志、智能拆解复杂任务、AI 分析周报、风险提醒、知识闪卡等功能，形成"**记录 → 执行 → 分析 → 复盘**"的智能学习闭环。
+StudyTrace 是一款 Flutter 跨平台学习管理应用，围绕「记录 → 执行 → 分析 → 复盘」构建个人学习闭环。App 支持课程任务、学习日志、日历、番茄钟、知识闪卡、学习笔记、AI 周报、风险提醒、云端同步、学习小组和排行榜 UI；同时已加入自建 NestJS 后端骨架，用于上线后的账号、同步、AI 代理、小组和排行数据能力。
 
 - **Web 版**：https://studytraceweb26042901.z23.web.core.windows.net/
+- **当前状态**：离线优先 App 已可本地使用；云端同步、学习小组、排行榜 UI 已加入；后端能力已搭建，下一步是进行真实接口联调和数据打通。
 
 ---
 
 ## 功能概览
 
-### 核心功能
-- **课程任务管理** — 创建/编辑/删除任务，按状态/类型筛选，自定义子任务，可点击切换完成状态，智能排序（未完成 → 截止期优先）
-- **每日学习记录** — 记录学习内容、问题、思考、下一步计划，按课程分类
-- **学习日历** — 月视图日历，标记每日学习记录和任务，点击查看当天详情
-- **学习周报** — 基于一周学习数据自动生成结构化周报，支持保存和复制
-- **课程归档** — 自动聚合课程的任务与记录，按课程浏览历史学习数据，支持手动添加/删除课程
-- **学习统计** — 饼图（课程分布）+ 柱状图（7天趋势）+ 完成率统计卡片
-- **连续打卡** — 跟踪连续学习天数，7 天以上显示火焰徽章
-- **番茄钟计时** — 5/15/25/45/60 分钟预设，计时结束 AI 自动生成学习记录
+### 学习闭环
+- **课程任务管理**：创建、编辑、删除任务，支持状态/类型筛选、搜索、截止时间、提醒时间和子任务。
+- **学习日志**：记录学习内容、问题、思考和下一步计划，支持课程归类和搜索筛选。
+- **学习日历**：月历标记学习记录和截止任务，点击日期查看当天任务与记录，默认展示当天信息。
+- **课程归档**：按课程汇总任务、日志和历史周报，支持课程管理。
+- **学习数据看板**：整合原「学习统计」内容，集中展示总记录、总任务、完成率、课程分布饼图、近 7 天学习记录柱状图、近 4 周趋势、子任务进度、AI 周报、笔记等数据。
+- **专注计时**：番茄钟计时，支持多种时长，计时结束可生成 AI 学习记录。
+- **云端同步 UI**：展示同步入口、同步状态和多端数据同步相关操作，为接入后端同步接口预留交互。
+- **学习小组 UI**：提供小组入口、邀请制小组、成员、动态等多人学习场景界面。
+- **排行榜 UI**：提供个人榜、小组周榜/月榜等学习积分排行展示入口。
 
-### AI 智能能力（蓝心大模型 + DeepSeek 双引擎）
+### AI 能力
+- **AI 学习助手**：生成学习日志、拆解任务、分析周报、风险提醒。
+- **AI 流式对话**：支持 Markdown 渲染、历史会话、多会话切换和深度思考模式。
+- **AI 图片理解 / OCR / 语音输入**：支持拍照、选图、OCR 和语音创建任务。
+- **AI 知识闪卡**：从学习记录生成问答卡片，支持列表横向滑动、层叠小卡、放大浏览、翻转、收藏和标签。
+- **AI 设置**：蓝心大模型为主，DeepSeek 可选自定义接入，支持模型、Key、推理参数、连接测试。
 
-| 功能 | 说明 |
-|------|------|
-| **AI 流式对话** | 实时 token-by-token 响应，Markdown 渲染，会话历史持久化，多会话切换 |
-| **AI 图片理解** | 拍照/选图 → AI 分析图片内容（蓝心 Vision） |
-| **AI 生成学习日志** | 输入自然语言描述 → 结构化学习记录一键保存 |
-| **AI 智能拆解任务** | 输入复杂任务 → 子任务列表 → 一键导入任务列表 |
-| **AI 分析型周报** | 7 维度深度分析（主题/投入/问题/完成率/风险/评价/建议） |
-| **AI 风险提醒** | 自动检测截止风险、进度偏低、课程断档，按级别预警 |
-| **AI 知识闪卡** | 从学习记录自动生成问答闪卡，点击翻转查看答案 |
-| **语音创建任务** | 语音输入描述 → AI 自动拆解并创建学习任务 |
-| **Notion 风格笔记** | AI 生成笔记自动转为结构化块（标题/列表/待办/代码块） |
+### 设置与导航
+- **侧边栏结构**：
+  - 总览：作品总览
+  - AI 管理：AI 学习助手、AI 设置
+  - 学习应用：学习笔记、专注计时、知识闪卡，支持点击展开/收起
+  - 数据与编排：数据看板、任务编排
+  - 系统：系统设置
+- **系统设置**：通知提醒、皮肤主题和其他系统偏好集中管理。
+- **深色模式**：侧边栏底部小方形按钮切换日间/夜间。
 
-### 更多功能
-- **皮肤主题** — vivo 蓝 / 传统紫双主题可切换，80+ 处 UI 动态颜色
-- **深度思考模式** — 聊天内一键开启/关闭 AI 深度推理
-- **深色模式** — 全局深色/浅色主题切换
-- **个人信息** — 自定义头像表情、昵称、个人签名
-- **API 配置** — 蓝心 AppKey（内置即用）+ DeepSeek API Key，模型选择，高级参数调节
+### 后端上线能力
+- **技术路线**：Node/NestJS + PostgreSQL + Prisma + JWT。
+- **已具备骨架**：认证、用户、同步、AI 代理、学习小组、动态、排行榜、备份导出。
+- **主要目录**：`backend/`
+- **注意**：云端同步、学习小组、排行榜 UI 已加入；仍需要与后端接口联调，打通真实账号、同步、小组动态和排行数据。
 
 ---
 
 ## 技术栈
 
-| 项目 | 内容 |
+| 模块 | 内容 |
 |------|------|
-| 框架 | Flutter 3.x (Material Design 3) |
-| 架构 | MVVM (ChangeNotifier) |
-| 语言 | Dart |
-| 存储 | SharedPreferences（本地 JSON）+ flutter_secure_storage（API Key） |
-| AI 服务 | 蓝心大模型（Chat Completions + Vision + OCR）+ DeepSeek |
-| Web 部署 | Azure Storage 静态网站 |
-| 关键依赖 | `table_calendar` `fl_chart` `rive` `flutter_markdown` `speech_to_text` `google_mlkit_text_recognition` `image_picker` `http` |
+| App 框架 | Flutter 3.x / Material Design 3 |
+| App 架构 | MVVM / ChangeNotifier |
+| App 存储 | SharedPreferences 本地 JSON + flutter_secure_storage 凭据存储 |
+| AI 服务 | 蓝心大模型为主，DeepSeek 可选自定义接入 |
+| 图表与交互 | `fl_chart`、`table_calendar`、`rive`、`flutter_markdown` |
+| 输入能力 | `image_picker`、`google_mlkit_text_recognition`、`speech_to_text` |
+| 后端 | NestJS、PostgreSQL、Prisma、JWT、Docker |
 | 平台 | Android / Windows / Web |
-
----
-
-## 快速开始
-
-### 前置要求
-- Flutter SDK >= 3.0.0
-- Android Studio（建议安装 Flutter、Dart 插件）或 VS Code + Flutter 插件
-- Android 模拟器或真机
-
-### 在 Android Studio 中运行
-
-1. 安装并配置 Flutter SDK
-   - 先安装 Flutter SDK，并把 `flutter/bin` 加入系统 `PATH`
-   - 在终端运行 `flutter doctor`，按提示补齐 Android toolchain、Chrome、设备等环境
-   - 打开 Android Studio → Settings/Preferences → Plugins，安装 Flutter 插件；Dart 插件会随 Flutter 插件一起启用
-
-2. 克隆并打开项目
-   ```bash
-   git clone https://github.com/oykb58246/StudyTrace.git
-   ```
-   - Android Studio → File → Open，选择克隆后的 `StudyTrace` 项目根目录
-   - 如果弹出 “Trust Project” 或 Flutter SDK 路径提示，选择信任项目并指向本机 Flutter SDK
-
-3. 安装依赖
-   - Android Studio 顶部通常会提示 `Pub get`，点击即可
-   - 也可以在底部 Terminal 执行：
-     ```bash
-     flutter pub get
-     ```
-
-4. 选择运行设备
-   - 模拟器：Tools → Device Manager → Create device，创建并启动 Android 模拟器
-   - 真机：打开开发者选项和 USB 调试，连接电脑后在设备列表中选择手机
-
-5. 启动 App
-   - 确认运行入口是 `lib/main.dart`
-   - 点击 Android Studio 顶部绿色 Run 按钮
-   - 或在 Terminal 执行：
-     ```bash
-     flutter run
-     ```
-
-6. 常见问题
-   - 依赖缺失：重新执行 `flutter pub get`
-   - 找不到设备：执行 `flutter devices`，确认模拟器已启动或真机已授权
-   - Android toolchain 报错：执行 `flutter doctor --android-licenses` 并接受协议
-   - 分析报错：执行 `flutter analyze --no-pub` 查看具体 Dart/Flutter 问题
-
-### 运行
-
-```bash
-# 克隆项目
-git clone https://github.com/oykb58246/StudyTrace.git
-cd StudyTrace
-
-# 安装依赖
-flutter pub get
-
-# 代码检查
-flutter analyze
-
-# 运行到设备
-flutter run
-
-# 构建 APK
-flutter build apk --debug
-
-# 构建 Web
-flutter build web --release
-```
-
-### AI 配置
-
-蓝心大模型已内置 AppKey，开箱即用。也可额外配置 DeepSeek 作为备选：
-1. 打开 App → AI 设置
-2. 蓝心面板：选择模型即可使用
-3. DeepSeek 面板（可选）：填写 API Key → 测试连接 → 启用
 
 ---
 
 ## 项目结构
 
-```
+```text
 lib/
-├── main.dart                                  # 应用入口
+├── main.dart
 └── src/
     ├── controllers/
-    │   └── app_data_controller.dart            # 全局状态管理 + 皮肤系统
+    │   └── app_data_controller.dart
     ├── models/
-    │   ├── study_task_item.dart                # 学习任务（含子任务）
-    │   ├── study_sub_task_item.dart            # 子任务
-    │   ├── study_log_item.dart                 # 学习日志
-    │   ├── weekly_report_item.dart             # 周报
-    │   ├── study_note.dart                     # 学习笔记（Notion 风格块）
-    │   ├── note_block.dart                     # 笔记块（标题/列表/待办/代码）
-    │   ├── user_profile.dart                   # 用户资料
-    │   ├── ai_generated_log.dart               # AI 生成日志
-    │   ├── ai_task_plan.dart                   # AI 任务拆解
-    │   ├── ai_study_analysis.dart              # AI 分析周报
-    │   ├── ai_risk_warning.dart                # AI 风险提醒
-    │   ├── ai_flash_card.dart                  # AI 知识闪卡
-    │   ├── ai_chat_message.dart                # AI 聊天消息/会话
-    │   └── ai_config.dart                      # AI 配置模型（双引擎+高级参数）
+    │   ├── study_task_item.dart
+    │   ├── study_sub_task_item.dart
+    │   ├── study_log_item.dart
+    │   ├── weekly_report_item.dart
+    │   ├── study_note.dart
+    │   ├── note_block.dart
+    │   ├── ai_config.dart
+    │   ├── ai_chat_message.dart
+    │   └── ai_flash_card.dart
     ├── services/
-    │   ├── local_storage_service.dart          # 本地持久化
-    │   ├── weekly_report_service.dart          # 周报生成
-    │   ├── ai_study_service.dart               # AIGC 核心服务（蓝心+DeepSeek）
-    │   ├── blueheart_model_client.dart         # 蓝心大模型客户端（流式/Vision）
-    │   ├── blueheart_ocr_client.dart           # 蓝心 OCR 客户端
-    │   ├── deepseek_client.dart                # DeepSeek API 客户端
-    │   ├── ai_credential_service.dart          # 凭据安全存储（含内置 AppKey）
-    │   └── sample_data_service.dart            # 示例数据生成
+    │   ├── local_storage_service.dart
+    │   ├── ai_study_service.dart
+    │   ├── blueheart_model_client.dart
+    │   ├── deepseek_client.dart
+    │   ├── ai_credential_service.dart
+    │   └── report_export_service.dart
     ├── theme/
-    │   └── app_theme.dart                      # MD3 主题 + AppColors
+    │   └── app_theme.dart
     └── ui/
-        ├── shared/
-        │   └── common_widgets.dart             # 通用组件
-        ├── login/
-        │   └── login_screen.dart               # 登录/注册页
-        ├── analysis/
-        │   └── analysis_result_page.dart       # 分析结果页
         ├── shell/
-        │   ├── app_shell.dart                  # 主壳（侧栏+底部导航）
-        │   ├── navigation_models.dart          # 导航枚举
-        │   ├── admin_section_page.dart         # 侧栏页面路由
-        │   ├── tool_home_page.dart             # 首页 Dashboard
-        │   ├── create_page.dart                # 任务管理（自定义子任务）
-        │   ├── extension_page.dart             # 学习记录列表
-        │   └── user_page.dart                  # 课程归档（含课程CRUD）
+        │   ├── app_shell.dart
+        │   ├── navigation_models.dart
+        │   ├── admin_section_page.dart
+        │   ├── create_page.dart
+        │   ├── extension_page.dart
+        │   └── user_page.dart
         └── study/
-            ├── ai_chat_page.dart               # AI 流式对话（会话历史/Vision/深度思考）
-            ├── ai_assistant_page.dart          # AI 学习助手（4大功能）
-            ├── ai_settings_page.dart           # AI 设置（双引擎+皮肤+高级参数）
-            ├── calendar_page.dart              # 学习日历（日志+任务）
-            ├── statistics_page.dart            # 学习统计
-            ├── timer_page.dart                 # 番茄钟
-            ├── flash_card_page.dart            # 知识闪卡（层叠+翻转）
-            ├── study_notes_page.dart           # 学习笔记（Notion 块编辑器）
-            ├── learning_dashboard_page.dart    # 学习仪表盘
-            ├── task_planning_page.dart         # 任务规划
-            └── user_profile_page.dart          # 用户资料编辑
+            ├── ai_assistant_page.dart
+            ├── ai_chat_page.dart
+            ├── ai_settings_page.dart
+            ├── calendar_page.dart
+            ├── learning_dashboard_page.dart
+            ├── study_notes_page.dart
+            ├── timer_page.dart
+            └── flash_card_page.dart
+
+backend/
+├── src/
+├── prisma/
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
 ```
 
 ---
 
-## 导航结构
+## 后端 API 概览
 
-```
-底部导航
-├── 首页   — 仪表盘、AI 入口、周报生成、任务进度
-├── 记录   — 学习日志列表、搜索、筛选
-├── 日历   — 月视图日历、日视图日志+任务
-├── 任务   — 任务管理、搜索、状态/类型筛选、自定义子任务
-└── 归档   — 课程汇总、历史周报、课程管理
+后端位于 `backend/`，第一版接口包括：
 
-侧边菜单
-├── BROWSE
-│   ├── 作品总览
-│   ├── AI 学习助手
-│   ├── AI 对话（流式聊天+历史会话）
-│   ├── 学习笔记（Notion 编辑器）
-│   ├── 学习统计
-│   ├── 专注计时
-│   └── 知识闪卡
-└── 管理
-    ├── 任务编排
-    ├── 数据看板
-    └── 系统设置（AI 配置 / 皮肤 / 深色模式）
+- 账号：`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`
+- 用户：`GET /me`、`PATCH /me/profile`
+- 同步：`POST /sync/push`、`GET /sync/pull?cursor=...`、`GET /sync/export`
+- 小组：`POST /groups`、`POST /groups/join`、`GET /groups/:id/members`
+- 动态：`POST /activities`、`GET /groups/:id/activities`
+- 排行榜：`GET /leaderboards/me`、`GET /leaderboards/groups/:id?range=week|month`
+- AI 代理：`POST /ai/study-log`、`POST /ai/task-plan`、`POST /ai/weekly-analysis`、`POST /ai/risk-warnings`、`POST /ai/flash-cards`、`POST /ai/chat`
+
+---
+
+## 快速开始
+
+### App
+
+```bash
+git clone https://github.com/oykb58246/StudyTrace.git
+cd StudyTrace
+flutter pub get
+flutter run
 ```
+
+### 后端
+
+```bash
+cd backend
+cp .env.example .env
+npm install
+npm run prisma:generate
+npm run prisma:migrate
+npm run start:dev
+```
+
+Docker：
+
+```bash
+cd backend
+docker compose up --build
+```
+
+---
+
+## AI 配置
+
+蓝心大模型已内置 AppKey，开箱即用。DeepSeek 为可选自定义接入：
+
+1. 打开 App → 侧边栏 → AI 管理 → AI 设置
+2. 蓝心面板选择模型或保留默认配置
+3. DeepSeek 面板填写 API Key，测试连接后启用
+
+通知提醒、皮肤主题和其他系统偏好位于：侧边栏 → 系统 → 系统设置。
 
 ---
 
 ## 版本
 
-- **v1.1** — 蓝心大模型完整集成 + 流式对话 + Vision 图片理解 + 皮肤系统 + 全面 UI 重构
-- v1.0 — 初始版本，DeepSeek AI 集成 + 学习闭环功能
+- **v1.2 当前版**：侧边栏二次重构；AI 设置与系统设置分离；学习统计并入数据看板；云端同步、学习小组、排行榜 UI 加入；知识闪卡浏览与层叠交互增强；学习日历与任务编辑问题修复；自建 NestJS 后端骨架加入。
+- **v1.1**：蓝心大模型完整集成、流式对话、Vision 图片理解、皮肤系统和 UI 重构。
+- **v1.0**：基础学习闭环、任务、日志、周报、统计和 AI 接入。
+
+---
+
+## 待接入
+
+- Flutter 前端接入自建后端登录/注册。
+- 云端同步 UI 与后端同步接口联调。
+- 学习小组、学习动态、排行榜 UI 与真实后端数据打通。
+- AI 请求改为后端代理，隐藏客户端内置模型 Key。
 
 ---
 

@@ -23,7 +23,7 @@ class CalendarPage extends StatefulWidget {
 
 class _CalendarPageState extends State<CalendarPage> {
   DateTime _focusedDay = DateTime.now();
-  DateTime? _selectedDay;
+  DateTime? _selectedDay = DateTime.now();
   CalendarFormat _calendarFormat = CalendarFormat.month;
 
   Map<DateTime, List<StudyLogItem>> _groupLogsByDate(
@@ -31,7 +31,7 @@ class _CalendarPageState extends State<CalendarPage> {
   ) {
     final map = <DateTime, List<StudyLogItem>>{};
     for (final log in logs) {
-      final day = DateTime(log.date.year, log.date.month, log.date.day);
+      final day = _dayKey(log.date);
       map.putIfAbsent(day, () => []).add(log);
     }
     return map;
@@ -47,11 +47,13 @@ class _CalendarPageState extends State<CalendarPage> {
         final tasks = widget.controller.studyTasks;
         final logsByDate = _groupLogsByDate(logs);
         final tasksByDate = _groupTasksByDate(tasks);
+        final selectedDayKey =
+            _selectedDay != null ? _dayKey(_selectedDay!) : null;
         final selectedDayLogs = _selectedDay != null
-            ? logsByDate[_selectedDay!] ?? []
+            ? logsByDate[selectedDayKey!] ?? const <StudyLogItem>[]
             : <StudyLogItem>[];
         final selectedDayTasks = _selectedDay != null
-            ? tasksByDate[_selectedDay!] ?? []
+            ? tasksByDate[selectedDayKey!] ?? const <StudyTaskItem>[]
             : <StudyTaskItem>[];
 
         return ListView(
@@ -91,7 +93,10 @@ class _CalendarPageState extends State<CalendarPage> {
                   setState(() => _calendarFormat = format);
                 },
                 onPageChanged: (focused) => _focusedDay = focused,
-                eventLoader: (day) => logsByDate[day] ?? [],
+                eventLoader: (day) => [
+                  ...?logsByDate[_dayKey(day)],
+                  ...?tasksByDate[_dayKey(day)],
+                ],
                 headerStyle: HeaderStyle(
                   formatButtonVisible: true,
                   titleCentered: true,
@@ -267,12 +272,14 @@ class _CalendarPageState extends State<CalendarPage> {
   ) {
     final map = <DateTime, List<StudyTaskItem>>{};
     for (final task in tasks) {
-      final day = DateTime(
-          task.deadline.year, task.deadline.month, task.deadline.day);
+      final day = _dayKey(task.deadline);
       map.putIfAbsent(day, () => []).add(task);
     }
     return map;
   }
+
+  DateTime _dayKey(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
 
   Widget _taskCard(StudyTaskItem task) {
     final statusColor = switch (task.status) {

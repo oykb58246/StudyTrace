@@ -61,16 +61,10 @@ class HomePage extends StatelessWidget {
               fit: BoxFit.fitHeight,
             ),
             const SizedBox(height: 12),
-            Text(
-              '学习周报助手',
-              style: TextStyle(
-                color: isDarkMode
-                    ? const Color(0xFFC2C8D6)
-                    : AppColors.body,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.3,
-              ),
+            Image.asset(
+              'logo/文字logo.png',
+              height: 30,
+              fit: BoxFit.fitHeight,
             ),
             const SizedBox(height: 18),
             // --- Quick Actions: Voice + AI ---

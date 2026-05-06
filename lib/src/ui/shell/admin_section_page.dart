@@ -6,7 +6,8 @@ import '../shared/common_widgets.dart';
 import '../study/ai_assistant_page.dart';
 import '../study/ai_settings_page.dart';
 import '../study/learning_dashboard_page.dart';
-import '../study/statistics_page.dart';
+import '../study/leaderboard_page.dart';
+import '../study/study_group_page.dart';
 import '../study/task_planning_page.dart';
 import '../study/timer_page.dart';
 import 'navigation_models.dart';
@@ -27,14 +28,6 @@ class AdminSectionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // For statistics, render the full statistics page
-    if (section == AdminSection.statistics && controller != null) {
-      return StatisticsPage(
-        isDarkMode: isDarkMode,
-        controller: controller!,
-      );
-    }
-
     // For timer, render the Pomodoro timer page
     if (section == AdminSection.timer && controller != null) {
       return TimerPage(
@@ -48,6 +41,20 @@ class AdminSectionPage extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    if (section == AdminSection.studyGroup && controller != null) {
+      return StudyGroupPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    }
+
+    if (section == AdminSection.leaderboard && controller != null) {
+      return LeaderboardPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    }
+
     // For AI assistant page
     if (section == AdminSection.aiAssistant && controller != null) {
       return AiAssistantPage(
@@ -57,10 +64,18 @@ class AdminSectionPage extends StatelessWidget {
       );
     }
 
+    if (section == AdminSection.aiSettings && controller != null) {
+      return AiSettingsPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    }
+
     if (section == AdminSection.settings && controller != null) {
       return AiSettingsPage(
         isDarkMode: isDarkMode,
         controller: controller!,
+        mode: AiSettingsMode.system,
       );
     }
 
@@ -70,7 +85,9 @@ class AdminSectionPage extends StatelessWidget {
         controller: controller!,
       );
     }
-    if (section == AdminSection.analytics && controller != null) {
+    if ((section == AdminSection.analytics ||
+            section == AdminSection.statistics) &&
+        controller != null) {
       return LearningDashboardPage(
         isDarkMode: isDarkMode,
         controller: controller!,
@@ -180,6 +197,13 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
         heroSubtitle:
             '输入自然语言，AI 自动完成结构化日志生成、复杂任务拆解、学习分析周报和风险提醒，形成"记录—执行—分析—复盘"的智能学习闭环。',
       );
+    case AdminSection.aiSettings:
+      return const _AdminConfig(
+        accent: Color(0xFF8C7CFF),
+        subtitle: '模型、Key、推理参数与高级 AI 选项。',
+        heroTitle: 'AI 设置',
+        heroSubtitle: '集中管理蓝心与 DeepSeek 的模型配置、调用参数和连接测试。',
+      );
     case AdminSection.notes:
       return const _AdminConfig(
         accent: Color(0xFF4CB9FF),
@@ -214,6 +238,20 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
         subtitle: '编排自动任务流、触发条件与执行记录。',
         heroTitle: '自动任务编排',
         heroSubtitle: '把手机 AI 助手从一次性问答升级为持续工作的个人流转系统。',
+      );
+    case AdminSection.studyGroup:
+      return const _AdminConfig(
+        accent: Color(0xFFFF7C7C),
+        subtitle: '学习小组讨论。',
+        heroTitle: '学习小组',
+        heroSubtitle: '与同伴交流讨论。',
+      );
+    case AdminSection.leaderboard:
+      return const _AdminConfig(
+        accent: Color(0xFFFFC043),
+        subtitle: '查看积分排行。',
+        heroTitle: '排行榜',
+        heroSubtitle: '激励前行。',
       );
     case AdminSection.analytics:
       return const _AdminConfig(

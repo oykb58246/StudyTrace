@@ -51,3 +51,16 @@ test-flash.err
 
 # Local deployment/tool cache
 /tool/
+
+# Local Codex and presentation scratch artifacts
+.codex/
+output/
+scratch_test.pptx
+shape_test.pptx
+~$*.pptx
+
+# StudyTrace backend
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/coverage/

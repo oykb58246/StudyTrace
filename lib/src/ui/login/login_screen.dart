@@ -413,15 +413,11 @@ class _LandingPage extends StatelessWidget {
             fit: BoxFit.fitHeight,
           ),
           const SizedBox(height: 16),
-          const Text(
-            '学习周报助手',
+          Image.asset(
+            'logo/文字logo.png',
             key: Key('landing_title'),
-            style: TextStyle(
-              color: AppColors.ink,
-              fontSize: 20,
-              height: 1.04,
-              fontWeight: FontWeight.w600,
-            ),
+            height: 34,
+            fit: BoxFit.fitHeight,
           ),
           const SizedBox(height: 16),
           Text(

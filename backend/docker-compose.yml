@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: studytrace-postgres
+    environment:
+      POSTGRES_USER: studytrace
+      POSTGRES_PASSWORD: studytrace
+      POSTGRES_DB: studytrace
+    ports:
+      - "5432:5432"
+    volumes:
+      - studytrace_pg_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: studytrace-api
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    command: sh -c "npx prisma migrate deploy && node dist/main"
+
+volumes:
+  studytrace_pg_data:
