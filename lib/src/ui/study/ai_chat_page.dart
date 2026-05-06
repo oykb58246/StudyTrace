@@ -100,7 +100,10 @@ class _AiChatPageState extends State<AiChatPage> {
           text: m.content,
         ));
       }
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        _scrollToBottom();
+      }
     } catch (e) {
       debugPrint('加载最近会话失败: $e');
     }
@@ -359,6 +362,7 @@ class _AiChatPageState extends State<AiChatPage> {
           Expanded(
             child: TextField(
               controller: _inputController,
+              autofocus: true,
               minLines: 1,
               maxLines: 4,
               textInputAction: TextInputAction.send,

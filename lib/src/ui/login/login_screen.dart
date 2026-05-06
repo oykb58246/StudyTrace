@@ -37,6 +37,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   _CtaState _ctaState = _CtaState.idle;
   bool _isRegisterMode = false;
+  bool _isAdvancingToLogin = false;
 
   bool get _isOnLoginPage => _pageIndex.value == 1;
 
@@ -93,11 +94,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     }
 
     if (!_isOnLoginPage) {
-      await _pageController.animateToPage(
-        1,
-        duration: const Duration(milliseconds: 440),
-        curve: Curves.easeOutCubic,
-      );
+      if (_isAdvancingToLogin) {
+        return;
+      }
+      _isAdvancingToLogin = true;
+      try {
+        await _pageController.animateToPage(
+          1,
+          duration: const Duration(milliseconds: 1200),
+          curve: Curves.easeOutCubic,
+        );
+      } finally {
+        _isAdvancingToLogin = false;
+      }
       return;
     }
 
@@ -144,6 +153,25 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     }
   }
 
+  Future<void> _handleBackToLanding() async {
+    if (!_isOnLoginPage || _isAdvancingToLogin) {
+      return;
+    }
+    _isAdvancingToLogin = true;
+    if (_ctaState == _CtaState.error) {
+      setState(() => _ctaState = _CtaState.idle);
+    }
+    try {
+      await _pageController.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 1200),
+        curve: Curves.easeOutCubic,
+      );
+    } finally {
+      _isAdvancingToLogin = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -178,46 +206,90 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         children: [
                           Positioned.fill(
                             child: RepaintBoundary(
-                              child: DecoratedBox(
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFFCFCFF),
-                                  borderRadius: BorderRadius.vertical(
-                                    top: Radius.circular(34),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Color(0x33191B2A),
-                                      blurRadius: 36,
-                                      offset: Offset(0, -10),
-                                    ),
-                                  ],
+                              child: ClipRRect(
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(34),
                                 ),
-                                child: Column(
-                                  children: [
-                                    const SizedBox(height: 18),
-                                    Expanded(
-                                      child: PageView(
-                                        controller: _pageController,
-                                        onPageChanged: (index) {
-                                          _pageIndex.value = index;
-                                        },
-                                        physics: const ClampingScrollPhysics(),
-                                        children: [
-                                          const _LandingPage(),
-                                          _LoginPage(
-                                            emailController: _emailController,
-                                            passwordController:
-                                                _passwordController,
-                                            isRegisterMode: _isRegisterMode,
-                                            onToggleMode: () {
-                                              setState(() => _isRegisterMode =
-                                                  !_isRegisterMode);
+                                child: BackdropFilter(
+                                  filter: ImageFilter.blur(
+                                    sigmaX: 18,
+                                    sigmaY: 18,
+                                  ),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xD9FCFCFF),
+                                      border: Border.all(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.72),
+                                      ),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Color(0x24191B2A),
+                                          blurRadius: 34,
+                                          offset: Offset(0, -10),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        const SizedBox(height: 18),
+                                        Expanded(
+                                          child: PageView(
+                                            controller: _pageController,
+                                            onPageChanged: (index) {
+                                              _pageIndex.value = index;
                                             },
+                                            physics:
+                                                const ClampingScrollPhysics(),
+                                            children: [
+                                              const _LandingPage(),
+                                              _LoginPage(
+                                                emailController:
+                                                    _emailController,
+                                                passwordController:
+                                                    _passwordController,
+                                                isRegisterMode:
+                                                    _isRegisterMode,
+                                                onToggleMode: () {
+                                                  setState(() =>
+                                                      _isRegisterMode =
+                                                          !_isRegisterMode);
+                                                },
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 18,
+                            top: 18,
+                            child: IgnorePointer(
+                              ignoring: progress < 0.92,
+                              child: AnimatedOpacity(
+                                opacity: progress,
+                                duration: const Duration(milliseconds: 160),
+                                child: Material(
+                                  color: Colors.white.withValues(alpha: 0.72),
+                                  shape: const CircleBorder(),
+                                  child: InkWell(
+                                    customBorder: const CircleBorder(),
+                                    onTap: _handleBackToLanding,
+                                    child: const SizedBox(
+                                      width: 34,
+                                      height: 34,
+                                      child: Icon(
+                                        Icons.arrow_back_ios_new_rounded,
+                                        size: 16,
+                                        color: AppColors.ink,
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -259,93 +331,51 @@ class _SplashBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+
     return Stack(
       fit: StackFit.expand,
       children: [
         const DecoratedBox(
           decoration: BoxDecoration(
-            color: Color(0xFFF7F8FB),
+            color: Color(0xFFF2F6FF),
           ),
         ),
-        Positioned.fill(
+        Positioned(
+          width: screenSize.width * 1.7,
+          left: screenSize.width * 0.24,
+          bottom: screenSize.height * 0.12,
           child: IgnorePointer(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Positioned(
-                  top: -10,
-                  left: -150,
-                  child: _BackdropBlob(
-                    size: 360,
-                    color: const Color(0xFF53C6FF).withValues(alpha: 0.88),
-                  ),
-                ),
-                Positioned(
-                  top: 44,
-                  right: -120,
-                  child: _BackdropBlob(
-                    size: 320,
-                    color: const Color(0xFF2DE2D3).withValues(alpha: 0.72),
-                  ),
-                ),
-                Positioned(
-                  bottom: 110,
-                  right: -70,
-                  child: _BackdropBlob(
-                    size: 340,
-                    color: const Color(0xFFFF5C8A).withValues(alpha: 0.80),
-                  ),
-                ),
-                Positioned(
-                  bottom: 214,
-                  left: 86,
-                  child: _BackdropBlob(
-                    size: 250,
-                    color: const Color(0xFFA05BFF).withValues(alpha: 0.48),
-                  ),
-                ),
-                Positioned(
-                  bottom: 84,
-                  left: 126,
-                  child: _BackdropBlob(
-                    size: 238,
-                    color: const Color(0xFFFFB36C).withValues(alpha: 0.46),
-                  ),
-                ),
-              ],
+            child: Image.asset(
+              AppAssets.spline,
+              fit: BoxFit.fitWidth,
+              filterQuality: FilterQuality.high,
             ),
           ),
         ),
         Positioned.fill(
           child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.08),
-                    Colors.white.withValues(alpha: 0.18),
-                    const Color(0xFFF7F8FB).withValues(alpha: 0.62),
-                  ],
-                  stops: const [0.0, 0.52, 1.0],
-                ),
-              ),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: const SizedBox.expand(),
             ),
           ),
         ),
         const Positioned.fill(
           child: IgnorePointer(
             child: ExcludeSemantics(
-              child: Opacity(
-                opacity: 0.14,
-                child: SafeRiveAsset(
-                  asset: AppAssets.shapes,
-                  artboard: 'Shapes',
-                  animations: ['Animation 19'],
-                  fit: BoxFit.cover,
-                ),
+              child: SafeRiveAsset(
+                asset: AppAssets.shapes,
+                fit: BoxFit.cover,
               ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: const SizedBox.expand(),
             ),
           ),
         ),
@@ -357,7 +387,7 @@ class _SplashBackground extends StatelessWidget {
                   center: const Alignment(0, -0.78),
                   radius: 1.02,
                   colors: [
-                    Colors.white.withValues(alpha: 0.22),
+                    Colors.white.withValues(alpha: 0.08),
                     Colors.transparent,
                   ],
                 ),
@@ -366,31 +396,6 @@ class _SplashBackground extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _BackdropBlob extends StatelessWidget {
-  const _BackdropBlob({
-    required this.size,
-    required this.color,
-  });
-
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return ImageFiltered(
-      imageFilter: ImageFilter.blur(sigmaX: 58, sigmaY: 58),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
-      ),
     );
   }
 }
@@ -589,28 +594,16 @@ class _AnimatedPrimaryActionButton extends StatefulWidget {
 
 class _AnimatedPrimaryActionButtonState
     extends State<_AnimatedPrimaryActionButton> with TickerProviderStateMixin {
-  late final AnimationController _pressController;
-  late final Animation<double> _pressScale;
-  late final Animation<double> _shineOffset;
+  late final RiveAnimationController _buttonRiveController;
   late final AnimationController _errorController;
   late final Animation<double> _errorSlide;
 
   @override
   void initState() {
     super.initState();
-    _pressController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
-    _pressScale = Tween<double>(
-      begin: 1,
-      end: 0.94,
-    ).animate(CurvedAnimation(parent: _pressController, curve: Curves.easeOut));
-    _shineOffset = Tween<double>(
-      begin: -1.4,
-      end: 1.6,
-    ).animate(
-      CurvedAnimation(parent: _pressController, curve: Curves.easeOutCubic),
+    _buttonRiveController = OneShotAnimation(
+      'active',
+      autoplay: false,
     );
     _errorController = AnimationController(
       vsync: this,
@@ -629,7 +622,6 @@ class _AnimatedPrimaryActionButtonState
 
   @override
   void dispose() {
-    _pressController.dispose();
     _errorController.dispose();
     super.dispose();
   }
@@ -656,9 +648,9 @@ class _AnimatedPrimaryActionButtonState
       await widget.onTap();
       return;
     }
-    await _pressController.forward(from: 0);
-    if (mounted) {
-      await _pressController.reverse();
+    _buttonRiveController.isActive = true;
+    if (!widget.isLoginPage) {
+      await Future<void>.delayed(const Duration(milliseconds: 140));
     }
     await widget.onTap();
   }
@@ -666,277 +658,100 @@ class _AnimatedPrimaryActionButtonState
   @override
   Widget build(BuildContext context) {
     final isLoading = widget.state == _CtaState.loading;
-    final isError = widget.state == _CtaState.error;
     final isSuccess =
         widget.state == _CtaState.success || widget.state == _CtaState.confetti;
-    final backgroundGradient = isError
-        ? const LinearGradient(
-            begin: Alignment.bottomLeft,
-            end: Alignment.topRight,
-            colors: [Color(0xFFF05A5A), Color(0xFFB11F45)],
-          )
-        : const LinearGradient(
-            begin: Alignment.bottomLeft,
-            end: Alignment.topRight,
-            colors: [Color(0xFFEF6850), Color(0xFF8B2192)],
-          );
+    final buttonText = widget.progress < 0.5
+        ? '开始使用'
+        : (widget.isRegisterMode ? '注册' : '登录');
 
     return AnimatedBuilder(
-      animation: Listenable.merge([_pressController, _errorController]),
+      animation: _errorController,
       builder: (context, _) {
         return Transform.translate(
           offset: Offset(_errorSlide.value, 0),
-          child: Transform.scale(
-            scale: _pressScale.value,
-            child: Material(
-              key: const Key('splash_primary_button'),
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(24),
-                onTap: _handleTap,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  width: lerpDouble(138, 176, widget.progress)!,
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    gradient: backgroundGradient,
-                    boxShadow: [
-                      BoxShadow(
-                        color: (isError
-                                ? const Color(0x66E84E69)
-                                : const Color(0x33F77D8E))
-                            .withValues(
-                          alpha: 0.22 - _pressController.value * 0.08,
+          child: GestureDetector(
+            key: const Key('splash_primary_button'),
+            onTap: _handleTap,
+            child: SizedBox(
+              width: 236,
+              height: 64,
+              child: Stack(
+                children: [
+                  SafeRiveAsset(
+                    asset: AppAssets.button,
+                    width: 236,
+                    height: 64,
+                    controllers: [_buttonRiveController],
+                    fallback: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(32),
+                        gradient: const LinearGradient(
+                          begin: Alignment.bottomLeft,
+                          end: Alignment.topRight,
+                          colors: [Color(0xFFEF6850), Color(0xFF8B2192)],
                         ),
-                        blurRadius: 20 - _pressController.value * 6,
-                        offset: Offset(0, 12 - _pressController.value * 5),
                       ),
-                    ],
+                    ),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Stack(
-                      fit: StackFit.expand,
+                  Positioned.fill(
+                    top: 8,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Align(
-                          alignment: Alignment(_shineOffset.value, 0),
-                          child: Container(
-                            width: 34,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.white.withValues(alpha: 0),
-                                  Colors.white.withValues(alpha: 0.28),
-                                  Colors.white.withValues(alpha: 0),
-                                ],
-                              ),
-                            ),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: AppColors.ink,
+                          size: 21,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          buttonText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
                           ),
                         ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: SizedBox(
-                                width: 90 + widget.progress * 28,
-                                child: Stack(
-                                  alignment: Alignment.centerLeft,
-                                  children: [
-                                    if (!isLoading && !isError)
-                                      Opacity(
-                                        opacity: 1 - widget.progress,
-                                        child: const Text(
-                                          '开始使用',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.fade,
-                                          softWrap: false,
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                    if (!isLoading && !isError)
-                                      Opacity(
-                                        opacity: widget.progress,
-                                        child: Text(
-                                          widget.isRegisterMode ? '注册' : '登录',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.fade,
-                                          softWrap: false,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                    if (isLoading)
-                                      Text(
-                                        widget.isRegisterMode
-                                            ? '注册中...'
-                                            : '登录中...',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.fade,
-                                        softWrap: false,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    if (isError)
-                                      const Text(
-                                        '请完整填写',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.fade,
-                                        softWrap: false,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
+                        if (isLoading) ...[
+                          const SizedBox(width: 10),
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.ink,
                             ),
-                            const SizedBox(width: 10),
-                            SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: ExcludeSemantics(
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 180),
-                                  child: isSuccess
-                                      ? const SafeRiveAsset(
-                                          key: ValueKey('cta_success_icon'),
-                                          asset: AppAssets.check,
-                                          artboard: 'check_artboard',
-                                          animations: ['Check'],
-                                          width: 20,
-                                          height: 20,
-                                        )
-                                      : isError
-                                          ? _RiveStatusIcon(
-                                              key: ValueKey(
-                                                'cta_status_${widget.state.name}',
-                                              ),
-                                              state: widget.state,
-                                            )
-                                          : isLoading
-                                              ? const SafeRiveAsset(
-                                                  key: ValueKey(
-                                                      'cta_loading_icon'),
-                                                  asset: AppAssets.button,
-                                                  artboard: 'main',
-                                                  animations: ['active'],
-                                                  width: 20,
-                                                  height: 20,
-                                                )
-                                              : const Icon(
-                                                  Icons.arrow_forward_rounded,
-                                                  key: ValueKey(
-                                                      'cta_arrow_icon'),
-                                                  color: Colors.white,
-                                                  size: 18,
-                                                ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                ),
+                  if (isSuccess)
+                    const Positioned(
+                      right: 16,
+                      top: 24,
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: SafeRiveAsset(
+                          key: ValueKey('cta_success_icon'),
+                          asset: AppAssets.check,
+                          artboard: 'check_artboard',
+                          animations: ['Check'],
+                          width: 24,
+                          height: 24,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
         );
       },
-    );
-  }
-}
-
-class _RiveStatusIcon extends StatefulWidget {
-  const _RiveStatusIcon({
-    super.key,
-    required this.state,
-  });
-
-  final _CtaState state;
-
-  @override
-  State<_RiveStatusIcon> createState() => _RiveStatusIconState();
-}
-
-class _RiveStatusIconState extends State<_RiveStatusIcon> {
-  SMITrigger? _checkTrigger;
-  SMITrigger? _errorTrigger;
-  SMITrigger? _resetTrigger;
-  _CtaState? _lastTriggeredState;
-
-  @override
-  void didUpdateWidget(covariant _RiveStatusIcon oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncState();
-  }
-
-  void _handleInit(Artboard artboard) {
-    final controller = StateMachineController.fromArtboard(
-      artboard,
-      'State Machine 1',
-    );
-    if (controller == null) {
-      return;
-    }
-    artboard.addController(controller);
-    final checkInput = controller.findInput<bool>('Check');
-    final errorInput = controller.findInput<bool>('Error');
-    final resetInput = controller.findInput<bool>('Reset');
-    if (checkInput is SMITrigger) {
-      _checkTrigger = checkInput;
-    }
-    if (errorInput is SMITrigger) {
-      _errorTrigger = errorInput;
-    }
-    if (resetInput is SMITrigger) {
-      _resetTrigger = resetInput;
-    }
-    _syncState(force: true);
-  }
-
-  void _syncState({bool force = false}) {
-    if (!force && _lastTriggeredState == widget.state) {
-      return;
-    }
-    if (widget.state == _CtaState.error) {
-      _errorTrigger?.fire();
-      _lastTriggeredState = widget.state;
-      return;
-    }
-    if (widget.state == _CtaState.success ||
-        widget.state == _CtaState.confetti) {
-      _checkTrigger?.fire();
-      _lastTriggeredState = widget.state;
-      return;
-    }
-    _resetTrigger?.fire();
-    _lastTriggeredState = widget.state;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeRiveAsset(
-      asset: AppAssets.check,
-      artboard: 'check_artboard',
-      width: 20,
-      height: 20,
-      onInit: _handleInit,
     );
   }
 }

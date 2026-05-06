@@ -30,7 +30,7 @@ class SafeRiveAsset extends StatelessWidget {
   final String? artboard;
   final List<String>? animations;
   final List<String>? stateMachines;
-  final List<RiveAnimationController<dynamic>>? controllers;
+  final List<RiveAnimationController>? controllers;
   final RiveInitCallback? onInit;
 
   bool get _isWidgetTest {

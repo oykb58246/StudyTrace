@@ -57,6 +57,8 @@ test-flash.err
 output/
 scratch_test.pptx
 shape_test.pptx
+*.ppt
+*.pptx
 ~$*.pptx
 
 # StudyTrace backend

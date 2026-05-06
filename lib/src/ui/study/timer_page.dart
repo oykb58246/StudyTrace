@@ -50,15 +50,15 @@ class _TimerPageState extends State<TimerPage> {
     return Scaffold(
       backgroundColor:
           widget.isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text('学习计时器', style: TextStyle(color: titleColor, fontWeight: FontWeight.w700)),
+      ),
       body: ListView(
         key: const Key('page_timer'),
-        padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 124),
         children: [
-          Text('学习计时器',
-              style: TextStyle(
-                  color: titleColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         Text('番茄工作法 · 已完成 $_sessionCount 个番茄钟',
             style: TextStyle(color: bodyColor, fontSize: 14)),

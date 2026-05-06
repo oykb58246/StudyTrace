@@ -123,17 +123,42 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
             TextButton.icon(
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AiChatPage(
+                  PageRouteBuilder(
+                    transitionDuration: const Duration(milliseconds: 340),
+                    reverseTransitionDuration: const Duration(milliseconds: 240),
+                    pageBuilder: (_, __, ___) => AiChatPage(
                       isDarkMode: widget.isDarkMode,
                       controller: widget.controller,
                     ),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      final curved = CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      );
+                      return FadeTransition(
+                        opacity: curved,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.96, end: 1)
+                              .animate(curved),
+                          child: child,
+                        ),
+                      );
+                    },
                   ),
                 );
               },
               icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
               label: const Text('AI 对话'),
             ),
+            if (widget.onOpenSettings != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'AI 设置',
+                onPressed: widget.onOpenSettings,
+                icon: const Icon(Icons.tune_rounded, size: 20),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 22),

@@ -26,6 +26,7 @@ dependencies:
   timezone: ^0.11.0
   path_provider: ^2.1.5
   flutter_markdown: ^0.7.3
+  lordicon: ^1.0.3
 
 dev_dependencies:
   flutter_test:
@@ -61,5 +62,6 @@ flutter:
     - assets/Backgrounds/
     - assets/avatars/
     - assets/icons/
+    - assets/icons/lordicon/
     - assets/Fonts/
     - logo/

@@ -91,6 +91,21 @@ extension PrimaryTabMeta on PrimaryTab {
     }
   }
 
+  String get navLordiconAsset {
+    switch (this) {
+      case PrimaryTab.assistant:
+        return 'assets/icons/lordicon/nav_home.json';
+      case PrimaryTab.scenarios:
+        return 'assets/icons/lordicon/nav_logs.json';
+      case PrimaryTab.calendar:
+        return 'assets/icons/lordicon/nav_calendar.json';
+      case PrimaryTab.create:
+        return 'assets/icons/lordicon/nav_task.json';
+      case PrimaryTab.profile:
+        return 'assets/icons/lordicon/nav_archive.json';
+    }
+  }
+
   String get riveArtboard {
     switch (this) {
       case PrimaryTab.assistant:

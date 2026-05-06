@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:lottie/lottie.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/weekly_report_item.dart';
@@ -105,10 +106,18 @@ class CourseArchivePage extends StatelessWidget {
                                 colors: [accent, const Color(0xFF8D5EFF)],
                               ),
                             ),
-                            child: const Icon(
-                              Icons.school_rounded,
-                              color: Colors.white,
-                              size: 22,
+                            child: ColorFiltered(
+                              colorFilter: const ColorFilter.mode(
+                                Colors.white,
+                                BlendMode.srcIn,
+                              ),
+                              child: Lottie.asset(
+                                'assets/icons/lordicon/book.json',
+                                width: 22,
+                                height: 22,
+                                animate: false,
+                                frameRate: FrameRate.max,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 14),
@@ -262,10 +271,12 @@ class CourseArchivePage extends StatelessWidget {
                               borderRadius: BorderRadius.circular(14),
                               color: const Color(0x19F77D8E),
                             ),
-                            child: const Icon(
-                              Icons.article_rounded,
-                              color: Color(0xFFF77D8E),
-                              size: 22,
+                            child: Lottie.asset(
+                              'assets/icons/lordicon/route.json',
+                              width: 22,
+                              height: 22,
+                              animate: false,
+                              frameRate: FrameRate.max,
                             ),
                           ),
                           const SizedBox(width: 14),

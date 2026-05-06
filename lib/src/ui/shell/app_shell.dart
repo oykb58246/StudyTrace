@@ -3,17 +3,30 @@ import 'dart:math' as math;
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lottie/lottie.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../models/weekly_report_item.dart';
 import '../../services/report_export_service.dart';
 import '../../theme/app_theme.dart';
-import '../study/calendar_page.dart';
+import '../study/about_page.dart';
+import '../study/ai_assistant_page.dart';
 import '../study/ai_chat_page.dart';
+import '../study/ai_settings_page.dart';
+import '../study/calendar_page.dart';
 import '../study/flash_card_page.dart';
+import '../study/leaderboard_page.dart';
+import '../study/learning_dashboard_page.dart';
+import '../study/study_group_page.dart';
 import '../study/study_notes_page.dart';
+import '../study/task_planning_page.dart';
+import '../study/timer_page.dart';
 import '../study/user_profile_page.dart';
+import '../shared/app_assets.dart';
+import '../shared/page_wrapper.dart';
+import '../shared/rive_safe_widget.dart';
 import 'admin_section_page.dart';
 import 'create_page.dart';
 import 'extension_page.dart';
@@ -58,8 +71,8 @@ class _AppShellState extends State<AppShell>
     _activeAdminSection = widget.debugInitialAdminSection;
     _menuController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
-      reverseDuration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 200),
+      reverseDuration: const Duration(milliseconds: 200),
       animationBehavior: AnimationBehavior.preserve,
       value: widget.debugMenuInitiallyOpen ? 1 : 0,
     );
@@ -99,12 +112,29 @@ class _AppShellState extends State<AppShell>
   }
 
   void _openAiChat() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AiChatPage(
+    _pushAnimatedPage(
+      AiChatPage(
           isDarkMode: _isDarkMode,
           controller: _appDataController,
-        ),
+      ),
+    );
+  }
+
+  void _pushAnimatedPage(Widget page) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        fullscreenDialog: false,
+        transitionDuration: const Duration(milliseconds: 360),
+        reverseTransitionDuration: const Duration(milliseconds: 260),
+        pageBuilder: (context, __, ___) => page,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return SharedAxisTransition(
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            transitionType: SharedAxisTransitionType.scaled,
+            child: child,
+          );
+        },
       ),
     );
   }
@@ -144,37 +174,114 @@ class _AppShellState extends State<AppShell>
   }
 
   void _selectAdminSection(AdminSection section) {
-    if (section == AdminSection.overview) {
-      setState(() {
-        _activeAdminSection = null;
-        _primaryTab = PrimaryTab.assistant;
-      });
-    } else if (section == AdminSection.notes) {
-      _closeMenu();
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => StudyNotesPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ),
-        ),
-      );
-      return;
-    } else if (section == AdminSection.flashCard) {
-      _closeMenu();
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => FlashCardPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ),
-        ),
-      );
-      return;
-    } else {
-      setState(() => _activeAdminSection = section);
-    }
     _closeMenu();
+    switch (section) {
+      case AdminSection.overview:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '应用介绍',
+          isDarkMode: _isDarkMode,
+          child: AboutPage(isDarkMode: _isDarkMode),
+        ));
+        return;
+      case AdminSection.notes:
+        _pushAnimatedPage(StudyNotesPage(
+          isDarkMode: _isDarkMode,
+          controller: _appDataController,
+        ));
+        return;
+      case AdminSection.flashCard:
+        _pushAnimatedPage(FlashCardPage(
+          isDarkMode: _isDarkMode,
+          controller: _appDataController,
+        ));
+        return;
+      case AdminSection.timer:
+        _pushAnimatedPage(TimerPage(
+          isDarkMode: _isDarkMode,
+          controller: _appDataController,
+        ));
+        return;
+      case AdminSection.studyGroup:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '学习小组',
+          isDarkMode: _isDarkMode,
+          child: StudyGroupPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+      case AdminSection.leaderboard:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '排行榜',
+          isDarkMode: _isDarkMode,
+          child: LeaderboardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+      case AdminSection.aiAssistant:
+        _pushAnimatedPage(PageWithBackButton(
+          title: 'AI 学习助手',
+          isDarkMode: _isDarkMode,
+          child: AiAssistantPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
+              title: 'AI 设置',
+              isDarkMode: _isDarkMode,
+              child: AiSettingsPage(
+                isDarkMode: _isDarkMode,
+                controller: _appDataController,
+              ),
+            )),
+          ),
+        ));
+        return;
+      case AdminSection.aiSettings:
+        _pushAnimatedPage(PageWithBackButton(
+          title: 'AI 设置',
+          isDarkMode: _isDarkMode,
+          child: AiSettingsPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+      case AdminSection.settings:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '系统设置',
+          isDarkMode: _isDarkMode,
+          child: AiSettingsPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            mode: AiSettingsMode.system,
+          ),
+        ));
+        return;
+      case AdminSection.automations:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '任务编排',
+          isDarkMode: _isDarkMode,
+          child: TaskPlanningPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+      case AdminSection.analytics:
+      case AdminSection.statistics:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '数据看板',
+          isDarkMode: _isDarkMode,
+          child: LearningDashboardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+    }
   }
 
   Future<void> _setDarkMode(bool value) async {
@@ -223,30 +330,110 @@ class _AppShellState extends State<AppShell>
           isDarkMode: _isDarkMode,
           controller: _appDataController,
           onGenerateReport: _openWeeklyReport,
-          onOpenAiAssistant: () =>
-              _selectAdminSection(AdminSection.aiAssistant),
+          onOpenAiAssistant: () {
+            _pushAnimatedPage(PageWithBackButton(
+              title: 'AI 学习助手',
+              isDarkMode: _isDarkMode,
+              child: AiAssistantPage(
+                isDarkMode: _isDarkMode,
+                controller: _appDataController,
+                onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
+                  title: 'AI 设置',
+                  isDarkMode: _isDarkMode,
+                  child: AiSettingsPage(
+                    isDarkMode: _isDarkMode,
+                    controller: _appDataController,
+                  ),
+                )),
+              ),
+            ));
+          },
           onOpenAiChat: _openAiChat,
+          onOpenLogs: () => _selectPrimaryTab(PrimaryTab.scenarios),
+          onOpenCalendar: () => _selectPrimaryTab(PrimaryTab.calendar),
+          onOpenTasks: () => _selectPrimaryTab(PrimaryTab.create),
+          onOpenNotes: () => _pushAnimatedPage(StudyNotesPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          )),
+          onOpenTimer: () => _pushAnimatedPage(TimerPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          )),
+          onOpenFlashCards: () => _pushAnimatedPage(FlashCardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          )),
+          onOpenDashboard: () => _pushAnimatedPage(PageWithBackButton(
+            title: '数据看板',
+            isDarkMode: _isDarkMode,
+            child: LearningDashboardPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          )),
+          onOpenStudyGroup: () => _pushAnimatedPage(PageWithBackButton(
+            title: '学习小组',
+            isDarkMode: _isDarkMode,
+            child: StudyGroupPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          )),
+          onOpenLeaderboard: () => _pushAnimatedPage(PageWithBackButton(
+            title: '排行榜',
+            isDarkMode: _isDarkMode,
+            child: LeaderboardPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          )),
+          onOpenSyncSettings: () => _pushAnimatedPage(AiSettingsPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            mode: AiSettingsMode.system,
+          )),
+          onOpenTaskPlanning: () => _pushAnimatedPage(PageWithBackButton(
+            title: '任务编排',
+            isDarkMode: _isDarkMode,
+            child: TaskPlanningPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          )),
         );
       case PrimaryTab.scenarios:
-        return StudyLogsPage(
+        return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          controller: _appDataController,
+          child: StudyLogsPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
         );
       case PrimaryTab.calendar:
-        return CalendarPage(
+        return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          controller: _appDataController,
+          child: CalendarPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
         );
       case PrimaryTab.create:
-        return StudyTasksPage(
+        return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          controller: _appDataController,
+          child: StudyTasksPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
         );
       case PrimaryTab.profile:
-        return CourseArchivePage(
+        return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          controller: _appDataController,
-          onViewCourse: _openCourseDetail,
+          child: CourseArchivePage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            onViewCourse: _openCourseDetail,
+          ),
         );
     }
   }
@@ -256,16 +443,17 @@ class _AppShellState extends State<AppShell>
     final mediaQuery = MediaQuery.of(context);
     final safeBottom = mediaQuery.padding.bottom;
     final screenWidth = mediaQuery.size.width;
-    _menuWidth = math.min(screenWidth * 0.82, 320);
+    _menuWidth = math.min(screenWidth * 0.74, 288);
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor:
           _isDarkMode ? const Color(0xFF05070D) : const Color(0xFF182146),
-      body: AnimatedBuilder(
-        animation: _menuController,
+      body: ListenableBuilder(
+        listenable: Listenable.merge([_menuController, _appDataController]),
         builder: (context, _) {
-          final progress = Curves.easeOutCubic.transform(_menuController.value);
+          final progress =
+              Curves.fastOutSlowIn.transform(_menuController.value);
           final page = _activeAdminSection != null
               ? AdminSectionPage(
                   section: _activeAdminSection!,
@@ -273,20 +461,28 @@ class _AppShellState extends State<AppShell>
                   controller: _appDataController,
                   onOpenSettings: () =>
                       _selectAdminSection(AdminSection.aiSettings),
+                  onBack: () => setState(() => _activeAdminSection = null),
                 )
               : _primaryPageFor(_primaryTab);
 
           return Stack(
             children: [
-              Positioned.fill(
+              Positioned(
+                top: 0,
+                bottom: 0,
+                left: lerpDouble(-_menuWidth, 0, progress)!,
+                width: _menuWidth,
                 child: _SideMenu(
-                  currentSection: _activeAdminSection ?? AdminSection.overview,
+                  currentSection: _activeAdminSection,
                   progress: progress,
                   isDarkMode: _isDarkMode,
                   controller: _appDataController,
                   onDarkModeChanged: _setDarkMode,
                   onSelected: _selectAdminSection,
-                  onOpenProfile: () => _openUserProfile(context),
+                  onOpenProfile: () {
+                    _closeMenu();
+                    _openUserProfile(context);
+                  },
                 ),
               ),
               _ForegroundSurface(
@@ -294,6 +490,8 @@ class _AppShellState extends State<AppShell>
                 isMenuOpen: _menuController.value > 0.5,
                 useHomeBackground: _activeAdminSection == null &&
                     _primaryTab == PrimaryTab.assistant,
+                menuWidth: _menuWidth,
+                screenWidth: screenWidth,
                 progress: progress,
                 safeBottom: safeBottom,
                 pageKey: ValueKey<String>(
@@ -311,6 +509,24 @@ class _AppShellState extends State<AppShell>
           );
         },
       ),
+    );
+  }
+}
+
+class _PrimaryTabSurface extends StatelessWidget {
+  const _PrimaryTabSurface({
+    required this.isDarkMode,
+    required this.child,
+  });
+
+  final bool isDarkMode;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: isDarkMode ? const Color(0xFF101625) : const Color(0xFFF5F7FF),
+      child: child,
     );
   }
 }
@@ -613,6 +829,8 @@ class _ForegroundSurface extends StatelessWidget {
     required this.isDarkMode,
     required this.isMenuOpen,
     required this.useHomeBackground,
+    required this.menuWidth,
+    required this.screenWidth,
     required this.progress,
     required this.safeBottom,
     required this.pageKey,
@@ -628,6 +846,8 @@ class _ForegroundSurface extends StatelessWidget {
   final bool isDarkMode;
   final bool isMenuOpen;
   final bool useHomeBackground;
+  final double menuWidth;
+  final double screenWidth;
   final double progress;
   final double safeBottom;
   final Key pageKey;
@@ -641,21 +861,54 @@ class _ForegroundSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final translateX = lerpDouble(0, 272, progress)!;
-    final translateY = lerpDouble(0, 10, progress)!;
-    final scale = lerpDouble(1, 0.86, progress)!;
-    final rotateY = lerpDouble(0, 0.5, progress)!;
-    final radius = lerpDouble(0, 36, progress)!;
+    final translateY = lerpDouble(0, 0, progress)!;
+    final scale = lerpDouble(1, 0.8, progress)!;
+    final rotateY = lerpDouble(0, 1 - 30 * math.pi / 180, progress)!;
+    final radius = lerpDouble(0, 24, progress)!;
+    final revealedMenuEdge = menuWidth * progress;
+    final scaledInset = screenWidth * (1 - scale) / 2;
+    final seamOverlap = progress;
+    final translateX = math.max(
+      0.0,
+      revealedMenuEdge - scaledInset - seamOverlap,
+    );
 
     final transform = Matrix4.identity()
       ..setEntry(3, 2, 0.0012)
       ..translateByDouble(translateX, translateY, 0, 1)
       ..rotateY(rotateY)
       ..scaleByDouble(scale, scale, 1, 1);
+    final backgroundLayer = useHomeBackground
+        ? _LightShellBackground(isDarkMode: isDarkMode)
+        : isDarkMode
+            ? const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFF1E2430),
+                      Color(0xFF141923),
+                    ],
+                  ),
+                ),
+              )
+            : const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white70,
+                      Color(0xFFF2F5FC),
+                    ],
+                  ),
+                ),
+              );
 
     return Transform(
       key: const Key('shell_front_transform'),
-      alignment: Alignment.centerLeft,
+      alignment: Alignment.center,
       transform: transform,
       child: GestureDetector(
         onHorizontalDragStart: onHorizontalDragStart,
@@ -679,38 +932,24 @@ class _ForegroundSurface extends StatelessWidget {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: isDarkMode
-                      ? const DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color(0xFF1E2430),
-                                Color(0xFF141923),
-                              ],
-                            ),
-                          ),
-                        )
-                      : useHomeBackground
-                          ? const _LightShellBackground()
-                          : DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.white70,
-                                    Color(0xFFF2F5FC),
-                                  ],
-                                ),
-                              ),
-                            ),
+                  child: backgroundLayer,
                 ),
                 Positioned.fill(
-                  child: KeyedSubtree(
-                    key: pageKey,
-                    child: child,
+                  child: PageTransitionSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    reverse: false,
+                    transitionBuilder:
+                        (child, animation, secondaryAnimation) {
+                      return FadeThroughTransition(
+                        animation: animation,
+                        secondaryAnimation: secondaryAnimation,
+                        child: child,
+                      );
+                    },
+                    child: KeyedSubtree(
+                      key: pageKey,
+                      child: child,
+                    ),
                   ),
                 ),
                 Positioned(
@@ -724,13 +963,14 @@ class _ForegroundSurface extends StatelessWidget {
                   ),
                 ),
                 Positioned(
-                  left: 22,
-                  right: 22,
-                  bottom: safeBottom + 18,
+                  left: 24,
+                  right: 24,
+                  bottom: safeBottom + 16,
                   child: RepaintBoundary(
                     child: _BottomNav(
                       isDarkMode: isDarkMode,
                       currentTab: currentTab,
+                      progress: progress,
                       onSelected: onTabSelected,
                     ),
                   ),
@@ -745,75 +985,99 @@ class _ForegroundSurface extends StatelessWidget {
 }
 
 class _LightShellBackground extends StatelessWidget {
-  const _LightShellBackground();
+  const _LightShellBackground({required this.isDarkMode});
+
+  final bool isDarkMode;
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        const DecoratedBox(
-          decoration: BoxDecoration(color: Color(0xFFF6F7FB)),
-        ),
-        Positioned(
-          top: 110,
-          left: -120,
-          child: _BlurBlob(
-            size: 300,
-            color: const Color(0xFF46B6FF).withValues(alpha: 0.78),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color:
+                isDarkMode ? const Color(0xFF121827) : const Color(0xFFEFF5FF),
           ),
         ),
         Positioned(
-          top: 120,
-          right: -96,
-          child: _BlurBlob(
-            size: 280,
-            color: const Color(0xFF2FE1DF).withValues(alpha: 0.62),
+          width: screenSize.width * 2.18,
+          left: -screenSize.width * 0.56,
+          top: -screenSize.height * 0.08,
+          child: IgnorePointer(
+            child: Image.asset(
+              AppAssets.spline,
+              fit: BoxFit.fitWidth,
+              filterQuality: FilterQuality.high,
+            ),
           ),
         ),
-        Positioned(
-          bottom: 60,
-          right: -40,
-          child: _BlurBlob(
-            size: 360,
-            color: const Color(0xFFFF4B83).withValues(alpha: 0.74),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: const SizedBox.expand(),
+            ),
           ),
         ),
-        Positioned(
-          bottom: 210,
-          left: 110,
-          child: _BlurBlob(
-            size: 240,
-            color: const Color(0xFF9A57FF).withValues(alpha: 0.58),
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: ExcludeSemantics(
+              child: SafeRiveAsset(
+                asset: AppAssets.shapes,
+                fit: BoxFit.cover,
+              ),
+            ),
           ),
         ),
-        Positioned(
-          bottom: 120,
-          left: 140,
-          child: _BlurBlob(
-            size: 220,
-            color: const Color(0xFFFFB16B).withValues(alpha: 0.5),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDarkMode
+                      ? [
+                          const Color(0xFF121827).withValues(alpha: 0.28),
+                          const Color(0xFF101521).withValues(alpha: 0.56),
+                        ]
+                      : [
+                          Colors.white.withValues(alpha: 0.04),
+                          const Color(0xFFF6F8FF).withValues(alpha: 0.18),
+                        ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0, -0.78),
+                  radius: 1.02,
+                  colors: [
+                    Colors.white.withValues(alpha: isDarkMode ? 0.03 : 0.02),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ],
-    );
-  }
-}
-
-class _BlurBlob extends StatelessWidget {
-  const _BlurBlob({required this.size, required this.color});
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return ImageFiltered(
-      imageFilter: ImageFilter.blur(sigmaX: 46, sigmaY: 46),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
     );
   }
 }
@@ -900,80 +1164,47 @@ class _BottomNav extends StatelessWidget {
   const _BottomNav({
     required this.isDarkMode,
     required this.currentTab,
+    required this.progress,
     required this.onSelected,
   });
   final bool isDarkMode;
   final PrimaryTab currentTab;
+  final double progress;
   final ValueChanged<PrimaryTab> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(26),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: DecoratedBox(
+    return Transform.translate(
+      offset: Offset(0, 100 * progress),
+      child: IgnorePointer(
+        ignoring: progress > 0.55,
+        child: Container(
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color:
-                (isDarkMode ? const Color(0xFF202734) : const Color(0xFF1E274C))
-                    .withValues(alpha: isDarkMode ? 0.72 : 0.42),
-            borderRadius: BorderRadius.circular(26),
+            color: Colors.white.withValues(alpha: isDarkMode ? 0.18 : 0.68),
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withValues(alpha: isDarkMode ? 0.08 : 0.12),
+              color: Colors.white.withValues(alpha: isDarkMode ? 0.16 : 0.48),
             ),
             boxShadow: [
               BoxShadow(
-                color: isDarkMode
-                    ? const Color(0x22000000)
-                    : const Color(0x24121A36),
+                color: const Color(0xFF17203A).withValues(alpha: 0.16),
+                offset: const Offset(0, 20),
                 blurRadius: 20,
-                offset: Offset(0, 10),
               ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              children: [
-                for (final tab in PrimaryTab.values)
-                  Expanded(
-                    child: InkWell(
-                      key: Key('bottom_nav_${tab.name}'),
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: () => onSelected(tab),
-                      child: SizedBox(
-                        height: 52,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _BottomNavIcon(
-                              tab: tab,
-                              isActive: currentTab == tab,
-                              isDarkMode: isDarkMode,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              tab.label,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: currentTab == tab
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: currentTab == tab
-                                    ? Colors.white
-                                    : isDarkMode
-                                        ? Colors.white54
-                                        : Colors.white70,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (final tab in PrimaryTab.values)
+                _BottomNavItem(
+                  tab: tab,
+                  isActive: currentTab == tab,
+                  isDarkMode: isDarkMode,
+                  onTap: () => onSelected(tab),
+                ),
+            ],
           ),
         ),
       ),
@@ -981,37 +1212,106 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-class _BottomNavIcon extends StatefulWidget {
-  const _BottomNavIcon({
+class _BottomNavItem extends StatefulWidget {
+  const _BottomNavItem({
     required this.tab,
     required this.isActive,
     required this.isDarkMode,
+    required this.onTap,
   });
   final PrimaryTab tab;
   final bool isActive;
   final bool isDarkMode;
+  final VoidCallback onTap;
 
   @override
-  State<_BottomNavIcon> createState() => _BottomNavIconState();
+  State<_BottomNavItem> createState() => _BottomNavItemState();
 }
 
-class _BottomNavIconState extends State<_BottomNavIcon> {
+class _BottomNavItemState extends State<_BottomNavItem>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _iconController;
+
+  @override
+  void initState() {
+    super.initState();
+    _iconController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+      value: widget.isActive ? 1 : 0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _BottomNavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) {
+      _iconController.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _iconController.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    _iconController.forward(from: 0);
+    widget.onTap();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final tint = widget.isDarkMode
-        ? Color.lerp(
-            const Color(0xFF8B93A7),
-            Colors.white,
-            widget.isActive ? 1 : 0,
-          )!
-        : Colors.white.withValues(
-            alpha: widget.isActive ? 0.98 : 0.66,
-          );
-
-    return Icon(
-      widget.isActive ? widget.tab.activeIcon : widget.tab.icon,
-      color: tint,
-      size: 22,
+    return Semantics(
+      button: true,
+      selected: widget.isActive,
+      label: widget.tab.label,
+      child: GestureDetector(
+        key: Key('bottom_nav_${widget.tab.name}'),
+        behavior: HitTestBehavior.opaque,
+        onTap: _handleTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              margin: const EdgeInsets.only(bottom: 2),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.fastOutSlowIn,
+              height: 4,
+              width: widget.isActive ? 20 : 0,
+              decoration: BoxDecoration(
+                color: const Color(0xFF81B4FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            SizedBox(
+              height: 36,
+              width: 36,
+              child: Opacity(
+                opacity: widget.isActive ? 1 : 0.5,
+                child: ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    widget.isDarkMode ? Colors.white : Colors.transparent,
+                    widget.isDarkMode ? BlendMode.srcATop : BlendMode.dst,
+                  ),
+                  child: Lottie.asset(
+                    widget.tab.navLordiconAsset,
+                    controller: _iconController,
+                    repeat: false,
+                    onLoaded: (composition) {
+                      _iconController.duration = composition.duration;
+                      if (widget.isActive && _iconController.value == 0) {
+                        _iconController.value = 1;
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1026,7 +1326,7 @@ class _SideMenu extends StatefulWidget {
     required this.onSelected,
     required this.onOpenProfile,
   });
-  final AdminSection currentSection;
+  final AdminSection? currentSection;
   final double progress;
   final bool isDarkMode;
   final AppDataController controller;
@@ -1039,40 +1339,13 @@ class _SideMenu extends StatefulWidget {
 }
 
 class _SideMenuState extends State<_SideMenu> {
-  bool _learningAppsExpanded = false;
-
-  static const _learningApps = [
-    AdminSection.notes,
-    AdminSection.timer,
-    AdminSection.flashCard,
-    AdminSection.studyGroup,
-    AdminSection.leaderboard,
-  ];
-
   @override
   Widget build(BuildContext context) {
     final accent = widget.controller.primaryColor;
-    final offset = lerpDouble(-36, 0, widget.progress)!;
-    final learningAppsExpanded =
-        _learningAppsExpanded || _learningApps.contains(widget.currentSection);
-    const overview = [
-      AdminSection.overview,
-    ];
-    const aiManage = [
-      AdminSection.aiAssistant,
-      AdminSection.aiSettings,
-    ];
-    const dataAndAutomation = [
-      AdminSection.analytics,
-      AdminSection.automations,
-    ];
-    const systemArea = [
-      AdminSection.settings,
-    ];
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 56, 14),
+        padding: const EdgeInsets.fromLTRB(0, 14, 0, 14),
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: (widget.isDarkMode
@@ -1081,13 +1354,11 @@ class _SideMenuState extends State<_SideMenu> {
                 .withValues(alpha: 0.96),
             borderRadius: BorderRadius.circular(28),
           ),
-          child: Transform.translate(
-            offset: Offset(offset, 0),
-            child: Opacity(
-              opacity: lerpDouble(0.15, 1, widget.progress)!,
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          child: Opacity(
+            opacity: lerpDouble(0.15, 1, widget.progress)!,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1182,43 +1453,48 @@ class _SideMenuState extends State<_SideMenu> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      _SideMenuGroup(
-                        title: '总览',
-                        sections: overview,
-                        currentSection: widget.currentSection,
-                        onSelected: widget.onSelected,
+                      const SizedBox(height: 22),
+                      const Text(
+                        '更多',
+                        style: TextStyle(
+                          color: Color(0x99FFFFFF),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.2,
+                        ),
                       ),
-                      _SideMenuGroup(
-                        title: 'AI 管理',
-                        sections: aiManage,
-                        currentSection: widget.currentSection,
-                        onSelected: widget.onSelected,
+                      const SizedBox(height: 14),
+                      _SideMenuActionItem(
+                        label: 'AI 管理',
+                        icon: Icons.smart_toy_outlined,
+                        selected:
+                            widget.currentSection == AdminSection.aiAssistant ||
+                                widget.currentSection ==
+                                    AdminSection.aiSettings,
+                        onTap: () =>
+                            widget.onSelected(AdminSection.aiAssistant),
                       ),
-                      _SideMenuGroup(
-                        title: '学习应用',
-                        sections: _learningApps,
-                        currentSection: widget.currentSection,
-                        onSelected: widget.onSelected,
-                        collapsible: true,
-                        expanded: learningAppsExpanded,
-                        onHeaderTap: () {
-                          setState(() {
-                            _learningAppsExpanded = !learningAppsExpanded;
-                          });
-                        },
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: '系统设置',
+                        icon: Icons.settings_outlined,
+                        selected:
+                            widget.currentSection == AdminSection.settings,
+                        onTap: () => widget.onSelected(AdminSection.settings),
                       ),
-                      _SideMenuGroup(
-                        title: '数据与编排',
-                        sections: dataAndAutomation,
-                        currentSection: widget.currentSection,
-                        onSelected: widget.onSelected,
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: '个人资料修改',
+                        icon: Icons.account_circle_outlined,
+                        onTap: widget.onOpenProfile,
                       ),
-                      _SideMenuGroup(
-                        title: '系统',
-                        sections: systemArea,
-                        currentSection: widget.currentSection,
-                        onSelected: widget.onSelected,
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: '应用介绍',
+                        icon: Icons.info_outline_rounded,
+                        selected:
+                            widget.currentSection == AdminSection.overview,
+                        onTap: () => widget.onSelected(AdminSection.overview),
                       ),
                       const SizedBox(height: 16),
                       _ThemeModeButton(
@@ -1227,7 +1503,6 @@ class _SideMenuState extends State<_SideMenu> {
                       ),
                     ],
                   ),
-                ),
               ),
             ),
           ),
@@ -1237,142 +1512,83 @@ class _SideMenuState extends State<_SideMenu> {
   }
 }
 
-class _SideMenuItem extends StatelessWidget {
-  const _SideMenuItem({
-    required this.section,
-    required this.selected,
+class _SideMenuActionItem extends StatelessWidget {
+  const _SideMenuActionItem({
+    required this.label,
+    required this.icon,
     required this.onTap,
+    this.selected = false,
   });
-  final AdminSection section;
-  final bool selected;
+
+  final String label;
+  final IconData icon;
   final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      key: Key('drawer_admin_${section.name}'),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF7394F9)
-              : Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              section.icon,
-              color: Colors.white.withValues(alpha: selected ? 1 : 0.88),
-              size: 20,
-            ),
-            const SizedBox(width: 14),
-            Text(
-              section.label,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: selected ? 1 : 0.86),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SideMenuGroup extends StatelessWidget {
-  const _SideMenuGroup({
-    required this.title,
-    required this.sections,
-    required this.currentSection,
-    required this.onSelected,
-    this.collapsible = false,
-    this.expanded = true,
-    this.onHeaderTap,
-  });
-
-  final String title;
-  final List<AdminSection> sections;
-  final AdminSection currentSection;
-  final ValueChanged<AdminSection> onSelected;
-  final bool collapsible;
-  final bool expanded;
-  final VoidCallback? onHeaderTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final titleText = Text(
-      title,
-      style: const TextStyle(
-        color: Color(0x99FFFFFF),
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 1.2,
-      ),
-    );
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (collapsible)
-            InkWell(
-              borderRadius: BorderRadius.circular(4),
-              onTap: onHeaderTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    titleText,
-                    const SizedBox(width: 4),
-                    AnimatedRotation(
-                      turns: expanded ? 0 : 0.5,
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.fastOutSlowIn,
-                      child: const Icon(
-                        Icons.keyboard_arrow_up_rounded,
-                        color: Color(0x99FFFFFF),
-                        size: 16,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GestureDetector(
+          onTap: onTap,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 56,
+              child: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.fastOutSlowIn,
+                    width: selected ? constraints.maxWidth : 0,
+                    height: 56,
+                    left: 0,
+                    top: 0,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6792FF),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            )
-          else
-            titleText,
-          AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.fastOutSlowIn,
-            alignment: Alignment.topCenter,
-            child: expanded
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(height: 8),
-                      for (var i = 0; i < sections.length; i++) ...[
-                        _SideMenuItem(
-                          section: sections[i],
-                          selected: currentSection == sections[i],
-                          onTap: () => onSelected(sections[i]),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.transparent
+                            : Colors.white.withValues(alpha: 0.04),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Row(
+                          children: [
+                            Icon(
+                              icon,
+                              color: Colors.white
+                                  .withValues(alpha: selected ? 1 : 0.88),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 14),
+                            Text(
+                              label,
+                              style: TextStyle(
+                                color: Colors.white
+                                    .withValues(alpha: selected ? 1 : 0.86),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
-                        if (i != sections.length - 1)
-                          const SizedBox(height: 4),
-                      ],
-                    ],
-                  )
-                : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

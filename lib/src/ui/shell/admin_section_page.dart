@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
+import '../shared/page_wrapper.dart';
 import '../study/ai_assistant_page.dart';
 import '../study/ai_settings_page.dart';
+import '../study/flash_card_page.dart';
 import '../study/learning_dashboard_page.dart';
 import '../study/leaderboard_page.dart';
 import '../study/study_group_page.dart';
@@ -19,149 +21,146 @@ class AdminSectionPage extends StatelessWidget {
     required this.isDarkMode,
     this.controller,
     this.onOpenSettings,
+    this.onBack,
   });
 
   final AdminSection section;
   final bool isDarkMode;
   final AppDataController? controller;
   final VoidCallback? onOpenSettings;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
+    Widget body;
+
     // For timer, render the Pomodoro timer page
     if (section == AdminSection.timer && controller != null) {
-      return TimerPage(
+      body = TimerPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
-    }
-
-    // For flash card page
-    if (section == AdminSection.flashCard && controller != null) {
-      return const SizedBox.shrink();
-    }
-
-    if (section == AdminSection.studyGroup && controller != null) {
-      return StudyGroupPage(
+    } else if (section == AdminSection.flashCard && controller != null) {
+      body = FlashCardPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
-    }
-
-    if (section == AdminSection.leaderboard && controller != null) {
-      return LeaderboardPage(
+    } else if (section == AdminSection.studyGroup && controller != null) {
+      body = StudyGroupPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
-    }
-
-    // For AI assistant page
-    if (section == AdminSection.aiAssistant && controller != null) {
-      return AiAssistantPage(
+    } else if (section == AdminSection.leaderboard && controller != null) {
+      body = LeaderboardPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    } else if (section == AdminSection.aiAssistant && controller != null) {
+      body = AiAssistantPage(
         isDarkMode: isDarkMode,
         controller: controller!,
         onOpenSettings: onOpenSettings,
       );
-    }
-
-    if (section == AdminSection.aiSettings && controller != null) {
-      return AiSettingsPage(
+    } else if (section == AdminSection.aiSettings && controller != null) {
+      body = AiSettingsPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
-    }
-
-    if (section == AdminSection.settings && controller != null) {
-      return AiSettingsPage(
+    } else if (section == AdminSection.settings && controller != null) {
+      body = AiSettingsPage(
         isDarkMode: isDarkMode,
         controller: controller!,
         mode: AiSettingsMode.system,
       );
-    }
-
-    if (section == AdminSection.automations && controller != null) {
-      return TaskPlanningPage(
+    } else if (section == AdminSection.automations && controller != null) {
+      body = TaskPlanningPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
-    }
-    if ((section == AdminSection.analytics ||
+    } else if ((section == AdminSection.analytics ||
             section == AdminSection.statistics) &&
         controller != null) {
-      return LearningDashboardPage(
+      body = LearningDashboardPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
-    }
-    final config = _configFor(section, controller: controller);
-
-    return ListView(
-      key: Key('page_admin_${section.name}'),
-      padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
-      children: [
-        Text(
-          section.label,
-          key: Key('admin_title_${section.name}'),
-          style: TextStyle(
-            color: isDarkMode ? Colors.white : Colors.black,
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
+    } else {
+      final config = _configFor(section, controller: controller);
+      body = ListView(
+        key: Key('page_admin_${section.name}'),
+        padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
+        children: [
+          Text(
+            section.label,
+            key: Key('admin_title_${section.name}'),
+            style: TextStyle(
+              color: isDarkMode ? Colors.white : Colors.black,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          config.subtitle,
-          key: Key('admin_subtitle_${section.name}'),
-          style: TextStyle(
-            color: isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-            fontSize: 15,
-            height: 1.5,
+          const SizedBox(height: 8),
+          Text(
+            config.subtitle,
+            key: Key('admin_subtitle_${section.name}'),
+            style: TextStyle(
+              color: isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
+              fontSize: 15,
+              height: 1.5,
+            ),
           ),
-        ),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                config.accent.withValues(alpha: 0.95),
-                Color.lerp(config.accent, AppColors.shell, 0.45)!,
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  config.accent.withValues(alpha: 0.95),
+                  Color.lerp(config.accent, AppColors.shell, 0.45)!,
+                ],
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                BadgePill(
+                  label: section == AdminSection.statistics ? '学习' : 'Admin',
+                  background: Colors.white.withValues(alpha: 0.18),
+                  foreground: Colors.white,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  config.heroTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  config.heroSubtitle,
+                  style: const TextStyle(
+                    color: Color(0xE6FFFFFF),
+                    height: 1.55,
+                  ),
+                ),
               ],
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              BadgePill(
-                label: section == AdminSection.statistics ? '学习' : 'Admin',
-                background: Colors.white.withValues(alpha: 0.18),
-                foreground: Colors.white,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                config.heroTitle,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                config.heroSubtitle,
-                style: const TextStyle(
-                  color: Color(0xE6FFFFFF),
-                  height: 1.55,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      );
+    }
+
+    return PageWithBackButton(
+      title: section.label,
+      isDarkMode: isDarkMode,
+      onBack: onBack,
+      child: body,
     );
   }
 }

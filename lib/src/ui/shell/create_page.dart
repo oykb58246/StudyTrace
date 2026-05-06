@@ -145,9 +145,11 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                           label: Text(s.label,
                               style: TextStyle(
                                   fontSize: 12,
-                                  color: widget.isDarkMode
-                                      ? Colors.white
-                                      : AppColors.ink)),
+                                  color: _statusFilter == s
+                                      ? accent
+                                      : widget.isDarkMode
+                                          ? Colors.white
+                                          : AppColors.ink)),
                           selected: _statusFilter == s,
                           selectedColor:
                               accent.withValues(alpha: 0.2),
@@ -169,9 +171,11 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                           label: Text(t.label,
                               style: TextStyle(
                                   fontSize: 12,
-                                  color: widget.isDarkMode
-                                      ? Colors.white
-                                      : AppColors.ink)),
+                                  color: _typeFilter == t
+                                      ? const Color(0xFF7394F9)
+                                      : widget.isDarkMode
+                                          ? Colors.white
+                                          : AppColors.ink)),
                           selected: _typeFilter == t,
                           selectedColor:
                               const Color(0xFF7394F9).withValues(alpha: 0.22),

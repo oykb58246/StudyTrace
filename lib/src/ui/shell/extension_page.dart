@@ -122,9 +122,11 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                         label: Text('全部课程',
                             style: TextStyle(
                                 fontSize: 12,
-                                color: widget.isDarkMode
-                                    ? Colors.white
-                                    : AppColors.ink)),
+                                color: _courseFilter == null
+                                    ? accent
+                                    : widget.isDarkMode
+                                        ? Colors.white
+                                        : AppColors.ink)),
                         selected: _courseFilter == null,
                         selectedColor:
                             accent.withValues(alpha: 0.2),
@@ -142,9 +144,11 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                             label: Text(c,
                                 style: TextStyle(
                                     fontSize: 12,
-                                    color: widget.isDarkMode
-                                        ? Colors.white
-                                        : AppColors.ink)),
+                                    color: _courseFilter == c
+                                        ? accent
+                                        : widget.isDarkMode
+                                            ? Colors.white
+                                            : AppColors.ink)),
                             selected: _courseFilter == c,
                             selectedColor:
                                 const Color(0xFF7394F9).withValues(alpha: 0.22),
