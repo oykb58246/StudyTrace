@@ -1,0 +1,55 @@
+name: Deploy Backend to Azure
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**']
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Build
+        working-directory: backend
+        run: npm run build
+
+      - name: Prepare deploy package
+        working-directory: backend
+        run: |
+          mkdir -p deploy
+          cp -r dist deploy/
+          cp -r node_modules deploy/
+          cp -r prisma deploy/
+          cp package.json deploy/
+          cp startup.sh deploy/
+          chmod +x deploy/startup.sh
+          cd deploy && zip -r ../deploy.zip .
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to App Service
+        run: |
+          az webapp deploy \
+            --name studytrace \
+            --resource-group studytrace \
+            --src-path backend/deploy.zip \
+            --type zip \
+            --clean true
