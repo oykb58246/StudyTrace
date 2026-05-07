@@ -10,6 +10,7 @@ import '../../controllers/app_data_controller.dart';
 import '../../models/ai_chat_message.dart';
 import '../../models/note_block.dart';
 import '../../models/study_sub_task_item.dart';
+import '../../models/study_task_item.dart';
 import '../../services/ai_study_service.dart';
 import '../../services/local_storage_service.dart';
 import '../../theme/app_theme.dart';
@@ -985,7 +986,15 @@ class _AiChatPageState extends State<AiChatPage> {
           try {
             final title =
                 '对话笔记 ${DateTime.now().month}/${DateTime.now().day}';
-            final blocks = parseMarkdownToBlocks(input);
+            final blocksData = parseMarkdownToBlocks(input);
+            final blocks = blocksData
+                .map((b) => NoteBlock(
+                      id: b['id'] as String,
+                      type: _parseBlockType(b['type'] as String),
+                      content: (b['content'] as String?) ?? '',
+                      checked: (b['checked'] as bool?) ?? false,
+                    ))
+                .toList();
             await widget.controller.addStudyNote(
               title: title,
               content: input,
@@ -1099,15 +1108,7 @@ class _AiChatPageState extends State<AiChatPage> {
         purpose: 'note',
       );
       // Markdown → Notion blocks 转换
-      final blocksData = parseMarkdownToBlocks(note);
-      final blocks = blocksData
-          .map((b) => NoteBlock(
-                id: b['id'] as String,
-                type: _parseBlockType(b['type'] as String),
-                content: (b['content'] as String?) ?? '',
-                checked: (b['checked'] as bool?) ?? false,
-              ))
-          .toList();
+      final blocks = markdownToNoteBlocks(note);
       await widget.controller.addStudyNote(
         title: 'AI 学习笔记 ${DateTime.now().month}/${DateTime.now().day}',
         content: note,
@@ -1360,6 +1361,17 @@ NoteBlockType _parseBlockType(String type) {
     'divider' => NoteBlockType.divider,
     _ => NoteBlockType.text,
   };
+}
+
+List<NoteBlock> markdownToNoteBlocks(String markdown) {
+  return parseMarkdownToBlocks(markdown)
+      .map((b) => NoteBlock(
+            id: b['id'] as String,
+            type: _parseBlockType(b['type'] as String),
+            content: (b['content'] as String?) ?? '',
+            checked: (b['checked'] as bool?) ?? false,
+          ))
+      .toList();
 }
 
 class _ChatEntry {
