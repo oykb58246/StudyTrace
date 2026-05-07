@@ -35,29 +35,44 @@ class AiStudyService {
 
   static const _systemPrompt = '''
 你是 StudyTrace 的 AI 学习助手，StudyTrace 就是你正在运行的这个 App。
-你内置在 App 中，用户正在跟你对话。App 本身就有以下功能，你只需要告诉用户怎么用，并直接帮他们执行操作。
+你内置在 App 中，用户正在跟你对话。App 本身就有以下功能，你只需要告诉用户怎么用，并**直接帮他们执行操作**。
 
-当用户说"打开计时器""开专注模式"时，你直接回复【ACTION:OPEN_TIMER】，App 会自动跳转到计时器页面。
-当用户说"查看闪卡""开始复习"时，回复【ACTION:OPEN_FLASHCARD】。
-当用户说"添加任务""创建任务"时，回复【ACTION:ADD_TASK】。
-当用户说"生成笔记""帮我总结"时，回复【ACTION:SUMMARY_NOTE】。
+你可以在回复末尾加上 ACTION 标签，App 会自动执行对应操作。支持的 ACTION：
+
+【ACTION:OPEN_TIMER】— 打开专注计时器（番茄钟倒计时，5/15/25/45/60分钟可选）
+【ACTION:OPEN_FLASHCARD】— 打开知识闪卡
+【ACTION:ADD_TASK】— 根据用户描述创建学习任务（带子任务和截止时间）
+【ACTION:SUMMARY_NOTE】— 从收藏闪卡整理生成学习笔记
+【ACTION:CREATE_LOG】— 根据对话内容创建学习日志（自动提取课程名、内容、问题、收获、计划）
+【ACTION:MARK_COMPLETED】— 标记指定任务为已完成（需要任务标题匹配）
+【ACTION:MARK_IN_PROGRESS】— 标记指定任务为进行中
+【ACTION:SAVE_NOTE】— 将对话内容保存为学习笔记
+【ACTION:SWITCH_CALENDAR】— 切换到日历页
+【ACTION:SWITCH_TASKS】— 切换到任务页
+【ACTION:SWITCH_LOGS】— 切换到记录页
+【ACTION:SWITCH_ARCHIVE】— 切换到归档页
+【ACTION:BACK_HOME】— 回到首页
+
+使用规则：
+- 每个回复最多使用 1-2 个 ACTION，放在回复最末尾
+- 如果用户明确说"帮我保存/记录/标记完成/切换到XX页"等，直接用对应 ACTION
+- 如果只是闲聊咨询，不要加 ACTION
 
 重要规则：
 - 你运行在 StudyTrace App 内部，所有功能都在 App 里，不要建议用户去微信、浏览器或其他外部工具
-- 当用户想使用某个功能（计时器、闪卡、笔记、任务），直接在回复末尾给出对应的 ACTION 标签
 - 使用简单的 Markdown 格式：加粗用 **文字**，列表用 - 开头，代码用 `` 包裹
 - 不要用 Markdown 表格，用简短清晰的段落和列表
 - 回复要完整，不要省略，不超过500字
 
-StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
-1. 专注计时器 — 番茄钟倒计时，5/15/25/45/60 分钟可选
-2. 知识闪卡 — AI 生成问答卡片，帮助巩固知识点
-3. 学习笔记 — 多格式编辑器（标题/列表/待办/代码块）
-4. 学习任务 — 管理作业、实验报告、论文、项目、考试复习
-5. 学习日志 — 每日学习内容记录
-6. 学习日历 — 查看每日学习安排
-7. 周报分析 — AI 分析本周学习数据
-8. 课程管理 — 按课程分类管理内容''';
+StudyTrace 功能介绍：
+1. 专注计时器 — 番茄钟倒计时
+2. 知识闪卡 — AI 生成问答卡片
+3. 学习笔记 — 多格式编辑器
+4. 学习任务 — 管理作业/实验/论文/项目/考试
+5. 学习日志 — 每日学习记录
+6. 学习日历 — 每日安排
+7. 周报分析 — AI 分析学习数据
+8. 课程管理 — 按课程分类管理''';
 
   // ═══════════════════════════════════════════════════════════
   // Public API
@@ -187,7 +202,7 @@ StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
       final config = await _storage.loadAiConfig();
       final systemPrompt = switch (purpose) {
         'note' => '你是 StudyTrace 的学习笔记整理助手。根据用户的收藏、对话和学习记录，生成可直接保存的学习笔记。',
-        'task' => '你是 StudyTrace 的任务编排助手。根据学习目标和上下文，给出可执行建议，并在需要时用【ACTION:OPEN_TIMER】、【ACTION:ADD_TASK】或【ACTION:SUMMARY_NOTE】标注动作。',
+        'task' => '你是 StudyTrace 的任务编排助手。根据学习目标和上下文，给出可执行建议，并在需要时用【ACTION:OPEN_TIMER】、【ACTION:ADD_TASK】、【ACTION:MARK_COMPLETED】、【ACTION:MARK_IN_PROGRESS】或【ACTION:CREATE_LOG】标注动作。',
         _ => _systemPrompt,
       };
       yield* _blueHeartClient.chatStream(
@@ -324,8 +339,8 @@ StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
   }) async {
     final sp = switch (purpose) {
       'note' => '你是 StudyTrace 的学习笔记整理助手。',
-      'task' => '你是 StudyTrace 的任务编排助手。',
-      _ => '你是 StudyTrace 的 AI 学习助手。在需要时用【ACTION:OPEN_TIMER】、【ACTION:ADD_TASK】、【ACTION:SUMMARY_NOTE】标注动作。',
+      'task' => '你是 StudyTrace 的任务编排助手。在需要时用【ACTION:ADD_TASK】、【ACTION:MARK_COMPLETED】标注动作。',
+      _ => '你是 StudyTrace 的 AI 学习助手。在需要时用【ACTION:OPEN_TIMER】、【ACTION:OPEN_FLASHCARD】、【ACTION:ADD_TASK】、【ACTION:CREATE_LOG】、【ACTION:MARK_COMPLETED】、【ACTION:MARK_IN_PROGRESS】、【ACTION:SAVE_NOTE】标注动作。',
     };
     return _deepSeekClient.chatText(
       config: runtime.config, apiKey: runtime.apiKey, systemPrompt: sp,
@@ -457,7 +472,7 @@ StudyTrace 功能介绍（你可以直接帮用户打开这些功能）：
   }) async {
     final sp = switch (purpose) {
       'note' => '你是 StudyTrace 的学习笔记整理助手。根据用户输入生成可直接保存的学习笔记。',
-      'task' => '你是 StudyTrace 的任务编排助手。',
+      'task' => '你是 StudyTrace 的任务编排助手。在需要时用【ACTION:ADD_TASK】、【ACTION:MARK_COMPLETED】标注动作。',
       _ => _systemPrompt,
     };
     final cfg = await _storage.loadAiConfig();

@@ -74,7 +74,9 @@ class LearningDashboardPage extends StatelessWidget {
         final bodyColor =
             isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
-        return ListView(
+        return RefreshIndicator(
+          onRefresh: () async => controller.notifyListeners(),
+          child: ListView(
           key: const Key('page_learning_dashboard'),
           padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
           children: [
@@ -359,6 +361,7 @@ class LearningDashboardPage extends StatelessWidget {
               ),
             ],
           ],
+          ), // RefreshIndicator
         );
       },
     );

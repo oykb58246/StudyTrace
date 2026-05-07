@@ -54,7 +54,9 @@ class StatisticsPage extends StatelessWidget {
         final total = tasks.length;
         final completionRate = total > 0 ? completed / total : 0.0;
 
-        return ListView(
+        return RefreshIndicator(
+          onRefresh: () async => controller.notifyListeners(),
+          child: ListView(
           key: const Key('page_statistics'),
           padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
           children: [
@@ -220,6 +222,7 @@ class StatisticsPage extends StatelessWidget {
               ),
             ),
           ],
+          ), // RefreshIndicator
         );
       },
     );

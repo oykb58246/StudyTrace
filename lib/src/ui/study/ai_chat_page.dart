@@ -599,6 +599,15 @@ class _AiChatPageState extends State<AiChatPage> {
     '创建任务': 'ADD_TASK',
     '帮我总结本周': 'SUMMARY_NOTE',
     '总结本周学习': 'SUMMARY_NOTE',
+    '切换日历': 'SWITCH_CALENDAR',
+    '去日历': 'SWITCH_CALENDAR',
+    '任务列表': 'SWITCH_TASKS',
+    '去任务': 'SWITCH_TASKS',
+    '学习记录': 'SWITCH_LOGS',
+    '去记录': 'SWITCH_LOGS',
+    '归档': 'SWITCH_ARCHIVE',
+    '回首页': 'BACK_HOME',
+    '主页': 'BACK_HOME',
   };
 
   Future<void> _sendMessage() async {
@@ -848,9 +857,7 @@ class _AiChatPageState extends State<AiChatPage> {
             ));
           } catch (e) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('无法打开计时器：$e')),
-            );
+            _showSnack('无法打开计时器：$e');
           }
           break;
         case 'OPEN_FLASHCARD':
@@ -863,58 +870,211 @@ class _AiChatPageState extends State<AiChatPage> {
             ));
           } catch (e) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('无法打开闪卡：$e')),
-            );
+            _showSnack('无法打开闪卡：$e');
           }
           break;
         case 'ADD_TASK':
-          final plan = await _aiService.generateTaskPlan(input);
-          final now = DateTime.now();
-          final subTasks = plan.plannedSubTasks.isNotEmpty
-              ? plan.plannedSubTasks
-                  .map((p) => StudySubTaskItem(
-                        id: 'sub_${now.microsecondsSinceEpoch}_${plan.plannedSubTasks.indexOf(p)}',
-                        title: p.title,
-                        startAt: p.startAt,
-                        deadline: p.deadline,
-                        note: p.note,
-                        createdAt: now,
-                        updatedAt: now,
-                      ))
-                  .toList()
-              : plan.subTasks
-                  .map((title) => StudySubTaskItem(
-                        id: 'sub_${now.microsecondsSinceEpoch}_${plan.subTasks.indexOf(title)}',
-                        title: title,
-                        deadline: plan.deadline,
-                        createdAt: now,
-                        updatedAt: now,
-                      ))
-                  .toList();
-          final note = [
-            if (plan.difficulty.isNotEmpty) '难度：${plan.difficulty}',
-            if (plan.schedule.isNotEmpty) '推荐安排：\n${plan.schedule}',
-          ].join('\n');
-          await widget.controller.addStudyTask(
-            title: plan.mainTitle,
-            type: plan.taskType,
-            courseName: plan.courseName,
-            deadline: plan.deadline,
-            note: note,
-            subTasks: subTasks,
-          );
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('任务已添加到列表')),
+          try {
+            final plan = await _aiService.generateTaskPlan(input);
+            final now = DateTime.now();
+            final subTasks = plan.plannedSubTasks.isNotEmpty
+                ? plan.plannedSubTasks
+                    .map((p) => StudySubTaskItem(
+                          id: 'sub_${now.microsecondsSinceEpoch}_${plan.plannedSubTasks.indexOf(p)}',
+                          title: p.title,
+                          startAt: p.startAt,
+                          deadline: p.deadline,
+                          note: p.note,
+                          createdAt: now,
+                          updatedAt: now,
+                        ))
+                    .toList()
+                : plan.subTasks
+                    .map((title) => StudySubTaskItem(
+                          id: 'sub_${now.microsecondsSinceEpoch}_${plan.subTasks.indexOf(title)}',
+                          title: title,
+                          deadline: plan.deadline,
+                          createdAt: now,
+                          updatedAt: now,
+                        ))
+                    .toList();
+            final note = [
+              if (plan.difficulty.isNotEmpty) '难度：${plan.difficulty}',
+              if (plan.schedule.isNotEmpty) '推荐安排：\n${plan.schedule}',
+            ].join('\n');
+            await widget.controller.addStudyTask(
+              title: plan.mainTitle,
+              type: plan.taskType,
+              courseName: plan.courseName,
+              deadline: plan.deadline,
+              note: note,
+              subTasks: subTasks,
             );
+            if (mounted) {
+              _showSnack('任务 "${plan.mainTitle}" 已添加');
+            }
+          } catch (e) {
+            if (!mounted) return;
+            _showSnack('创建任务失败：$e');
           }
           break;
         case 'SUMMARY_NOTE':
           await _generateNoteFromStarredCards();
           break;
+
+        // ─── 新增 ACTION ───
+
+        case 'CREATE_LOG':
+          // 从对话内容 AI 提取学习日志
+          try {
+            final log = await _aiService.generateStudyLog(input);
+            await widget.controller.addStudyLog(
+              date: DateTime.now(),
+              courseName: log.courseName,
+              content: log.content,
+              problems: log.problems,
+              thoughts: log.thoughts,
+              nextPlan: log.nextPlan,
+            );
+            if (mounted) {
+              _showSnack('学习日志已保存：${log.courseName}');
+            }
+          } catch (e) {
+            if (!mounted) return;
+            _showSnack('保存日志失败：$e');
+          }
+          break;
+
+        case 'MARK_COMPLETED':
+        case 'MARK_IN_PROGRESS':
+          // 匹配用户输入中的任务标题
+          try {
+            final targetStatus = action == 'MARK_COMPLETED'
+                ? StudyTaskStatus.completed
+                : StudyTaskStatus.inProgress;
+            final tasks = widget.controller.studyTasks;
+            var matched = _findBestTask(tasks, input);
+            if (matched != null) {
+              await widget.controller.updateStudyTaskStatus(
+                  matched.id, targetStatus);
+              final label =
+                  targetStatus == StudyTaskStatus.completed ? '已完成' : '进行中';
+              if (mounted) {
+                _showSnack('任务 "${matched.title}" 已标记为$label');
+              }
+            } else {
+              // 列出所有未完成任务供用户选择
+              final pending = tasks.where(
+                  (t) => t.status != StudyTaskStatus.completed).toList();
+              if (pending.isEmpty) {
+                _showSnack('没有找到可操作的任务');
+              } else {
+                final names =
+                    pending.take(5).map((t) => t.title).join('、');
+                _showSnack('请指定任务，当前未完成任务：$names');
+              }
+            }
+          } catch (e) {
+            if (!mounted) return;
+            _showSnack('更新任务状态失败：$e');
+          }
+          break;
+
+        case 'SAVE_NOTE':
+          // 将对话内容保存为笔记
+          try {
+            final title =
+                '对话笔记 ${DateTime.now().month}/${DateTime.now().day}';
+            final blocks = parseMarkdownToBlocks(input);
+            await widget.controller.addStudyNote(
+              title: title,
+              content: input,
+              blocks: blocks,
+            );
+            if (mounted) {
+              _showSnack('笔记已保存');
+            }
+          } catch (e) {
+            if (!mounted) return;
+            _showSnack('保存笔记失败：$e');
+          }
+          break;
+
+        case 'SWITCH_CALENDAR':
+          _navigateToTab('calendar');
+          break;
+        case 'SWITCH_TASKS':
+          _navigateToTab('create');
+          break;
+        case 'SWITCH_LOGS':
+          _navigateToTab('scenarios');
+          break;
+        case 'SWITCH_ARCHIVE':
+          _navigateToTab('profile');
+          break;
+        case 'BACK_HOME':
+          _navigateToTab('assistant');
+          break;
       }
     }
+  }
+
+  /// 模糊匹配任务标题 — 优先完全匹配，再部分匹配
+  StudyTaskItem? _findBestTask(List<StudyTaskItem> tasks, String query) {
+    if (tasks.isEmpty) return null;
+    final trimmed = query.trim().toLowerCase();
+    // 精确匹配
+    final exact = tasks.cast<StudyTaskItem?>().firstWhere(
+          (t) => t!.title.toLowerCase() == trimmed,
+          orElse: () => null);
+    if (exact != null) return exact;
+    // 包含匹配：query 包含在标题中
+    for (final t in tasks) {
+      if (t.title.toLowerCase().contains(trimmed) && trimmed.length > 1) {
+        return t;
+      }
+    }
+    // 包含匹配：标题部分包含在 query 中
+    for (final t in tasks) {
+      if (trimmed.contains(t.title.toLowerCase()) && t.title.length > 1) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  /// 通过 navigatorKey 切换底部 Tab
+  void _navigateToTab(String tabName) {
+    final navigator = widget.controller.navigatorKey?.currentState;
+    if (navigator == null) {
+      _showSnack('无法切换页面');
+      return;
+    }
+    // pop 所有 push 的页面，回到 AppShell
+    navigator.popUntil((route) => route.isFirst);
+    // 通过 controller 的 tab 通知 shell 切换
+    widget.controller.setCurrentPrimaryTab(tabName);
+    widget.controller.notifyListeners();
+    _showSnack('已切换到${_tabLabel(tabName)}');
+  }
+
+  String _tabLabel(String name) => switch (name) {
+    'assistant' => '首页',
+    'scenarios' => '记录',
+    'calendar' => '日历',
+    'create' => '任务',
+    'profile' => '归档',
+    _ => name,
+  };
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _generateNoteFromStarredCards() async {

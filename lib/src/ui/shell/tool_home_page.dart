@@ -83,13 +83,17 @@ class HomePage extends StatelessWidget {
         final bodyColor =
             isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
-        return Stack(
-          fit: StackFit.expand,
+        return Column(
           children: [
-            _HomeRiveBackground(isDarkMode: isDarkMode),
-            ListView(
-              key: const Key('page_home'),
-              padding: const EdgeInsets.fromLTRB(20, 76, 20, 124),
+            Expanded(
+              child: Stack(
+                children: [
+                  _HomeRiveBackground(isDarkMode: isDarkMode),
+                  RefreshIndicator(
+                    onRefresh: () async => controller.notifyListeners(),
+                    child: ListView(
+                    key: const Key('page_home'),
+                    padding: const EdgeInsets.fromLTRB(20, 76, 20, 124),
               children: [
               Center(
                 child: Column(
@@ -246,9 +250,13 @@ class HomePage extends StatelessWidget {
                     const SizedBox(height: 10),
                 ],
               ],
+                    ), // RefreshIndicator
             ),
           ],
-        );
+        ),
+      ),
+    ],
+  );
       },
     );
   }
@@ -419,8 +427,8 @@ class _HomeAiChatEntry extends StatelessWidget {
         onTap: onTap,
         child: _GlassCard(
           isDarkMode: isDarkMode,
-          height: 72,
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          height: 76,
+          padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
           radius: 28,
           child: Row(
             children: [
@@ -461,9 +469,12 @@ class _HomeAiChatEntry extends StatelessWidget {
                   children: [
                     Text(
                       'AI 对话',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: isDarkMode ? Colors.white : AppColors.ink,
                         fontSize: 19,
+                        height: 1.08,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -477,6 +488,7 @@ class _HomeAiChatEntry extends StatelessWidget {
                             ? Colors.white.withValues(alpha: 0.5)
                             : AppColors.muted,
                         fontSize: 12,
+                        height: 1.1,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -781,7 +793,7 @@ class _HomeShortcut extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
           onTap: onTap,
           child: SizedBox(
-            width: 78,
+            width: 72,
             child: _GlassCard(
               isDarkMode: isDarkMode,
               height: 92,

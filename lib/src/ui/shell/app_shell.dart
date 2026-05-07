@@ -56,6 +56,7 @@ class _AppShellState extends State<AppShell>
     with SingleTickerProviderStateMixin {
   late final AnimationController _menuController;
   late final AppDataController _appDataController;
+  final _navigatorKey = GlobalKey<NavigatorState>();
 
   late PrimaryTab _primaryTab;
   AdminSection? _activeAdminSection;
@@ -67,7 +68,9 @@ class _AppShellState extends State<AppShell>
   void initState() {
     super.initState();
     _appDataController = AppDataController();
+    _appDataController.navigatorKey = _navigatorKey;
     _primaryTab = widget.debugInitialPrimaryTab ?? PrimaryTab.assistant;
+    _appDataController.setCurrentPrimaryTab(_primaryTab.name);
     _activeAdminSection = widget.debugInitialAdminSection;
     _menuController = AnimationController(
       vsync: this,
@@ -170,6 +173,7 @@ class _AppShellState extends State<AppShell>
       _primaryTab = tab;
       _activeAdminSection = null;
     });
+    _appDataController.setCurrentPrimaryTab(tab.name);
     _closeMenu();
   }
 
@@ -446,6 +450,7 @@ class _AppShellState extends State<AppShell>
     _menuWidth = math.min(screenWidth * 0.74, 288);
 
     return Scaffold(
+      key: _navigatorKey,
       resizeToAvoidBottomInset: false,
       backgroundColor:
           _isDarkMode ? const Color(0xFF05070D) : const Color(0xFF182146),

@@ -56,7 +56,9 @@ class _CalendarPageState extends State<CalendarPage> {
             ? tasksByDate[selectedDayKey!] ?? const <StudyTaskItem>[]
             : <StudyTaskItem>[];
 
-        return ListView(
+        return RefreshIndicator(
+          onRefresh: () async => widget.controller.notifyListeners(),
+          child: ListView(
           key: const Key('page_calendar'),
           padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
           children: [
@@ -262,6 +264,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 const SizedBox(height: 10),
               ],
           ],
+          ), // RefreshIndicator
         );
       },
     );

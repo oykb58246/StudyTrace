@@ -33,7 +33,9 @@ class CourseArchivePage extends StatelessWidget {
         final reports = List<WeeklyReportItem>.from(allReports)
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        return ListView(
+        return RefreshIndicator(
+          onRefresh: () async => controller.notifyListeners(),
+          child: ListView(
           key: const Key('page_course_archive'),
           padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
           children: [
@@ -321,6 +323,7 @@ class CourseArchivePage extends StatelessWidget {
               ],
             ],
           ],
+          ), // RefreshIndicator
         );
       },
     );

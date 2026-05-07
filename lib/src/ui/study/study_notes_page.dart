@@ -134,12 +134,15 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
             Expanded(
               child: notes.isEmpty
                   ? _emptyBody(bodyColor)
-                  : Scrollbar(
+                  : RefreshIndicator(
+                      onRefresh: () async => widget.controller.notifyListeners(),
+                      child: Scrollbar(
                       child: ListView.builder(
                         padding: const EdgeInsets.fromLTRB(22, 8, 22, 120),
                         itemCount: notes.length,
                         itemBuilder: (_, i) => _noteTile(notes[i], textColor, bodyColor),
                       ),
+                      ), // RefreshIndicator
                     ),
             ),
           ]),

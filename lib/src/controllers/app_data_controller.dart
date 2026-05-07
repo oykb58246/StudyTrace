@@ -36,6 +36,16 @@ class AppDataController extends ChangeNotifier {
   final DeepSeekClient _deepSeekClient;
   final WeeklyReportService _reportService;
 
+  /// 全局导航 key，在 AppShell 中注入，供深层页面（如 AI Chat）切换 Tab
+  GlobalKey<NavigatorState>? navigatorKey;
+
+  /// 当前选中的底部 Tab（由 AppShell 维护，供 ACTION 使用）
+  String _currentPrimaryTab = 'assistant';
+  String get currentPrimaryTab => _currentPrimaryTab;
+  void setCurrentPrimaryTab(String tab) {
+    _currentPrimaryTab = tab;
+  }
+
   // --- legacy ---
   final List<HistoryItem> _histories = [];
   final List<TodoItem> _todos = [];

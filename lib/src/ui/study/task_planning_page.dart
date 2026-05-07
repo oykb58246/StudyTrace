@@ -49,7 +49,9 @@ class TaskPlanningPage extends StatelessWidget {
         final bodyColor =
             isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
-        return ListView(
+        return RefreshIndicator(
+          onRefresh: () async => controller.notifyListeners(),
+          child: ListView(
           key: const Key('page_task_planning'),
           padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
           children: [
@@ -86,6 +88,7 @@ class TaskPlanningPage extends StatelessWidget {
                 child: const Text('暂无待办任务，去添加一个吧！', style: TextStyle(height: 1.5)),
               ),
           ],
+          ), // RefreshIndicator
         );
       },
     );
