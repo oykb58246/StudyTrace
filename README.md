@@ -169,12 +169,74 @@ npm run prisma:migrate
 npm run start:dev
 ```
 
+本地 MySQL 初始化（studytrace）：
+
+```bash
+mysql -u root -p
+CREATE DATABASE IF NOT EXISTS studytrace CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE studytrace;
+SOURCE sql/schema.mysql.sql;
+```
+
+然后在 backend/.env 配置：
+
+```text
+DATABASE_URL="mysql://root:你的密码@localhost:3306/studytrace"
+```
+
 Docker：
 
 ```bash
 cd backend
 docker compose up --build
 ```
+
+---
+
+## 前端通过 API 获取数据
+
+前端网络请求统一走 ApiClient（基于 package:http）。推荐在 Service 层封装接口，再由 Controller 调用并更新 UI。
+
+1) 配置本地后端地址（本机开发）
+
+当前默认指向线上地址，若要访问本地后端，请在 [lib/src/controllers/app_data_controller.dart](lib/src/controllers/app_data_controller.dart) 的 `_defaultBaseUrl()` 中改为本地地址：
+
+```dart
+static String _defaultBaseUrl() {
+  return 'http://localhost:3000';
+}
+```
+
+Android 模拟器请改为 `http://10.0.2.2:3000`，真机请改为你的局域网 IP。
+
+2) 在 Service 层调用接口
+
+示例：
+
+```dart
+class ProfileService {
+  ProfileService(this.api);
+
+  final ApiClient api;
+
+  Future<Map<String, dynamic>> getMe() {
+    return api.getJson('/me');
+  }
+}
+```
+
+3) 在 Controller 层触发并更新 UI
+
+```dart
+final api = _ensureBackendClient();
+final profile = await ProfileService(api).getMe();
+// 保存到状态并 notifyListeners()
+```
+
+相关文件参考：
+- [lib/src/services/api_client.dart](lib/src/services/api_client.dart)
+- [lib/src/services/auth_service.dart](lib/src/services/auth_service.dart)
+- [lib/src/controllers/app_data_controller.dart](lib/src/controllers/app_data_controller.dart)
 
 ---
 

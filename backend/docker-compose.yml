@@ -1,25 +1,26 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: studytrace-postgres
+  mysql:
+    image: mysql:8.0
+    container_name: studytrace-mysql
     environment:
-      POSTGRES_USER: studytrace
-      POSTGRES_PASSWORD: studytrace
-      POSTGRES_DB: studytrace
+      MYSQL_ROOT_PASSWORD: studytrace
+      MYSQL_DATABASE: studytrace
+      MYSQL_USER: studytrace
+      MYSQL_PASSWORD: studytrace
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - studytrace_pg_data:/var/lib/postgresql/data
+      - studytrace_mysql_data:/var/lib/mysql
 
   api:
     build: .
     container_name: studytrace-api
     depends_on:
-      - postgres
+      - mysql
     env_file:
       - .env
     ports:
       - "3000:3000"
 
 volumes:
-  studytrace_pg_data:
+  studytrace_mysql_data:

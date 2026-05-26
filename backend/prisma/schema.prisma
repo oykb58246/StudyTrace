@@ -3,13 +3,55 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 enum GroupRole {
   OWNER
   MEMBER
+}
+
+enum StudyTaskType {
+  CLASS_HOMEWORK
+  PAPER_READING
+  PROGRAMMING_HOMEWORK
+  LAB_REPORT
+  PROJECT_DEV
+  EXAM_REVIEW
+  READING_NOTES
+  OTHER
+}
+
+enum StudyTaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum SubTaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum NoteBlockType {
+  TEXT
+  HEADING
+  BULLET
+  CODE
+  DIVIDER
+  TODO
+}
+
+enum FlashcardSourceType {
+  AI
+  MANUAL
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
 }
 
 model User {
