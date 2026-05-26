@@ -1,13 +1,9 @@
 /// AI service configuration stored in local preferences.
 ///
-/// API keys are intentionally not part of this model; they are stored through
-/// AiCredentialService using the platform secure storage APIs.
+/// Model provider keys are intentionally not part of this model. The app only
+/// stores local generation preferences while provider credentials live on the
+/// backend.
 class AiConfig {
-  final String provider;
-  final String baseUrl;
-  final String model;
-  final String appId;
-  final String blueHeartModel;
   final double temperature;
   final int maxTokens;
   final double topP;
@@ -17,13 +13,12 @@ class AiConfig {
   final double presencePenalty;
   final String reasoningEffort;
   final bool isEnabled;
+  // 语音模式
+  final bool voiceMode;
+  final String voiceLanguage;
+  final double voiceRate;
 
   const AiConfig({
-    this.provider = 'deepseek',
-    this.baseUrl = defaultBaseUrl,
-    this.model = defaultModel,
-    this.appId = '',
-    this.blueHeartModel = defaultBlueHeartModel,
     this.temperature = 0.7,
     this.maxTokens = 1200,
     this.topP = 0.7,
@@ -32,19 +27,13 @@ class AiConfig {
     this.frequencyPenalty = 0.0,
     this.presencePenalty = 0.0,
     this.reasoningEffort = '',
-    this.isEnabled = false,
+    this.isEnabled = true,
+    this.voiceMode = false,
+    this.voiceLanguage = 'zh-CN',
+    this.voiceRate = 0.5,
   });
 
-  static const defaultBaseUrl = 'https://api.deepseek.com';
-  static const defaultModel = 'deepseek-v4-flash';
-  static const defaultBlueHeartModel = 'Volc-DeepSeek-V3.2';
-
   AiConfig copyWith({
-    String? provider,
-    String? baseUrl,
-    String? model,
-    String? appId,
-    String? blueHeartModel,
     double? temperature,
     int? maxTokens,
     double? topP,
@@ -54,13 +43,11 @@ class AiConfig {
     double? presencePenalty,
     String? reasoningEffort,
     bool? isEnabled,
+    bool? voiceMode,
+    String? voiceLanguage,
+    double? voiceRate,
   }) {
     return AiConfig(
-      provider: provider ?? this.provider,
-      baseUrl: baseUrl ?? this.baseUrl,
-      model: model ?? this.model,
-      appId: appId ?? this.appId,
-      blueHeartModel: blueHeartModel ?? this.blueHeartModel,
       temperature: temperature ?? this.temperature,
       maxTokens: maxTokens ?? this.maxTokens,
       topP: topP ?? this.topP,
@@ -70,16 +57,14 @@ class AiConfig {
       presencePenalty: presencePenalty ?? this.presencePenalty,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       isEnabled: isEnabled ?? this.isEnabled,
+      voiceMode: voiceMode ?? this.voiceMode,
+      voiceLanguage: voiceLanguage ?? this.voiceLanguage,
+      voiceRate: voiceRate ?? this.voiceRate,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'provider': provider,
-      'baseUrl': baseUrl,
-      'model': model,
-      'appId': appId,
-      'blueHeartModel': blueHeartModel,
       'temperature': temperature,
       'maxTokens': maxTokens,
       'topP': topP,
@@ -89,25 +74,14 @@ class AiConfig {
       'presencePenalty': presencePenalty,
       'reasoningEffort': reasoningEffort,
       'isEnabled': isEnabled,
+      'voiceMode': voiceMode,
+      'voiceLanguage': voiceLanguage,
+      'voiceRate': voiceRate,
     };
   }
 
   factory AiConfig.fromJson(Map<String, dynamic> json) {
-    final baseUrl = json['baseUrl'] as String?;
-    final model = json['model'] as String?;
-    final appId = json['appId'] as String?;
-    final blueHeartModel = json['blueHeartModel'] as String?;
     return AiConfig(
-      provider: json['provider'] as String? ?? 'deepseek',
-      baseUrl: (baseUrl == null || baseUrl.trim().isEmpty)
-          ? defaultBaseUrl
-          : baseUrl.trim(),
-      model:
-          (model == null || model.trim().isEmpty) ? defaultModel : model.trim(),
-      appId: appId == null ? '' : appId.trim(),
-      blueHeartModel: (blueHeartModel == null || blueHeartModel.trim().isEmpty)
-          ? defaultBlueHeartModel
-          : blueHeartModel.trim(),
       temperature: (json['temperature'] as num?)?.toDouble() ?? 0.7,
       maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 1200,
       topP: (json['topP'] as num?)?.toDouble() ?? 0.7,
@@ -118,7 +92,10 @@ class AiConfig {
       presencePenalty:
           (json['presencePenalty'] as num?)?.toDouble() ?? 0.0,
       reasoningEffort: json['reasoningEffort'] as String? ?? '',
-      isEnabled: json['isEnabled'] as bool? ?? false,
+      isEnabled: json['isEnabled'] as bool? ?? true,
+      voiceMode: json['voiceMode'] as bool? ?? false,
+      voiceLanguage: json['voiceLanguage'] as String? ?? 'zh-CN',
+      voiceRate: (json['voiceRate'] as num?)?.toDouble() ?? 0.5,
     );
   }
 }

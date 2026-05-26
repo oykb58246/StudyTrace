@@ -68,7 +68,9 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
+    return RefreshIndicator(
+      onRefresh: () async => widget.controller.notifyListeners(),
+      child: AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
         final accent = widget.controller.primaryColor;
@@ -139,56 +141,68 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
               child: Row(
                 children: [
                   // Status filter chips
-                  ...StudyTaskStatus.values.map((s) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(s.label,
+                  ...StudyTaskStatus.values.map((s) {
+                    final selected = _statusFilter == s;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () =>
+                            setState(() => _statusFilter = selected ? null : s),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? accent.withValues(alpha: 0.2)
+                                : (widget.isDarkMode
+                                    ? const Color(0xFF2A3040)
+                                    : const Color(0xFFEEF1FA)),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(s.label,
                               style: TextStyle(
                                   fontSize: 12,
-                                  color: _statusFilter == s
+                                  color: selected
                                       ? accent
-                                      : widget.isDarkMode
+                                      : (widget.isDarkMode
                                           ? Colors.white
-                                          : AppColors.ink)),
-                          selected: _statusFilter == s,
-                          selectedColor:
-                              accent.withValues(alpha: 0.2),
-                          checkmarkColor: accent,
-                          backgroundColor: widget.isDarkMode
-                              ? const Color(0xFF2A3040)
-                              : const Color(0xFFEEF1FA),
-                          side: BorderSide.none,
-                          onSelected: (sel) {
-                            setState(() => _statusFilter = sel ? s : null);
-                          },
+                                          : AppColors.ink))),
                         ),
-                      )),
+                      ),
+                    );
+                  }),
                   const SizedBox(width: 4),
                   // Type filter chips
-                  ...StudyTaskType.values.map((t) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(t.label,
+                  ...StudyTaskType.values.map((t) {
+                    final selected = _typeFilter == t;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () =>
+                            setState(() => _typeFilter = selected ? null : t),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? const Color(0xFF7394F9).withValues(alpha: 0.22)
+                                : (widget.isDarkMode
+                                    ? const Color(0xFF2A3040)
+                                    : const Color(0xFFEEF1FA)),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(t.label,
                               style: TextStyle(
                                   fontSize: 12,
-                                  color: _typeFilter == t
+                                  color: selected
                                       ? const Color(0xFF7394F9)
-                                      : widget.isDarkMode
+                                      : (widget.isDarkMode
                                           ? Colors.white
-                                          : AppColors.ink)),
-                          selected: _typeFilter == t,
-                          selectedColor:
-                              const Color(0xFF7394F9).withValues(alpha: 0.22),
-                          checkmarkColor: const Color(0xFF7394F9),
-                          backgroundColor: widget.isDarkMode
-                              ? const Color(0xFF2A3040)
-                              : const Color(0xFFEEF1FA),
-                          side: BorderSide.none,
-                          onSelected: (sel) {
-                            setState(() => _typeFilter = sel ? t : null);
-                          },
+                                          : AppColors.ink))),
                         ),
-                      )),
+                      ),
+                    );
+                  }),
                 ],
               ),
             ),
@@ -301,6 +315,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
           ],
         );
       },
+    ),
     );
   }
 

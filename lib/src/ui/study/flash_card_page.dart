@@ -60,8 +60,8 @@ class _FlashCardPageState extends State<FlashCardPage> {
     if (existing.isNotEmpty) return;
 
     try {
-      final cards =
-          await AiStudyService().generateFlashCards(logs: yLogs, count: 5);
+      final cards = await widget.controller.aiStudyService
+          .generateFlashCards(logs: yLogs, count: 5);
       final now = DateTime.now();
       final newCards = cards
           .asMap()
@@ -83,7 +83,9 @@ class _FlashCardPageState extends State<FlashCardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
+    return RefreshIndicator(
+      onRefresh: () async => widget.controller.notifyListeners(),
+      child: AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
         final accent = widget.controller.primaryColor;
@@ -106,6 +108,12 @@ class _FlashCardPageState extends State<FlashCardPage> {
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             actions: [
+              if (!_showBrowse)
+                IconButton(
+                  icon: const Icon(Icons.school_rounded),
+                  tooltip: '今日复习',
+                  onPressed: _startReviewSession,
+                ),
               if (!_showBrowse)
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded),
@@ -131,6 +139,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
           bottomNavigationBar: const SizedBox(height: 80),
         );
       },
+    ),
     );
   }
 
@@ -585,6 +594,36 @@ class _FlashCardPageState extends State<FlashCardPage> {
     });
   }
 
+  void _startReviewSession() {
+    final all = widget.controller.flashCards;
+    // 筛选到期复习的卡片：从未复习 + 已到期 + 收藏
+    final reviewCards = all.where((c) => c.isDueForReview || c.isStarred).toList();
+    if (reviewCards.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无需要复习的闪卡，继续保持！')),
+      );
+      return;
+    }
+    // 按 nextReviewDate 排序（null 排最前）
+    reviewCards.sort((a, b) {
+      final aDate = a.nextReviewDate ?? DateTime(2000);
+      final bDate = b.nextReviewDate ?? DateTime(2000);
+      return aDate.compareTo(bDate);
+    });
+    final ids = reviewCards.take(20).map((c) => c.id).toList();
+    setState(() {
+      _browseCardIds = ids;
+      _browseIndex = 0;
+      _showBrowse = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('今日复习 ${ids.length} 张闪卡'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _refreshTodayCards() async {
     final today = DateTime.now();
     final todayLogs = widget.controller.studyLogs
@@ -607,7 +646,8 @@ class _FlashCardPageState extends State<FlashCardPage> {
       );
 
       final cards =
-          await AiStudyService().generateFlashCards(logs: todayLogs, count: 8);
+          await widget.controller.aiStudyService
+              .generateFlashCards(logs: todayLogs, count: 8);
 
       final now = DateTime.now();
       final newCards = cards
@@ -680,6 +720,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
           child: _FlashCardView(
             key: ValueKey(card.id),
             isDarkMode: widget.isDarkMode,
+            controller: widget.controller,
             card: card,
             titleColor: textColor,
             bodyColor: bodyColor,
@@ -725,6 +766,7 @@ class _FlashCardView extends StatefulWidget {
   const _FlashCardView({
     super.key,
     required this.isDarkMode,
+    required this.controller,
     required this.card,
     required this.titleColor,
     required this.bodyColor,
@@ -732,6 +774,7 @@ class _FlashCardView extends StatefulWidget {
   });
 
   final bool isDarkMode;
+  final AppDataController controller;
   final AiFlashCard card;
   final Color titleColor;
   final Color bodyColor;
@@ -789,6 +832,264 @@ class _FlashCardViewState extends State<_FlashCardView>
       _ctrl.forward();
     }
     setState(() => _isFlipped = !_isFlipped);
+  }
+
+  Future<void> _openAnswerSheet() async {
+    final inputCtrl = TextEditingController();
+    final submitted = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Container(
+          decoration: BoxDecoration(
+            color: widget.isDarkMode
+                ? const Color(0xFF1A1F2E)
+                : const Color(0xFFF5F7FF),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: widget.isDarkMode
+                        ? Colors.white24
+                        : Colors.black26,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '输入你的答案',
+                style: TextStyle(
+                  color: widget.titleColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                widget.card.question,
+                style: TextStyle(color: widget.bodyColor, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: inputCtrl,
+                autofocus: true,
+                minLines: 3,
+                maxLines: 6,
+                style: TextStyle(
+                    color: widget.titleColor, fontSize: 14, height: 1.5),
+                decoration: InputDecoration(
+                  hintText: '把你知道的写下来，AI 会给你打分',
+                  hintStyle: TextStyle(
+                      color: widget.isDarkMode
+                          ? Colors.white38
+                          : AppColors.muted,
+                      fontSize: 13),
+                  filled: true,
+                  fillColor: widget.isDarkMode
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('取消'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.accentColor,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        final t = inputCtrl.text.trim();
+                        if (t.isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('请先输入你的答案')),
+                          );
+                          return;
+                        }
+                        Navigator.of(ctx).pop(t);
+                      },
+                      child: const Text('提交判分'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    inputCtrl.dispose();
+    if (submitted == null || submitted.isEmpty || !mounted) return;
+    await _gradeUserAnswer(submitted);
+  }
+
+  Future<void> _gradeUserAnswer(String userAnswer) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 12),
+                  Text('AI 判分中...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    FlashCardGrade? grade;
+    String? error;
+    try {
+      grade = await widget.controller.aiStudyService.gradeFlashcard(
+        question: widget.card.question,
+        correctAnswer: widget.card.answer,
+        userAnswer: userAnswer,
+        courseName: widget.card.courseName,
+      );
+    } catch (e) {
+      error = '判分失败：$e';
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    if (grade == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error ?? '判分失败')),
+      );
+      return;
+    }
+    await _showGradeResultDialog(grade, userAnswer);
+    if (!_isFlipped && mounted) {
+      _toggle();
+    }
+  }
+
+  Future<void> _showGradeResultDialog(
+      FlashCardGrade grade, String userAnswer) async {
+    final color = switch (grade.score) {
+      5 => const Color(0xFF4BC4A1),
+      4 => const Color(0xFF7394F9),
+      3 => const Color(0xFFF8AA5B),
+      2 => const Color(0xFFF77D8E),
+      _ => const Color(0xFFEF6850),
+    };
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text('${grade.score}',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(grade.label,
+                style: TextStyle(
+                    color: color, fontWeight: FontWeight.w800)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('AI 反馈',
+                  style: TextStyle(
+                      color: widget.bodyColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(grade.feedback,
+                  style: TextStyle(
+                      color: widget.titleColor,
+                      fontSize: 14,
+                      height: 1.5)),
+              const SizedBox(height: 14),
+              Text('你的回答',
+                  style: TextStyle(
+                      color: widget.bodyColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(userAnswer,
+                  style: TextStyle(
+                      color: widget.titleColor,
+                      fontSize: 13,
+                      height: 1.5)),
+              const SizedBox(height: 14),
+              Text('参考答案',
+                  style: TextStyle(
+                      color: widget.bodyColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(widget.card.answer,
+                  style: TextStyle(
+                      color: widget.titleColor,
+                      fontSize: 13,
+                      height: 1.5)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('好的'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -870,6 +1171,24 @@ class _FlashCardViewState extends State<_FlashCardView>
               ),
               textAlign: TextAlign.center,
             ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: widget.accentColor,
+              side: BorderSide(
+                  color: widget.accentColor.withValues(alpha: 0.5)),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: _openAnswerSheet,
+            icon: const Icon(Icons.edit_rounded, size: 16),
+            label: const Text('我来答',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
           ),
         ),
       ]);

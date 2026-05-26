@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/ai_app_action.dart';
 import '../../models/ai_generated_log.dart';
 import '../../models/ai_risk_warning.dart';
 import '../../models/ai_study_analysis.dart';
@@ -14,7 +15,7 @@ import '../../models/ai_task_plan.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_study_service.dart';
-import '../../services/deepseek_client.dart';
+import '../../services/ai_exceptions.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 import 'ai_chat_page.dart';
@@ -27,18 +28,20 @@ class AiAssistantPage extends StatefulWidget {
     required this.isDarkMode,
     required this.controller,
     this.onOpenSettings,
+    this.onExecuteActions,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
   final VoidCallback? onOpenSettings;
+  final AiActionHandler? onExecuteActions;
 
   @override
   State<AiAssistantPage> createState() => _AiAssistantPageState();
 }
 
 class _AiAssistantPageState extends State<AiAssistantPage> {
-  final _aiService = AiStudyService();
+  late final AiStudyService _aiService;
   final _imagePicker = ImagePicker();
   final _speech = stt.SpeechToText();
   final _logInputController = TextEditingController();
@@ -60,8 +63,19 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   List<AiRiskWarning>? _warnings;
   bool _isGeneratingWarnings = false;
 
+  // AI 生成今日闪卡
+  bool _isGeneratingFlashcards = false;
+  String? _flashcardsMessage;
+  bool _flashcardsSuccess = false;
+
   bool _isListening = false;
   TextEditingController? _speechTarget;
+
+  @override
+  void initState() {
+    super.initState();
+    _aiService = widget.controller.aiStudyService;
+  }
 
   @override
   void dispose() {
@@ -129,6 +143,8 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                     pageBuilder: (_, __, ___) => AiChatPage(
                       isDarkMode: widget.isDarkMode,
                       controller: widget.controller,
+                      onExecuteActions: widget.onExecuteActions,
+                      currentLocation: widget.controller.currentPrimaryTab,
                     ),
                     transitionsBuilder:
                         (context, animation, secondaryAnimation, child) {
@@ -433,6 +449,75 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
             ),
           ),
         ],
+
+        const SizedBox(height: 22),
+
+        // 5. AI 生成今日闪卡
+        _buildSectionCard(
+          icon: Icons.style_rounded,
+          iconColor: const Color(0xFF4BC4A1),
+          title: 'AI 生成今日闪卡',
+          subtitle: '从今日学习日志生成问答闪卡，强化复习',
+          child: SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4BC4A1),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                elevation: 0,
+              ),
+              onPressed: _isGeneratingFlashcards
+                  ? null
+                  : _handleGenerateFlashcards,
+              icon: _isGeneratingFlashcards
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.auto_awesome_rounded, size: 18),
+              label: Text(
+                _isGeneratingFlashcards ? '生成中...' : '根据今日日志生成闪卡',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ),
+        if (_flashcardsMessage != null) ...[
+          const SizedBox(height: 10),
+          GlassCard(
+            color: widget.isDarkMode
+                ? const Color(0xFF242B37).withValues(alpha: 0.9)
+                : null,
+            child: Row(
+              children: [
+                Icon(
+                  _flashcardsSuccess
+                      ? Icons.check_circle_rounded
+                      : Icons.info_outline_rounded,
+                  color: _flashcardsSuccess
+                      ? const Color(0xFF4BC4A1)
+                      : const Color(0xFFF8AA5B),
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _flashcardsMessage!,
+                    style: TextStyle(color: bodyColor, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -495,22 +580,17 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
   Widget _buildAiModeBanner() {
     final usingRealAi = widget.controller.isUsingRealAi;
-    final hasBlueHeart = widget.controller.hasBlueHeartAppKey;
-    final hasDeepSeek = widget.controller.hasDeepSeekApiKey;
-    final color = hasBlueHeart
-        ? const Color(0xFF4470E8)
-        : hasDeepSeek && widget.controller.aiConfig.isEnabled
-            ? const Color(0xFF4BC4A1)
-            : const Color(0xFFF8AA5B);
+    const aiDetail = '云端 AI 服务已连接';
+    final isLoggedIn = widget.controller.isLoggedIn;
+    final color =
+        isLoggedIn ? const Color(0xFF4BC4A1) : const Color(0xFFF8AA5B);
     final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
-    final (String label, String detail) = hasBlueHeart
-        ? ('蓝心大模型', widget.controller.aiConfig.blueHeartModel)
-        : hasDeepSeek && widget.controller.aiConfig.isEnabled
-            ? ('DeepSeek', widget.controller.aiConfig.model)
-            : ('未配置 AI', '请在设置中配置 AI 服务');
+    final (String label, String detail) = isLoggedIn
+        ? ('学迹 AI', aiDetail)
+        : ('AI 服务未就绪', '请登录后使用云端 AI');
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -532,7 +612,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  label,
+                  isLoggedIn ? '学迹 AI' : label,
                   style: TextStyle(
                     color: textColor,
                     fontWeight: FontWeight.w800,
@@ -662,13 +742,13 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         return;
       }
 
-      // 优先使用蓝心 Vision（图片理解），回退到 OCR
+      // 优先使用云端图片理解，回退到设备端 OCR
       final bytes = await picked.readAsBytes();
       final imageBase64 = base64Encode(bytes);
       String text;
       try {
-        if (widget.controller.hasBlueHeartAppKey) {
-          // 蓝心 Vision：AI 分析图片内容
+        if (widget.controller.isLoggedIn) {
+          // 云端 AI 分析图片内容
           text = await _aiService.generateAssistantReply(
             input: target == _SmartInputTarget.log
                 ? '请详细描述这张图片的内容，提取关键信息用于学习记录'
@@ -1018,6 +1098,56 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       _showSnack('AI 检查失败：$error');
     } finally {
       if (mounted) setState(() => _isGeneratingWarnings = false);
+    }
+  }
+
+  Future<void> _handleGenerateFlashcards() async {
+    setState(() {
+      _isGeneratingFlashcards = true;
+      _flashcardsMessage = null;
+    });
+    try {
+      final today = DateTime.now();
+      final todayLogs = widget.controller.studyLogs.where((l) {
+        return l.date.year == today.year &&
+            l.date.month == today.month &&
+            l.date.day == today.day;
+      }).toList();
+      if (todayLogs.isEmpty) {
+        setState(() {
+          _flashcardsMessage = '今天还没有学习日志，先记录一些再生成闪卡';
+          _flashcardsSuccess = false;
+        });
+        return;
+      }
+      final cards = await _aiService.generateFlashCards(
+        logs: todayLogs,
+        count: 8,
+      );
+      if (cards.isEmpty) {
+        setState(() {
+          _flashcardsMessage = 'AI 没有生成有效闪卡，请稍后再试';
+          _flashcardsSuccess = false;
+        });
+        return;
+      }
+      await widget.controller.addFlashCards(cards);
+      setState(() {
+        _flashcardsMessage = '已根据今日日志生成 ${cards.length} 张闪卡，前往「知识闪卡」查看';
+        _flashcardsSuccess = true;
+      });
+    } on AiServiceException catch (error) {
+      setState(() {
+        _flashcardsMessage = error.message;
+        _flashcardsSuccess = false;
+      });
+    } catch (error) {
+      setState(() {
+        _flashcardsMessage = 'AI 生成闪卡失败：$error';
+        _flashcardsSuccess = false;
+      });
+    } finally {
+      if (mounted) setState(() => _isGeneratingFlashcards = false);
     }
   }
 }

@@ -1,12 +1,14 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/user_profile.dart';
+import '../../services/auth_service.dart';
+import '../../services/picked_image_store.dart';
 import '../../theme/app_theme.dart';
+import '../shared/local_image.dart';
 
 class UserProfilePage extends StatefulWidget {
   const UserProfilePage({
@@ -29,6 +31,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
   late String _avatarEmoji;
   String? _avatarImagePath;
   bool _isSaving = false;
+  bool _isLoadingBackend = false;
+  String? _backendUsername;
+  String? _backendEmail;
 
   static const _emojiOptions = [
     '🎓', '📚', '✏️', '💻', '🔬', '📐', '🎨', '🌍',
@@ -43,6 +48,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
     _bioController = TextEditingController(text: profile.bio);
     _avatarEmoji = profile.avatarEmoji;
     _avatarImagePath = profile.avatarImagePath;
+    if (widget.controller.isLoggedIn) {
+      unawaited(_loadBackendProfile());
+    }
   }
 
   @override
@@ -50,6 +58,24 @@ class _UserProfilePageState extends State<UserProfilePage> {
     _nicknameController.dispose();
     _bioController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadBackendProfile() async {
+    setState(() => _isLoadingBackend = true);
+    try {
+      final me = await widget.controller.authService.getProfile();
+      if (!mounted) return;
+      setState(() {
+        _backendUsername = me['username'] as String?;
+        _backendEmail = me['email'] as String?;
+      });
+    } catch (_) {
+      // 拉取失败不阻断页面
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingBackend = false);
+      }
+    }
   }
 
   @override
@@ -112,8 +138,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: _avatarImagePath != null
-                    ? Image.file(
-                        File(_avatarImagePath!),
+                    ? localImageFromPath(
+                        _avatarImagePath!,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => Center(
                           child: Text(_avatarEmoji,
@@ -161,6 +187,48 @@ class _UserProfilePageState extends State<UserProfilePage> {
           ),
           const SizedBox(height: 18),
 
+          if (widget.controller.isLoggedIn) ...[
+            _buildField(
+              label: '账号信息',
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: widget.isDarkMode
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : const Color(0xFFF2F5FC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: _isLoadingBackend
+                    ? const Center(
+                        child: SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '用户名：${_backendUsername ?? '未知'}',
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '邮箱：${_backendEmail ?? '未绑定'}',
+                            style: TextStyle(color: bodyColor, fontSize: 13),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+            const SizedBox(height: 18),
+          ],
+
           // Stats
           _buildField(
             label: '学习统计',
@@ -179,6 +247,56 @@ class _UserProfilePageState extends State<UserProfilePage> {
                   _statItem('连续', widget.controller.studyStreak, bodyColor, textColor),
                   _statItem('周报', widget.controller.weeklyReports.length, bodyColor, textColor),
                 ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // 积分与成就
+          _buildField(
+            label: '积分与成就',
+            child: GestureDetector(
+              onTap: () {
+                // 跳转到成就页面（通过侧边菜单）
+              },
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [accent, accent.withValues(alpha: 0.7)],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.toll_rounded,
+                        color: Colors.white.withValues(alpha: 0.9), size: 28),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${widget.controller.totalPoints} 积分',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          '已解锁 ${widget.controller.unlockedAchievements.length} 个成就',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Icon(Icons.chevron_right_rounded,
+                        color: Colors.white.withValues(alpha: 0.6), size: 22),
+                  ],
+                ),
               ),
             ),
           ),
@@ -342,10 +460,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
         imageQuality: 85,
       );
       if (picked == null) return;
-      final dir = await getApplicationDocumentsDirectory();
-      final targetPath = '${dir.path}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final copied = await File(picked.path).copy(targetPath);
-      setState(() => _avatarImagePath = copied.path);
+      final path = await persistPickedImage(picked, prefix: 'avatar');
+      setState(() => _avatarImagePath = path);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

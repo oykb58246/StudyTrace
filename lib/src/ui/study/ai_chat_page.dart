@@ -7,34 +7,43 @@ import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/ai_app_action.dart';
 import '../../models/ai_chat_message.dart';
 import '../../models/note_block.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
+import '../../services/ai_app_context_builder.dart';
+import '../../services/ai_semantic_search_service.dart';
 import '../../services/ai_study_service.dart';
+import '../../services/ai_tool_registry.dart';
 import '../../services/local_storage_service.dart';
+import '../../services/tts_service.dart';
 import '../../theme/app_theme.dart';
 import 'flash_card_page.dart';
 import 'timer_page.dart';
 
-enum _ChatRole { user, assistant }
+enum _ChatRole { user, assistant, confirmCard }
 
 class AiChatPage extends StatefulWidget {
   const AiChatPage({
     super.key,
     required this.isDarkMode,
     required this.controller,
+    this.onExecuteActions,
+    this.currentLocation,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
+  final AiActionHandler? onExecuteActions;
+  final String? currentLocation;
 
   @override
   State<AiChatPage> createState() => _AiChatPageState();
 }
 
 class _AiChatPageState extends State<AiChatPage> {
-  final _aiService = AiStudyService();
+  late final AiStudyService _aiService;
   final _imagePicker = ImagePicker();
   final _speech = stt.SpeechToText();
   final _inputController = TextEditingController();
@@ -45,15 +54,28 @@ class _AiChatPageState extends State<AiChatPage> {
   bool _isSending = false;
   bool _isListening = false;
   StreamSubscription<String>? _streamSub;
+  // 最近一次用户输入，供"重试"按钮使用
+  String? _lastUserInput;
+  String? _lastUserImageBase64;
   TextEditingController? _speechTarget;
+  // 语音半双工
+  final TtsService _tts = TtsService();
+  bool _voiceCallActive = false;
+  bool _voiceAiSpeaking = false;
   String? _pendingImageBase64;
   late String _sessionId;
   String _sessionTitle = '新对话';
   bool _thinkingEnabled = false;
+  int _requestSerial = 0;
+  List<AiAppAction>? _pendingDangerousActions;
+  String? _pendingDangerousReply;
+  String? _pendingDangerousInput;
+  List<String> _lastMemorySources = const [];
 
   @override
   void initState() {
     super.initState();
+    _aiService = widget.controller.aiStudyService;
     _sessionId = 'chat_${DateTime.now().millisecondsSinceEpoch}';
     _loadLatestSession();
   }
@@ -114,6 +136,8 @@ class _AiChatPageState extends State<AiChatPage> {
   void dispose() {
     _speech.stop();
     _streamSub?.cancel();
+    unawaited(_tts.dispose());
+    _voiceCallActive = false;
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -147,7 +171,10 @@ class _AiChatPageState extends State<AiChatPage> {
         foregroundColor: titleColor,
         title: Text(
           _sessionTitle,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: titleColor,
+          ),
         ),
         actions: [
           IconButton(
@@ -211,18 +238,10 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   Widget _buildStatusBar(Color titleColor, Color bodyColor, Color accent) {
-    final hasBlueHeart = widget.controller.hasBlueHeartAppKey;
-    final hasDeepSeek = widget.controller.hasDeepSeekApiKey;
-    final provider = hasBlueHeart
-        ? '蓝心 · ${widget.controller.aiConfig.blueHeartModel}'
-        : hasDeepSeek
-            ? 'DeepSeek · ${widget.controller.aiConfig.model}'
-            : '未配置 AI';
-    final color = hasBlueHeart
-        ? const Color(0xFF4470E8)
-        : hasDeepSeek
-            ? const Color(0xFF4BC4A1)
-            : const Color(0xFFF77D8E);
+    final isLoggedIn = widget.controller.isLoggedIn;
+    final provider = isLoggedIn ? '学迹 AI' : 'AI 服务未就绪';
+    final color =
+        isLoggedIn ? const Color(0xFF4BC4A1) : const Color(0xFFF77D8E);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
@@ -344,6 +363,30 @@ class _AiChatPageState extends State<AiChatPage> {
             icon: const Icon(Icons.image_rounded, size: 20),
           ),
           const SizedBox(width: 6),
+          if (widget.controller.aiConfig.voiceMode)
+            IconButton.filledTonal(
+              tooltip: _voiceCallActive ? '挂断语音' : '语音连续对话',
+              style: IconButton.styleFrom(
+                backgroundColor: _voiceCallActive
+                    ? const Color(0xFF4BC4A1).withValues(alpha: 0.25)
+                    : widget.isDarkMode
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : const Color(0xFFF2F5FC),
+              ),
+              onPressed:
+                  _voiceCallActive ? _endVoiceCall : _startVoiceCall,
+              icon: Icon(
+                _voiceCallActive
+                    ? Icons.call_end_rounded
+                    : Icons.call_rounded,
+                size: 20,
+                color: _voiceCallActive
+                    ? const Color(0xFF4BC4A1)
+                    : null,
+              ),
+            ),
+          if (widget.controller.aiConfig.voiceMode)
+            const SizedBox(width: 6),
           IconButton.filledTonal(
             style: IconButton.styleFrom(
               backgroundColor: _isListening
@@ -396,6 +439,19 @@ class _AiChatPageState extends State<AiChatPage> {
             ),
           ),
           const SizedBox(width: 6),
+          if (_lastUserInput != null && _lastUserInput!.isNotEmpty)
+            IconButton.filledTonal(
+              tooltip: '重发上一条',
+              style: IconButton.styleFrom(
+                backgroundColor: widget.isDarkMode
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : const Color(0xFFF2F5FC),
+              ),
+              onPressed: _isSending ? null : _retryLastMessage,
+              icon: const Icon(Icons.refresh_rounded, size: 20),
+            ),
+          if (_lastUserInput != null && _lastUserInput!.isNotEmpty)
+            const SizedBox(width: 6),
           IconButton.filled(
             style: IconButton.styleFrom(
               backgroundColor: _isSending
@@ -463,9 +519,59 @@ class _AiChatPageState extends State<AiChatPage> {
                     borderRadius: BorderRadius.circular(2)),
               ),
               const SizedBox(height: 16),
-              Text('历史对话', style: TextStyle(
-                  color: widget.isDarkMode ? Colors.white : AppColors.ink,
-                  fontSize: 18, fontWeight: FontWeight.w800)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text('历史对话',
+                          style: TextStyle(
+                              color: widget.isDarkMode
+                                  ? Colors.white
+                                  : AppColors.ink,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800)),
+                    ),
+                    TextButton.icon(
+                      onPressed: sessions.isEmpty
+                          ? null
+                          : () async {
+                              final confirmed = await showDialog<bool>(
+                                context: ctx,
+                                builder: (dctx) => AlertDialog(
+                                  title: const Text('清空所有对话？'),
+                                  content: const Text(
+                                      '将删除全部历史会话，此操作不可恢复。'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(dctx).pop(false),
+                                      child: const Text('取消'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(dctx).pop(true),
+                                      style: TextButton.styleFrom(
+                                          foregroundColor:
+                                              const Color(0xFFEF6850)),
+                                      child: const Text('清空'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true) {
+                                await _clearAllSessions();
+                                if (ctx.mounted) Navigator.of(ctx).pop();
+                              }
+                            },
+                      icon: const Icon(Icons.delete_sweep_outlined,
+                          size: 18, color: Color(0xFFEF6850)),
+                      label: const Text('清空全部',
+                          style: TextStyle(color: Color(0xFFEF6850))),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 8),
               Flexible(
                 child: ListView.builder(
@@ -516,11 +622,45 @@ class _AiChatPageState extends State<AiChatPage> {
     } catch (_) {}
   }
 
+  // ─── 发送状态集中控制 ───
+  // _isSending 被多处切换，这里收口避免漏清导致对话页卡死。
+
+  void _enterSending() {
+    if (mounted) setState(() => _isSending = true);
+  }
+
+  void _exitSending({bool clearPending = false}) {
+    if (!mounted) return;
+    setState(() {
+      _isSending = false;
+      if (clearPending) {
+        _pendingDangerousActions = null;
+        _pendingDangerousReply = null;
+        _pendingDangerousInput = null;
+      }
+    });
+  }
+
   void _newSession() {
+    _streamSub?.cancel();
+    _streamSub = null;
+    _requestSerial++;
     _sessionId = 'chat_${DateTime.now().millisecondsSinceEpoch}';
     _sessionTitle = '新对话';
     _entries.clear();
-    if (mounted) setState(() {});
+    _pendingImageBase64 = null;
+    _inputController.clear();
+    _exitSending(clearPending: true);
+    // 首次引导气泡
+    _entries.add(_ChatEntry(
+      role: _ChatRole.assistant,
+      text: '你好！我是学迹 AI 助手，可以帮你：\n'
+          '- 打开任何页面（"打开闪卡""打开数据看板"）\n'
+          '- 创建任务和日志（"帮我创建一个复习任务"）\n'
+          '- 切换设置（"切换深色模式""开始 25 分钟专注"）\n'
+          '- 分析学习数据（"生成周报""根据收藏闪卡生成笔记"）\n\n'
+          '直接说你想做什么吧。',
+    ));
   }
 
   Future<void> _loadSession(String id) async {
@@ -572,6 +712,18 @@ class _AiChatPageState extends State<AiChatPage> {
     } catch (_) {}
   }
 
+  Future<void> _clearAllSessions() async {
+    try {
+      await _storage.setString('chat_sessions', '[]');
+      _newSession();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已清空所有历史对话')),
+        );
+      }
+    } catch (_) {}
+  }
+
   String _fmtSessionDate(DateTime d) {
     final now = DateTime.now();
     final diff = now.difference(d);
@@ -581,53 +733,20 @@ class _AiChatPageState extends State<AiChatPage> {
     return '${d.month}/${d.day}';
   }
 
-  // ─── 核心发送逻辑（流式） ───
-
-  /// 内置命令映射，直接执行无需 AI
-  static const _commands = <String, String>{
-    '打开倒计时': 'OPEN_TIMER',
-    '计时': 'OPEN_TIMER',
-    '专注': 'OPEN_TIMER',
-    '开始计时': 'OPEN_TIMER',
-    '番茄钟': 'OPEN_TIMER',
-    '打开闪卡': 'OPEN_FLASHCARD',
-    '闪卡': 'OPEN_FLASHCARD',
-    '知识闪卡': 'OPEN_FLASHCARD',
-    '生成笔记': 'SUMMARY_NOTE',
-    '整理笔记': 'SUMMARY_NOTE',
-    '生成学习笔记': 'SUMMARY_NOTE',
-    '添加任务': 'ADD_TASK',
-    '创建任务': 'ADD_TASK',
-    '帮我总结本周': 'SUMMARY_NOTE',
-    '总结本周学习': 'SUMMARY_NOTE',
-    '切换日历': 'SWITCH_CALENDAR',
-    '去日历': 'SWITCH_CALENDAR',
-    '任务列表': 'SWITCH_TASKS',
-    '去任务': 'SWITCH_TASKS',
-    '学习记录': 'SWITCH_LOGS',
-    '去记录': 'SWITCH_LOGS',
-    '归档': 'SWITCH_ARCHIVE',
-    '回首页': 'BACK_HOME',
-    '主页': 'BACK_HOME',
-  };
+  // ─── 核心发送逻辑（AI 结构化操控） ───
 
   Future<void> _sendMessage() async {
     final input = _inputController.text.trim();
     if (input.isEmpty || _isSending) return;
 
-    // 内置命令拦截：直接执行，不走 AI
-    final cmd = _commands[input];
-    if (cmd != null) {
-      _inputController.clear();
-      await _runActions([cmd], input);
-      return;
-    }
-
+    final requestId = ++_requestSerial;
     final imageBase64 = _pendingImageBase64;
     final messages = _buildMessages();
+    // 记录本轮用户输入，用于失败后"重试"按钮
+    _lastUserInput = input;
+    _lastUserImageBase64 = imageBase64;
 
     setState(() {
-      _isSending = true;
       if (imageBase64 != null) {
         _entries.add(_ChatEntry(
           role: _ChatRole.user,
@@ -640,75 +759,407 @@ class _AiChatPageState extends State<AiChatPage> {
       _inputController.clear();
       _pendingImageBase64 = null;
     });
+    _enterSending();
 
     await _saveChatMessage(role: ChatMessageRole.user, content: input);
 
-    final buffer = StringBuffer();
-    final completer = Completer<void>();
-    StreamSubscription<String>? sub;
     try {
-      final stream = _aiService.generateAssistantReplyStream(
+      final turn = await _aiService.generateAssistantTurn(
         input: input,
+        appContext: await _buildAppContextWithMemory(input),
         messages: messages,
         imageBase64: imageBase64,
         thinkingEnabled: _thinkingEnabled,
       );
-      sub = stream.listen(
-        (token) {
-          buffer.write(token);
-          if (!mounted) return;
-          setState(() {
-            final last = _entries.removeLast();
-            _entries.add(_ChatEntry(role: last.role, text: buffer.toString()));
-          });
-          _scrollToBottom();
-        },
-        onDone: () => completer.complete(),
-        onError: (e) => completer.completeError(e),
-        cancelOnError: true,
-      );
-      _streamSub = sub;
-      await completer.future;
-    } catch (error) {
-      final errorMsg = 'AI 回复失败：$error';
-      if (!mounted) return;
-      setState(() {
-        _entries.removeLast();
-        _entries.add(_ChatEntry(role: _ChatRole.assistant, text: errorMsg));
-      });
-      await _saveChatMessage(role: ChatMessageRole.assistant, content: errorMsg);
-    } finally {
-      _streamSub = null;
-      final finalText = buffer.toString();
-      if (finalText.isNotEmpty) {
-        final actions = _extractActions(finalText);
-        final cleaned = _stripActions(finalText);
-        if (cleaned != finalText) {
-          if (mounted) {
-            setState(() {
-              _entries.removeLast();
-              _entries.add(_ChatEntry(role: _ChatRole.assistant, text: cleaned));
-            });
+      if (requestId != _requestSerial) return;
+
+      final visibleReply = _stripActions(turn.reply.trim());
+      final replyBase = visibleReply.isEmpty
+          ? '我理解了，但这次没有生成可显示回复。'
+          : visibleReply;
+      final reply = _lastMemorySources.isEmpty
+          ? replyBase
+          : '$replyBase\n\n**证据来源**\n${_lastMemorySources.map((item) => '- $item').join('\n')}';
+      if (mounted) {
+        setState(() => _replaceAssistantDraft(reply));
+        _scrollToBottom();
+      }
+
+      var finalReply = reply;
+      if (turn.actions.isNotEmpty) {
+        // 分离安全动作和危险动作
+        final safeActions = <AiAppAction>[];
+        final dangerousActions = <AiAppAction>[];
+        for (final action in turn.actions) {
+          final toolId = _actionTypeToToolId(action.type);
+          final def = toolId != null
+              ? AiToolRegistry.instance.lookup(toolId)
+              : null;
+          if (def != null && def.needsConfirmation) {
+            dangerousActions.add(action);
+          } else {
+            safeActions.add(action);
           }
         }
-        await _saveChatMessage(
-            role: ChatMessageRole.assistant, content: cleaned);
-        await _runActions(actions, input);
-      } else if (mounted) {
-        setState(() {
-          _entries.removeLast();
-          _entries.add(const _ChatEntry(
-              role: _ChatRole.assistant, text: 'AI 暂未返回内容，请重试'));
-        });
+
+        // 安全动作直接执行
+        if (safeActions.isNotEmpty) {
+          final handler = widget.onExecuteActions;
+          final results = handler == null
+              ? safeActions
+                  .map((action) => AiActionResult(
+                        action: action,
+                        success: false,
+                        message: '当前入口还没有接入全局执行器',
+                      ))
+                  .toList()
+              : await handler(
+                  actions: safeActions,
+                  input: input,
+                  assistantReply: reply,
+                );
+          if (requestId != _requestSerial) return;
+          finalReply = _appendActionResults(reply, results);
+        }
+
+        // 危险动作渲染确认卡片
+        if (dangerousActions.isNotEmpty && mounted) {
+          setState(() {
+            _replaceAssistantDraft(finalReply);
+            _entries.add(_ChatEntry(
+              role: _ChatRole.confirmCard,
+              text: '',
+              confirmActions: dangerousActions,
+            ));
+          });
+          _scrollToBottom();
+          // 不要标记 isSending = false 在 finally 中，而是等确认卡处理完后标记
+          _pendingDangerousActions = dangerousActions;
+          _pendingDangerousReply = finalReply;
+          _pendingDangerousInput = input;
+          await _saveChatMessage(
+            role: ChatMessageRole.assistant,
+            content: finalReply,
+          );
+          return; // 提前返回，不清除 isSending
+        }
+
+        if (mounted) {
+          setState(() => _replaceAssistantDraft(finalReply));
+          _scrollToBottom();
+        }
       }
-      if (mounted) setState(() => _isSending = false);
-      _scrollToBottom();
+      await _saveChatMessage(
+        role: ChatMessageRole.assistant,
+        content: finalReply,
+      );
+    } catch (error) {
+      await _handleAssistantTurnError(
+        error: error,
+        input: input,
+        messages: messages,
+        requestId: requestId,
+      );
+    } finally {
+      if (requestId == _requestSerial && mounted &&
+          _pendingDangerousActions == null) {
+        _exitSending();
+        _scrollToBottom();
+      }
     }
+  }
+
+  String? _actionTypeToToolId(AiAppActionType type) {
+    return switch (type) {
+      AiAppActionType.switchTab => AiToolIds.switchTab,
+      AiAppActionType.openTimer => AiToolIds.openTimer,
+      AiAppActionType.openFlashcard => AiToolIds.openFlashcard,
+      AiAppActionType.openNotes => AiToolIds.openNotes,
+      AiAppActionType.openAiSettings => AiToolIds.openAiSettings,
+      AiAppActionType.openDashboard => AiToolIds.openDashboard,
+      AiAppActionType.openTaskPlanning => AiToolIds.openTaskPlanning,
+      AiAppActionType.openAiAssistant => AiToolIds.openAiAssistant,
+      AiAppActionType.openUserProfile => AiToolIds.openUserProfile,
+      AiAppActionType.openAbout => AiToolIds.openAbout,
+      AiAppActionType.openStudyGroup => AiToolIds.openStudyGroup,
+      AiAppActionType.openLeaderboard => AiToolIds.openLeaderboard,
+      AiAppActionType.openWeeklyReport => AiToolIds.openWeeklyReport,
+      AiAppActionType.openSystemSettings => AiToolIds.openSystemSettings,
+      AiAppActionType.addTask => AiToolIds.addTask,
+      AiAppActionType.createLog => AiToolIds.createLog,
+      AiAppActionType.markTaskStatus => AiToolIds.markTaskStatus,
+      AiAppActionType.saveNote => AiToolIds.saveNote,
+      AiAppActionType.summarizeStarredCards => AiToolIds.summarizeStarredCards,
+      AiAppActionType.deleteTask => AiToolIds.deleteTask,
+      AiAppActionType.deleteLog => AiToolIds.deleteLog,
+      AiAppActionType.deleteNote => AiToolIds.deleteNote,
+      AiAppActionType.deleteFlashcard => AiToolIds.deleteFlashcard,
+      AiAppActionType.overwriteNote => AiToolIds.overwriteNote,
+      AiAppActionType.setDarkMode => AiToolIds.setDarkMode,
+      AiAppActionType.setSkin => AiToolIds.setSkin,
+      AiAppActionType.setDailyReminder => AiToolIds.setDailyReminder,
+      AiAppActionType.setServerUrl => AiToolIds.setServerUrl,
+      AiAppActionType.logout => AiToolIds.logout,
+      AiAppActionType.addCourse => AiToolIds.addCourse,
+      AiAppActionType.renameCourse => AiToolIds.renameCourse,
+      AiAppActionType.deleteCourse => AiToolIds.deleteCourse,
+      AiAppActionType.toggleFlashcardStar => AiToolIds.toggleFlashcardStar,
+      AiAppActionType.addFlashcard => AiToolIds.addFlashcard,
+      AiAppActionType.generateTodayFlashcards =>
+        AiToolIds.generateTodayFlashcards,
+      AiAppActionType.startFocus => AiToolIds.startFocus,
+      AiAppActionType.addTaskDirect => AiToolIds.addTaskDirect,
+      AiAppActionType.updateSubtask => AiToolIds.updateSubtask,
+      AiAppActionType.emptyTrash => AiToolIds.emptyTrash,
+      AiAppActionType.generateWeeklyPlan => AiToolIds.generateWeeklyPlan,
+      AiAppActionType.noteFromLog => AiToolIds.noteFromLog,
+      AiAppActionType.createLoopFromSource => AiToolIds.createLoopFromSource,
+      AiAppActionType.generateTodayMission => AiToolIds.generateTodayMission,
+      AiAppActionType.searchMemory => AiToolIds.searchMemory,
+      AiAppActionType.noteFromOcr => AiToolIds.noteFromOcr,
+      AiAppActionType.createFlashcardBatch => AiToolIds.createFlashcardBatch,
+      AiAppActionType.startFocusWithTask => AiToolIds.startFocusWithTask,
+      _ => null,
+    };
+  }
+
+  /// 执行单个危险动作（由确认卡片触发）
+  Future<void> _executeDangerousAction(AiAppAction action) async {
+    final handler = widget.onExecuteActions;
+    if (handler == null) return;
+    final results = await handler(
+      actions: [action],
+      input: _pendingDangerousInput ?? '',
+      assistantReply: _pendingDangerousReply ?? '',
+    );
+    if (mounted) {
+      setState(() {
+        // 最后一条可能是确认卡，真正的 AI 回复在它之前；
+        // 先移除确认卡，再把结果追加到 assistant 气泡上。
+        if (_entries.isNotEmpty &&
+            _entries.last.role == _ChatRole.confirmCard) {
+          _entries.removeLast();
+        }
+        for (var i = _entries.length - 1; i >= 0; i--) {
+          if (_entries[i].role == _ChatRole.assistant) {
+            final updated = _appendActionResults(_entries[i].text, results);
+            _entries[i] = _ChatEntry(role: _ChatRole.assistant, text: updated);
+            break;
+          }
+        }
+      });
+      _exitSending(clearPending: true);
+    }
+  }
+
+  /// 取消单个危险动作
+  void _cancelDangerousAction(AiAppAction action) {
+    setState(() {
+      // 取消时也移除确认卡并在气泡里追加"已取消"
+      if (_entries.isNotEmpty &&
+          _entries.last.role == _ChatRole.confirmCard) {
+        _entries.removeLast();
+      }
+      for (var i = _entries.length - 1; i >= 0; i--) {
+        if (_entries[i].role == _ChatRole.assistant) {
+          final base = _entries[i].text.trim();
+          final updated = base.isEmpty
+              ? '- 未执行：用户已取消'
+              : '$base\n\n- 未执行：用户已取消';
+          _entries[i] = _ChatEntry(role: _ChatRole.assistant, text: updated);
+          break;
+        }
+      }
+    });
+    _exitSending(clearPending: true);
+  }
+
+  List<String> _buildAppContext() {
+    return AiAppContextBuilder.build(
+      widget.controller,
+      currentLocation:
+          widget.currentLocation ?? widget.controller.currentPrimaryTab,
+    );
+  }
+
+  Future<List<String>> _buildAppContextWithMemory(String input) async {
+    final context = _buildAppContext();
+    final memory = await _semanticMemoryContext(input);
+    _lastMemorySources = memory.take(5).toList();
+    if (memory.isEmpty) return context;
+    return [
+      ...context,
+      '语义召回的个人学习记忆：',
+      ...memory,
+    ];
+  }
+
+  Future<List<String>> _semanticMemoryContext(String query) async {
+    final candidates = _memoryCandidates();
+    if (candidates.isEmpty || query.trim().isEmpty) return const [];
+    try {
+      final service = widget.controller.createSemanticSearchService();
+      final hits = await service.search<String>(
+        query: query,
+        candidates: candidates,
+      );
+      return hits.take(5).map((hit) => hit.item).toList();
+    } catch (_) {
+      return _localMemoryMatches(query, candidates).take(5).map((c) => c.item).toList();
+    }
+  }
+
+  List<SemanticSearchCandidate<String>> _memoryCandidates() {
+    final result = <SemanticSearchCandidate<String>>[];
+    for (final task in widget.controller.studyTasks) {
+      result.add(SemanticSearchCandidate(
+        id: task.id,
+        item:
+            '任务：${task.title}｜课程：${task.courseName}｜状态：${task.effectiveStatus.name}｜截止：${task.deadline.toIso8601String()}｜备注：${task.note}',
+        text:
+            '${task.title} ${task.courseName} ${task.note} ${task.subTasks.map((s) => s.title).join(' ')}',
+      ));
+    }
+    for (final log in widget.controller.studyLogs) {
+      result.add(SemanticSearchCandidate(
+        id: log.id,
+        item:
+            '日志：${log.courseName}｜${log.content}｜问题：${log.problems}｜下一步：${log.nextPlan}',
+        text: '${log.courseName} ${log.content} ${log.problems} ${log.thoughts} ${log.nextPlan}',
+      ));
+    }
+    for (final note in widget.controller.studyNotes.where((n) => !n.isFolder)) {
+      result.add(SemanticSearchCandidate(
+        id: note.id,
+        item: '笔记：${note.title}｜${note.courseName}｜${note.content}',
+        text:
+            '${note.title} ${note.courseName} ${note.content} ${note.blocks.map((b) => b.content).join(' ')}',
+      ));
+    }
+    for (final card in widget.controller.flashCards) {
+      result.add(SemanticSearchCandidate(
+        id: card.id,
+        item: '闪卡：${card.courseName}｜${card.question}｜${card.answer}',
+        text: '${card.courseName} ${card.question} ${card.answer} ${card.hint}',
+      ));
+    }
+    return result;
+  }
+
+  List<SemanticSearchCandidate<String>> _localMemoryMatches(
+    String query,
+    List<SemanticSearchCandidate<String>> candidates,
+  ) {
+    final q = query.toLowerCase();
+    final matches = candidates.where((c) => c.text.toLowerCase().contains(q)).toList();
+    return matches.isEmpty ? candidates : matches;
+  }
+
+  Future<void> _handleAssistantTurnError({
+    required Object error,
+    required String input,
+    required List<Map<String, dynamic>> messages,
+    required int requestId,
+  }) async {
+    try {
+      final fallback = await _aiService.generateAssistantReply(
+        input: input,
+        messages: messages,
+      );
+      if (requestId != _requestSerial) return;
+      final reply = [
+        _stripLegacyActions(fallback),
+        '（这次没有执行 App 操作：AI 指令格式异常）',
+      ].where((part) => part.trim().isNotEmpty).join('\n\n');
+      if (mounted) setState(() => _replaceAssistantDraft(reply));
+      await _saveChatMessage(role: ChatMessageRole.assistant, content: reply);
+    } catch (_) {
+      final friendly = _friendlyErrorMessage(error);
+      if (mounted) setState(() => _replaceAssistantDraft(friendly));
+      await _saveChatMessage(
+          role: ChatMessageRole.assistant, content: friendly);
+    }
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    final msg = error.toString().toLowerCase();
+    if (msg.contains('failed to fetch') ||
+        msg.contains('socketexception') ||
+        msg.contains('connection refused') ||
+        msg.contains('timeout')) {
+      return 'AI 暂时不可用，请检查网络连接后重试。';
+    }
+    if (msg.contains('401') || msg.contains('unauthorized') ||
+        msg.contains('appkey')) {
+      return 'AI 认证失败，请重新登录或检查云端 AI 服务。';
+    }
+    if (msg.contains('429') || msg.contains('rate') ||
+        msg.contains('too many')) {
+      return 'AI 请求过于频繁，请稍后再试。';
+    }
+    if (msg.contains('quota') || msg.contains('额度') ||
+        msg.contains('limit')) {
+      return '今日 AI 使用次数已达上限，明天再来吧。';
+    }
+    if (msg.contains('503') || msg.contains('unavailable')) {
+      return 'AI 服务暂时不可用，请稍后重试。';
+    }
+    return 'AI 回复失败，请稍后重试。';
+  }
+
+  void _replaceAssistantDraft(String text) {
+    for (var i = _entries.length - 1; i >= 0; i--) {
+      if (_entries[i].role == _ChatRole.assistant) {
+        _entries[i] = _ChatEntry(role: _ChatRole.assistant, text: text);
+        return;
+      }
+    }
+    _entries.add(_ChatEntry(role: _ChatRole.assistant, text: text));
+  }
+
+  String _appendActionResults(String reply, List<AiActionResult> results) {
+    if (results.isEmpty) return reply;
+    final lines = results.map((result) {
+      final prefix = result.success ? '已执行' : '未执行';
+      return '- $prefix：${result.message}';
+    }).join('\n');
+    return '$reply\n\n$lines'.trim();
+  }
+
+  String _stripLegacyActions(String text) {
+    return text
+        .replaceAll(RegExp(r'【ACTION:[A-Z_]+】|\[ACTION:[A-Z_]+\]'), '')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  /// 去掉给 TTS 朗读时会被念成干扰字符的 Markdown 符号
+  String _stripMarkdownForSpeech(String text) {
+    return text
+        .replaceAll(RegExp(r'[#>`*_~-]{2,}'), ' ')
+        .replaceAll(RegExp(r'^[#>\-*]\s*', multiLine: true), '')
+        .replaceAll(RegExp(r'\*\*(.*?)\*\*'), r'$1')
+        .replaceAll(RegExp(r'`([^`]+)`'), r'$1')
+        .replaceAll(RegExp(r'\[([^\]]+)\]\([^)]+\)'), r'$1')
+        .replaceAll(RegExp(r'\n{2,}'), '。')
+        .trim();
   }
 
   void _stopStreaming() {
     _streamSub?.cancel();
     _streamSub = null;
+    _requestSerial++;
+    if (!mounted) return;
+    setState(() => _replaceAssistantDraft('已停止生成。'));
+    _exitSending(clearPending: true);
+  }
+
+  Future<void> _retryLastMessage() async {
+    final input = _lastUserInput;
+    if (input == null || input.isEmpty || _isSending) return;
+    _inputController.text = input;
+    _pendingImageBase64 = _lastUserImageBase64;
+    await _sendMessage();
   }
 
   // ─── 图片分析（Vision） ───
@@ -1100,7 +1551,8 @@ class _AiChatPageState extends State<AiChatPage> {
         .map((card) =>
             '【${card.courseName.isEmpty ? '未归类' : card.courseName}】${card.question} / ${card.answer}')
         .toList(growable: false);
-    setState(() => _isSending = true);
+    setState(() {});
+    _enterSending();
     try {
       final note = await _aiService.generateAssistantReply(
         input: '请根据以下收藏闪卡整理为一篇可直接保存的学习笔记：',
@@ -1126,7 +1578,7 @@ class _AiChatPageState extends State<AiChatPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isSending = false);
+      _exitSending();
     }
   }
 
@@ -1185,6 +1637,126 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
+  // ─── 语音半双工连续对话 ───
+
+  Future<void> _startVoiceCall() async {
+    if (_voiceCallActive) return;
+    // 保证初始化
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (!mounted || !_voiceCallActive) return;
+        // 连续对话里，识别结束后的自动衔接由 _listenTurnAndSend 处理
+      },
+      onError: (_) {
+        if (!mounted) return;
+        _endVoiceCall();
+      },
+    );
+    if (!available) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('语音识别不可用，请检查权限')),
+        );
+      }
+      return;
+    }
+    setState(() => _voiceCallActive = true);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('语音连续对话已开启，停顿 3 秒后自动发送'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    // 先说一句欢迎引导
+    final cfg = widget.controller.aiConfig;
+    await _tts.speak(
+      '语音连续对话已开启，请说话吧。',
+      language: cfg.voiceLanguage,
+      rate: cfg.voiceRate,
+    );
+    if (!_voiceCallActive || !mounted) return;
+    await _listenTurnAndSend();
+  }
+
+  Future<void> _endVoiceCall() async {
+    if (!_voiceCallActive) return;
+    setState(() => _voiceCallActive = false);
+    try {
+      await _speech.stop();
+    } catch (_) {}
+    await _tts.stop();
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+        _speechTarget = null;
+        _voiceAiSpeaking = false;
+      });
+    }
+  }
+
+  /// 一轮：听用户说 → 自动发送 → AI 回复 → TTS 朗读 → 再次进入听状态
+  Future<void> _listenTurnAndSend() async {
+    if (!_voiceCallActive || !mounted) return;
+    if (_isSending) return;
+    setState(() {
+      _isListening = true;
+      _speechTarget = _inputController;
+    });
+    String finalText = '';
+    await _speech.listen(
+      localeId: 'zh_CN',
+      listenFor: const Duration(seconds: 45),
+      pauseFor: const Duration(seconds: 3),
+      listenOptions: stt.SpeechListenOptions(partialResults: true),
+      onResult: (result) {
+        finalText = result.recognizedWords;
+        _inputController.text = finalText;
+        _inputController.selection =
+            TextSelection.collapsed(offset: _inputController.text.length);
+      },
+    );
+    // 等 stt 自动停
+    while (_speech.isListening && _voiceCallActive) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    if (!mounted || !_voiceCallActive) return;
+    setState(() {
+      _isListening = false;
+      _speechTarget = null;
+    });
+    final trimmed = finalText.trim();
+    if (trimmed.isEmpty) {
+      // 什么都没听到，再循环一次
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (_voiceCallActive) unawaited(_listenTurnAndSend());
+      return;
+    }
+    _inputController.text = trimmed;
+    await _sendMessage();
+    if (!mounted || !_voiceCallActive) return;
+    // 找到最新的 assistant 回复朗读出来
+    final lastReply = _entries.lastWhere(
+      (e) => e.role == _ChatRole.assistant,
+      orElse: () => _ChatEntry(role: _ChatRole.assistant, text: ''),
+    );
+    final visible = _stripActions(lastReply.text).trim();
+    if (visible.isNotEmpty) {
+      setState(() => _voiceAiSpeaking = true);
+      final cfg = widget.controller.aiConfig;
+      await _tts.speak(
+        _stripMarkdownForSpeech(visible),
+        language: cfg.voiceLanguage,
+        rate: cfg.voiceRate,
+      );
+      if (mounted) setState(() => _voiceAiSpeaking = false);
+    }
+    if (!_voiceCallActive || !mounted) return;
+    // AI 念完再进入下一轮
+    unawaited(_listenTurnAndSend());
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
@@ -1219,6 +1791,9 @@ class _ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = entry.role == _ChatRole.user;
+    if (entry.role == _ChatRole.confirmCard) {
+      return _buildConfirmCards();
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Align(
@@ -1272,18 +1847,52 @@ class _ChatBubble extends StatelessWidget {
                             color: isDarkMode ? Colors.white : AppColors.ink,
                             fontWeight: FontWeight.w800),
                         code: TextStyle(
-                            color: const Color(0xFF5A67D8),
+                            color: isDarkMode
+                                ? const Color(0xFF9DECF9)
+                                : const Color(0xFF5A67D8),
                             backgroundColor: isDarkMode
-                                ? Colors.black26
+                                ? const Color(0xFF1A2332)
                                 : const Color(0xFFF0F2F5),
-                            fontFamily: 'monospace'),
+                            fontFamily: 'monospace',
+                            fontSize: 13),
+                        codeblockPadding: const EdgeInsets.all(14),
                         codeblockDecoration: BoxDecoration(
                             color: isDarkMode
-                                ? Colors.black26
-                                : const Color(0xFFF0F2F5),
-                            borderRadius: BorderRadius.circular(8)),
+                                ? const Color(0xFF0D1117)
+                                : const Color(0xFFF6F8FA),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isDarkMode
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : const Color(0xFFE1E4E8),
+                            )),
                         listBullet:
                             TextStyle(color: isDarkMode ? Colors.white : AppColors.ink),
+                        h1: TextStyle(
+                            color: isDarkMode ? Colors.white : AppColors.ink,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800),
+                        h2: TextStyle(
+                            color: isDarkMode ? Colors.white : AppColors.ink,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700),
+                        h3: TextStyle(
+                            color: isDarkMode ? Colors.white : AppColors.ink,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700),
+                        blockquoteDecoration: BoxDecoration(
+                            color: isDarkMode
+                                ? const Color(0xFF1E2430)
+                                : const Color(0xFFF0F4FF),
+                            border: Border(
+                              left: BorderSide(
+                                color: isDarkMode
+                                    ? const Color(0xFF4470E8)
+                                    : const Color(0xFF7394F9),
+                                width: 3,
+                              ),
+                            )),
+                        blockquotePadding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
                       ),
                     ),
         ),
@@ -1301,6 +1910,186 @@ class _ChatBubble extends StatelessWidget {
           _Dot(delay: 300, color: accent),
           _Dot(delay: 600, color: accent),
         ],
+      ),
+    );
+  }
+
+  Widget _buildConfirmCards() {
+    final actions = entry.confirmActions;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDarkMode
+                ? const Color(0xFF2A3040)
+                : const Color(0xFFFFF8E1),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isDarkMode
+                  ? const Color(0xFFF8AA5B).withValues(alpha: 0.3)
+                  : const Color(0xFFF8AA5B).withValues(alpha: 0.5),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(children: [
+                Icon(Icons.warning_amber_rounded,
+                    size: 18, color: const Color(0xFFF8AA5B)),
+                const SizedBox(width: 6),
+                Text('AI 建议执行以下操作',
+                    style: TextStyle(
+                      color: const Color(0xFFF8AA5B),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    )),
+              ]),
+              const SizedBox(height: 10),
+              ...actions.map((action) => _ConfirmActionCard(
+                    action: action,
+                    isDarkMode: isDarkMode,
+                    accent: accent,
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfirmActionCard extends StatefulWidget {
+  const _ConfirmActionCard({
+    required this.action,
+    required this.isDarkMode,
+    required this.accent,
+  });
+
+  final AiAppAction action;
+  final bool isDarkMode;
+  final Color accent;
+
+  @override
+  State<_ConfirmActionCard> createState() => _ConfirmActionCardState();
+}
+
+class _ConfirmActionCardState extends State<_ConfirmActionCard> {
+  bool _executed = false;
+  bool _cancelled = false;
+
+  String get _description {
+    final type = widget.action.type;
+    return switch (type) {
+      _ when type.name.startsWith('open') => '打开 ${_targetLabel}',
+      _ when type.name == 'addTask' => '创建任务：${widget.action.sourceText ?? ""}',
+      _ when type.name == 'createLog' => '记录学习：${widget.action.sourceText ?? ""}',
+      _ when type.name == 'markTaskStatus' =>
+        '标记任务「${widget.action.targetTitle ?? widget.action.targetId ?? ""}」为 ${widget.action.status ?? ""}',
+      _ when type.name == 'saveNote' => '保存笔记：${widget.action.title ?? ""}',
+      _ => '执行 ${type.name}',
+    };
+  }
+
+  String get _targetLabel {
+    return widget.action.targetTitle ??
+        widget.action.targetId ??
+        widget.action.title ??
+        '';
+  }
+
+  Future<void> _execute() async {
+    setState(() => _executed = true);
+    final pageState = context.findAncestorStateOfType<_AiChatPageState>();
+    if (pageState != null) {
+      await pageState._executeDangerousAction(widget.action);
+    }
+  }
+
+  void _cancel() {
+    setState(() => _cancelled = true);
+    final pageState = context.findAncestorStateOfType<_AiChatPageState>();
+    if (pageState != null) {
+      pageState._cancelDangerousAction(widget.action);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_executed) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(children: [
+          const Icon(Icons.check_circle, size: 16, color: Color(0xFF4BC4A1)),
+          const SizedBox(width: 6),
+          Text('已执行',
+              style: TextStyle(
+                  color: const Color(0xFF4BC4A1),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+        ]),
+      );
+    }
+    if (_cancelled) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(children: [
+          const Icon(Icons.cancel, size: 16, color: Color(0xFFEF6850)),
+          const SizedBox(width: 6),
+          Text('已取消',
+              style: TextStyle(
+                  color: const Color(0xFFEF6850),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+        ]),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: widget.isDarkMode
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Text(
+              _description,
+              style: TextStyle(
+                color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                fontSize: 13,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _cancel,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFB0B8CC),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+            child: const Text('取消', style: TextStyle(fontSize: 12)),
+          ),
+          ElevatedButton(
+            onPressed: _execute,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.accent,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              elevation: 0,
+            ),
+            child: const Text('执行', style: TextStyle(fontSize: 12)),
+          ),
+        ]),
       ),
     );
   }
@@ -1375,9 +2164,14 @@ List<NoteBlock> markdownToNoteBlocks(String markdown) {
 }
 
 class _ChatEntry {
-  const _ChatEntry({required this.role, required this.text});
+  const _ChatEntry({
+    required this.role,
+    required this.text,
+    this.confirmActions = const [],
+  });
   final _ChatRole role;
   final String text;
+  final List<AiAppAction> confirmActions; // 待确认的危险动作
 }
 
 /// 将 Markdown 文本解析为 NoteBlock 列表

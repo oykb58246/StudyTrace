@@ -98,12 +98,18 @@ class FrostedPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.65)),
-        boxShadow: const [
+        border: Border.all(
+          color: color.computeLuminance() < 0.3
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.white.withValues(alpha: 0.65),
+        ),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x2217203A),
+            color: color.computeLuminance() < 0.3
+                ? const Color(0x33000000)
+                : const Color(0x2217203A),
             blurRadius: 24,
-            offset: Offset(0, 18),
+            offset: const Offset(0, 18),
           ),
         ],
       ),

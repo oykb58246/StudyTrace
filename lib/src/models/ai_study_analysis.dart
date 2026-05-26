@@ -18,6 +18,18 @@ class AiStudyAnalysis {
     this.nextWeekPriority = '',
   });
 
+  factory AiStudyAnalysis.fromJson(Map<String, dynamic> json) {
+    return AiStudyAnalysis(
+      mainTopics: json['mainTopics']?.toString() ?? '',
+      courseDistribution: json['courseDistribution']?.toString() ?? '',
+      frequentProblems: json['frequentProblems']?.toString() ?? '',
+      completedTasks: json['completedTasks']?.toString() ?? '',
+      riskTasks: json['riskTasks']?.toString() ?? '',
+      statusEvaluation: json['statusEvaluation']?.toString() ?? '',
+      nextWeekPriority: json['nextWeekPriority']?.toString() ?? '',
+    );
+  }
+
   String toFormattedText() {
     final buffer = StringBuffer();
     buffer.writeln('## AI 学习周报分析');

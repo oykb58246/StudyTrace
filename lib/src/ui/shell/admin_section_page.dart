@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/ai_app_action.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 import '../shared/page_wrapper.dart';
@@ -9,10 +10,13 @@ import '../study/ai_settings_page.dart';
 import '../study/flash_card_page.dart';
 import '../study/learning_dashboard_page.dart';
 import '../study/leaderboard_page.dart';
+import '../study/learning_moments_page.dart';
 import '../study/study_group_page.dart';
 import '../study/task_planning_page.dart';
 import '../study/timer_page.dart';
+import 'audit_log_page.dart';
 import 'navigation_models.dart';
+import 'trash_page.dart';
 
 class AdminSectionPage extends StatelessWidget {
   const AdminSectionPage({
@@ -21,6 +25,7 @@ class AdminSectionPage extends StatelessWidget {
     required this.isDarkMode,
     this.controller,
     this.onOpenSettings,
+    this.onExecuteActions,
     this.onBack,
   });
 
@@ -28,6 +33,7 @@ class AdminSectionPage extends StatelessWidget {
   final bool isDarkMode;
   final AppDataController? controller;
   final VoidCallback? onOpenSettings;
+  final AiActionHandler? onExecuteActions;
   final VoidCallback? onBack;
 
   @override
@@ -42,6 +48,11 @@ class AdminSectionPage extends StatelessWidget {
       );
     } else if (section == AdminSection.flashCard && controller != null) {
       body = FlashCardPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    } else if (section == AdminSection.learningMoments && controller != null) {
+      body = LearningMomentsPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
@@ -60,6 +71,7 @@ class AdminSectionPage extends StatelessWidget {
         isDarkMode: isDarkMode,
         controller: controller!,
         onOpenSettings: onOpenSettings,
+        onExecuteActions: onExecuteActions,
       );
     } else if (section == AdminSection.aiSettings && controller != null) {
       body = AiSettingsPage(
@@ -74,6 +86,16 @@ class AdminSectionPage extends StatelessWidget {
       );
     } else if (section == AdminSection.automations && controller != null) {
       body = TaskPlanningPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    } else if (section == AdminSection.auditLog && controller != null) {
+      body = AuditLogPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    } else if (section == AdminSection.trash && controller != null) {
+      body = TrashPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
@@ -191,17 +213,17 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.aiAssistant:
       return _AdminConfig(
         accent: controller?.primaryColor ?? const Color(0xFF4470E8),
-        subtitle: 'AI 学习日志生成、任务拆解、周报分析和风险提醒。',
-        heroTitle: 'AI 学习助手',
+        subtitle: 'AI 学习助手、聊天、日志生成、任务拆解与周报分析。',
+        heroTitle: 'AI 功能',
         heroSubtitle:
-            '输入自然语言，AI 自动完成结构化日志生成、复杂任务拆解、学习分析周报和风险提醒，形成"记录—执行—分析—复盘"的智能学习闭环。',
+            'AI 聊天助手、结构化日志生成、复杂任务拆解、学习分析周报和风险提醒，形成"记录—执行—分析—复盘"的智能学习闭环。',
       );
     case AdminSection.aiSettings:
       return const _AdminConfig(
         accent: Color(0xFF8C7CFF),
-        subtitle: '模型、Key、推理参数与高级 AI 选项。',
+        subtitle: 'AI 模型状态、参数调节与云服务配置。',
         heroTitle: 'AI 设置',
-        heroSubtitle: '集中管理蓝心与 DeepSeek 的模型配置、调用参数和连接测试。',
+        heroSubtitle: '管理学迹 AI 配置、模型参数、云服务连接和系统偏好。',
       );
     case AdminSection.notes:
       return const _AdminConfig(
@@ -230,6 +252,13 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
         subtitle: 'AI 从学习记录生成知识闪卡，巩固复习。',
         heroTitle: 'AI 知识闪卡',
         heroSubtitle: '基于学习日志自动生成问答闪卡，点击翻转查看答案，帮助巩固和复习知识点。',
+      );
+    case AdminSection.learningMoments:
+      return const _AdminConfig(
+        accent: Color(0xFF19A974),
+        subtitle: '发布学习图文，自动汇聚任务、日志、笔记、闪卡和 AI 操作轨迹。',
+        heroTitle: '学迹动态',
+        heroSubtitle: '像朋友圈一样分享学习现场，同时把每次学习行为沉淀成可追溯的证据链。',
       );
     case AdminSection.automations:
       return const _AdminConfig(
@@ -265,6 +294,34 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
         subtitle: '管理通知、权限、隐私与系统偏好。',
         heroTitle: '系统设置',
         heroSubtitle: '管理通知、深色模式、隐私偏好与关于应用。',
+      );
+    case AdminSection.auditLog:
+      return const _AdminConfig(
+        accent: Color(0xFF7394F9),
+        subtitle: '查看 AI 操作历史与执行结果。',
+        heroTitle: 'AI 操作记录',
+        heroSubtitle: '记录每次 AI 操作的输入输出和执行时间。',
+      );
+    case AdminSection.trash:
+      return const _AdminConfig(
+        accent: Color(0xFFEF6850),
+        subtitle: '已删除的学习数据，可恢复或永久删除。',
+        heroTitle: '回收站',
+        heroSubtitle: '管理已删除的任务、日志、笔记和闪卡。',
+      );
+    case AdminSection.achievements:
+      return const _AdminConfig(
+        accent: Color(0xFFFF9F43),
+        subtitle: '积分、徽章与连续打卡，学习更有动力。',
+        heroTitle: '成就殿堂',
+        heroSubtitle: '解锁学习成就徽章，获取积分奖励，见证成长轨迹。',
+      );
+    case AdminSection.knowledgeGraph:
+      return const _AdminConfig(
+        accent: Color(0xFF4CB9FF),
+        subtitle: '可视化知识点关联，直观展示学习结构。',
+        heroTitle: '知识图谱',
+        heroSubtitle: '从课程、笔记和闪卡中自动提取知识关联，一目了然。',
       );
   }
 }

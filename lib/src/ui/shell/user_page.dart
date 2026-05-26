@@ -117,7 +117,7 @@ class CourseArchivePage extends StatelessWidget {
                                 'assets/icons/lordicon/book.json',
                                 width: 22,
                                 height: 22,
-                                animate: false,
+                                animate: true,
                                 frameRate: FrameRate.max,
                               ),
                             ),
@@ -274,10 +274,11 @@ class CourseArchivePage extends StatelessWidget {
                               color: const Color(0x19F77D8E),
                             ),
                             child: Lottie.asset(
-                              'assets/icons/lordicon/route.json',
-                              width: 22,
-                              height: 22,
-                              animate: false,
+                              'assets/icons/lordicon/report.json',
+                              width: 44,
+                              height: 44,
+                              animate: true,
+                              repeat: true,
                               frameRate: FrameRate.max,
                             ),
                           ),
@@ -584,7 +585,9 @@ class CourseDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
+    return RefreshIndicator(
+      onRefresh: () async => controller.notifyListeners(),
+      child: AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
         final accent = controller.primaryColor;
@@ -775,6 +778,7 @@ class CourseDetailPage extends StatelessWidget {
           ),
         );
       },
+    ),
     );
   }
 }

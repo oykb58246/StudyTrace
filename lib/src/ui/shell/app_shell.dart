@@ -1,23 +1,33 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:lottie/lottie.dart';
 import '../../controllers/app_data_controller.dart';
+import '../../models/ai_action_record.dart';
+import '../../models/ai_app_action.dart';
 import '../../models/weekly_report_item.dart';
+import '../../services/ai_action_executor.dart';
+import '../../services/ai_study_service.dart';
 import '../../services/report_export_service.dart';
 import '../../theme/app_theme.dart';
 import '../study/about_page.dart';
+import '../study/achievements_page.dart';
+import '../shell/audit_log_page.dart';
+import '../shell/trash_page.dart';
 import '../study/ai_assistant_page.dart';
 import '../study/ai_chat_page.dart';
+import '../study/ai_learning_cockpit_page.dart';
 import '../study/ai_settings_page.dart';
 import '../study/calendar_page.dart';
 import '../study/flash_card_page.dart';
+import '../study/knowledge_graph_page.dart';
 import '../study/leaderboard_page.dart';
+import '../study/learning_moments_page.dart';
 import '../study/learning_dashboard_page.dart';
 import '../study/study_group_page.dart';
 import '../study/study_notes_page.dart';
@@ -25,8 +35,10 @@ import '../study/task_planning_page.dart';
 import '../study/timer_page.dart';
 import '../study/user_profile_page.dart';
 import '../shared/app_assets.dart';
+import '../shared/local_image.dart';
 import '../shared/page_wrapper.dart';
 import '../shared/rive_safe_widget.dart';
+import '../shared/snackbar_queue.dart';
 import 'admin_section_page.dart';
 import 'create_page.dart';
 import 'extension_page.dart';
@@ -37,16 +49,16 @@ import 'user_page.dart';
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
+    this.initialController,
     this.debugMenuInitiallyOpen = false,
     this.debugInitialPrimaryTab,
     this.debugInitialAdminSection,
-    this.shouldLoadSampleData = false,
   });
 
+  final AppDataController? initialController;
   final bool debugMenuInitiallyOpen;
   final PrimaryTab? debugInitialPrimaryTab;
   final AdminSection? debugInitialAdminSection;
-  final bool shouldLoadSampleData;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -56,7 +68,6 @@ class _AppShellState extends State<AppShell>
     with SingleTickerProviderStateMixin {
   late final AnimationController _menuController;
   late final AppDataController _appDataController;
-  final _navigatorKey = GlobalKey<NavigatorState>();
 
   late PrimaryTab _primaryTab;
   AdminSection? _activeAdminSection;
@@ -64,11 +75,13 @@ class _AppShellState extends State<AppShell>
   bool _allowDrag = false;
   double _menuWidth = 300;
 
+  /// 0 = 未知, 1 = 在线, -1 = 离线
+  int _backendReachable = 0;
+
   @override
   void initState() {
     super.initState();
-    _appDataController = AppDataController();
-    _appDataController.navigatorKey = _navigatorKey;
+    _appDataController = widget.initialController ?? AppDataController();
     _primaryTab = widget.debugInitialPrimaryTab ?? PrimaryTab.assistant;
     _appDataController.setCurrentPrimaryTab(_primaryTab.name);
     _activeAdminSection = widget.debugInitialAdminSection;
@@ -83,13 +96,29 @@ class _AppShellState extends State<AppShell>
   }
 
   Future<void> _loadData() async {
-    if (widget.shouldLoadSampleData) {
-      await _appDataController.loadSampleData();
-    } else {
+    if (!_appDataController.isLoaded) {
       await _appDataController.load();
     }
     if (mounted) {
       setState(() => _isDarkMode = _appDataController.darkMode);
+    }
+    unawaited(_checkBackendReachable());
+  }
+
+  Future<void> _checkBackendReachable() async {
+    if (!_appDataController.isLoggedIn) {
+      if (mounted) setState(() => _backendReachable = 0);
+      return;
+    }
+    try {
+      final url = _appDataController.apiBaseUrl;
+      final response = await http.get(Uri.parse(url)).timeout(
+            const Duration(seconds: 4),
+          );
+      final reachable = response.statusCode < 500;
+      if (mounted) setState(() => _backendReachable = reachable ? 1 : -1);
+    } catch (_) {
+      if (mounted) setState(() => _backendReachable = -1);
     }
   }
 
@@ -117,8 +146,10 @@ class _AppShellState extends State<AppShell>
   void _openAiChat() {
     _pushAnimatedPage(
       AiChatPage(
-          isDarkMode: _isDarkMode,
-          controller: _appDataController,
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        onExecuteActions: _executeAssistantActions,
+        currentLocation: _primaryTab.name,
       ),
     );
   }
@@ -139,6 +170,318 @@ class _AppShellState extends State<AppShell>
           );
         },
       ),
+    );
+  }
+
+  Future<List<AiActionResult>> _executeAssistantActions({
+    required List<AiAppAction> actions,
+    required String input,
+    required String assistantReply,
+  }) {
+    final executor = AiActionExecutor(
+      controller: _appDataController,
+      aiService: _appDataController.aiStudyService,
+      onNavigationAction: _executeNavigationAction,
+    );
+    return executor.execute(
+      actions: actions,
+      input: input,
+      assistantReply: assistantReply,
+    );
+  }
+
+  /// 审计页"重试"按钮回调：把失败的 AiActionRecord 重建成 AiAppAction 再跑
+  Future<void> _retryAuditRecord(AiActionRecord record) async {
+    final type = _actionTypeFromToolId(record.toolId);
+    if (type == null) {
+      _showShellSnack('该动作无法重试（未识别 toolId）');
+      return;
+    }
+    final params = record.params ?? <String, dynamic>{};
+    final action = AiAppAction(
+      type: type,
+      targetId: record.targetId,
+      targetTitle: record.targetTitle,
+      status: params['status'] as String?,
+      title: params['title'] as String?,
+      content: params['content'] as String?,
+      sourceText: params['sourceText'] as String?,
+    );
+    final results = await _executeAssistantActions(
+      actions: [action],
+      input: params['sourceText'] as String? ?? '',
+      assistantReply: '',
+    );
+    if (!mounted) return;
+    final r = results.isNotEmpty ? results.first : null;
+    _showShellSnack(
+      r == null
+          ? '重试失败'
+          : (r.success ? '重试成功：${r.message}' : '重试失败：${r.message}'),
+    );
+  }
+
+  /// 从 toolId（命名空间格式）解析出 AiAppActionType
+  AiAppActionType? _actionTypeFromToolId(String toolId) {
+    return aiAppActionTypeFromWire(toolId);
+  }
+
+  Future<AiActionResult> _executeNavigationAction(AiAppAction action) async {
+    try {
+      _closeMenu();
+      switch (action.type) {
+        case AiAppActionType.switchTab:
+          final tab = _tabFromAssistantAction(action);
+          if (tab == null) {
+            return AiActionResult(
+              action: action,
+              success: false,
+              message: '没有识别到要切换的页面',
+            );
+          }
+          _openPrimaryTabFromAssistant(tab);
+          _showShellSnack('已打开${tab.label}');
+          return AiActionResult(
+            action: action,
+            success: true,
+            message: '已打开${tab.label}，返回可回到对话',
+          );
+        case AiAppActionType.openTimer:
+          _pushAnimatedPage(TimerPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ));
+          return _navigationSuccess(action, '已打开专注计时器');
+        case AiAppActionType.startFocus:
+          final minutes = _parseFocusMinutes(action);
+          _pushAnimatedPage(TimerPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            initialMinutes: minutes,
+            autoStart: true,
+          ));
+          return _navigationSuccess(action, '已开始 $minutes 分钟专注');
+        case AiAppActionType.startFocusWithTask:
+          final minutes = _parseFocusMinutes(action);
+          final task = _taskForFocusAction(action);
+          _pushAnimatedPage(TimerPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            initialMinutes: minutes,
+            autoStart: true,
+          ));
+          return _navigationSuccess(
+            action,
+            task == null
+                ? '已开始 $minutes 分钟专注'
+                : '已围绕「${task.title}」开始 $minutes 分钟专注',
+          );
+        case AiAppActionType.openFlashcard:
+          _pushAnimatedPage(FlashCardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ));
+          return _navigationSuccess(action, '已打开知识闪卡');
+        case AiAppActionType.openNotes:
+          _pushAnimatedPage(StudyNotesPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ));
+          return _navigationSuccess(action, '已打开学习笔记');
+        case AiAppActionType.openAiSettings:
+          _pushAnimatedPage(PageWithBackButton(
+            title: 'AI 设置',
+            isDarkMode: _isDarkMode,
+            child: AiSettingsPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开 AI 设置');
+        case AiAppActionType.openDashboard:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '数据看板',
+            isDarkMode: _isDarkMode,
+            child: LearningDashboardPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开数据看板');
+        case AiAppActionType.openTaskPlanning:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '任务编排',
+            isDarkMode: _isDarkMode,
+            child: TaskPlanningPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开任务编排');
+        case AiAppActionType.openAiAssistant:
+          _pushAnimatedPage(PageWithBackButton(
+            title: 'AI 功能',
+            isDarkMode: _isDarkMode,
+            child: AiAssistantPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+              onExecuteActions: _executeAssistantActions,
+              onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
+                title: 'AI 设置',
+                isDarkMode: _isDarkMode,
+                child: AiSettingsPage(
+                  isDarkMode: _isDarkMode,
+                  controller: _appDataController,
+                ),
+              )),
+            ),
+          ));
+          return _navigationSuccess(action, '已打开 AI 功能');
+        case AiAppActionType.openUserProfile:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '个人资料',
+            isDarkMode: _isDarkMode,
+            child: UserProfilePage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开个人资料');
+        case AiAppActionType.openAbout:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '应用介绍',
+            isDarkMode: _isDarkMode,
+            child: AboutPage(isDarkMode: _isDarkMode),
+          ));
+          return _navigationSuccess(action, '已打开应用介绍');
+        case AiAppActionType.openStudyGroup:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '学习小组',
+            isDarkMode: _isDarkMode,
+            child: StudyGroupPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开学习小组');
+        case AiAppActionType.openLeaderboard:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '排行榜',
+            isDarkMode: _isDarkMode,
+            child: LeaderboardPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开排行榜');
+        case AiAppActionType.openWeeklyReport:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '学习周报',
+            isDarkMode: _isDarkMode,
+            child: _WeeklyReportPage(
+              controller: _appDataController,
+              isDarkMode: _isDarkMode,
+              autoGenerate: true,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开学习周报');
+        case AiAppActionType.openSystemSettings:
+          _pushAnimatedPage(PageWithBackButton(
+            title: '系统设置',
+            isDarkMode: _isDarkMode,
+            child: AiSettingsPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+              mode: AiSettingsMode.system,
+            ),
+          ));
+          return _navigationSuccess(action, '已打开系统设置');
+        default:
+          return AiActionResult(
+            action: action,
+            success: false,
+            message: '这个操作不是导航动作',
+          );
+      }
+    } catch (error) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '导航失败：$error',
+      );
+    }
+  }
+
+  AiActionResult _navigationSuccess(AiAppAction action, String message) {
+    _showShellSnack(message);
+    return AiActionResult(action: action, success: true, message: message);
+  }
+
+  void _openPrimaryTabFromAssistant(PrimaryTab tab) {
+    _pushAnimatedPage(PageWithBackButton(
+      title: tab.label,
+      isDarkMode: _isDarkMode,
+      child: _primaryPageFor(tab),
+    ));
+  }
+
+  PrimaryTab? _tabFromAssistantAction(AiAppAction action) {
+    final value = (action.targetId ??
+            action.targetTitle ??
+            action.title ??
+            action.content ??
+            '')
+        .trim()
+        .toLowerCase();
+    return switch (value) {
+      'assistant' || 'home' || '首页' || '主页' => PrimaryTab.assistant,
+      'scenarios' || 'logs' || 'log' || '记录' || '日志' || '学习记录' =>
+        PrimaryTab.scenarios,
+      'calendar' || '日历' => PrimaryTab.calendar,
+      'create' || 'tasks' || 'task' || '任务' || '任务页' =>
+        PrimaryTab.create,
+      'profile' || 'archive' || '归档' || '课程归档' => PrimaryTab.profile,
+      _ => null,
+    };
+  }
+
+  int _parseFocusMinutes(AiAppAction action) {
+    final raw = (action.status ??
+            action.content ??
+            action.title ??
+            action.sourceText ??
+            '')
+        .trim();
+    if (raw.isEmpty) return 25;
+    final match = RegExp(r'(\d+)').firstMatch(raw);
+    if (match == null) return 25;
+    final n = int.tryParse(match.group(1) ?? '') ?? 25;
+    return n.clamp(1, 180);
+  }
+
+  void _openLearningCockpit() {
+    _pushAnimatedPage(AiLearningCockpitPage(
+      isDarkMode: _isDarkMode,
+      controller: _appDataController,
+      onOpenAiChat: _openAiChat,
+    ));
+  }
+
+  dynamic _taskForFocusAction(AiAppAction action) {
+    final targetId = action.targetId?.trim();
+    if (targetId == null || targetId.isEmpty) return null;
+    for (final task in _appDataController.studyTasks) {
+      if (task.id == targetId) return task;
+    }
+    return null;
+  }
+
+  void _showShellSnack(String message) {
+    if (!mounted) return;
+    SnackBarQueue.instance.enqueue(
+      message,
+      duration: const Duration(seconds: 2),
+      messenger: ScaffoldMessenger.of(context),
     );
   }
 
@@ -199,6 +542,12 @@ class _AppShellState extends State<AppShell>
           controller: _appDataController,
         ));
         return;
+      case AdminSection.learningMoments:
+        _pushAnimatedPage(LearningMomentsPage(
+          isDarkMode: _isDarkMode,
+          controller: _appDataController,
+        ));
+        return;
       case AdminSection.timer:
         _pushAnimatedPage(TimerPage(
           isDarkMode: _isDarkMode,
@@ -225,6 +574,26 @@ class _AppShellState extends State<AppShell>
           ),
         ));
         return;
+      case AdminSection.achievements:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '成就殿堂',
+          isDarkMode: _isDarkMode,
+          child: AchievementsPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+      case AdminSection.knowledgeGraph:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '知识图谱',
+          isDarkMode: _isDarkMode,
+          child: KnowledgeGraphPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
       case AdminSection.aiAssistant:
         _pushAnimatedPage(PageWithBackButton(
           title: 'AI 学习助手',
@@ -232,6 +601,7 @@ class _AppShellState extends State<AppShell>
           child: AiAssistantPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
+            onExecuteActions: _executeAssistantActions,
             onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
               title: 'AI 设置',
               isDarkMode: _isDarkMode,
@@ -280,6 +650,27 @@ class _AppShellState extends State<AppShell>
           title: '数据看板',
           isDarkMode: _isDarkMode,
           child: LearningDashboardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+      case AdminSection.auditLog:
+        _pushAnimatedPage(PageWithBackButton(
+          title: 'AI 操作记录',
+          isDarkMode: _isDarkMode,
+          child: AuditLogPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            onRetry: _retryAuditRecord,
+          ),
+        ));
+        return;
+      case AdminSection.trash:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '回收站',
+          isDarkMode: _isDarkMode,
+          child: TrashPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
           ),
@@ -335,22 +726,7 @@ class _AppShellState extends State<AppShell>
           controller: _appDataController,
           onGenerateReport: _openWeeklyReport,
           onOpenAiAssistant: () {
-            _pushAnimatedPage(PageWithBackButton(
-              title: 'AI 学习助手',
-              isDarkMode: _isDarkMode,
-              child: AiAssistantPage(
-                isDarkMode: _isDarkMode,
-                controller: _appDataController,
-                onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
-                  title: 'AI 设置',
-                  isDarkMode: _isDarkMode,
-                  child: AiSettingsPage(
-                    isDarkMode: _isDarkMode,
-                    controller: _appDataController,
-                  ),
-                )),
-              ),
-            ));
+            _openLearningCockpit();
           },
           onOpenAiChat: _openAiChat,
           onOpenLogs: () => _selectPrimaryTab(PrimaryTab.scenarios),
@@ -365,6 +741,10 @@ class _AppShellState extends State<AppShell>
             controller: _appDataController,
           )),
           onOpenFlashCards: () => _pushAnimatedPage(FlashCardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          )),
+          onOpenLearningMoments: () => _pushAnimatedPage(LearningMomentsPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
           )),
@@ -450,7 +830,6 @@ class _AppShellState extends State<AppShell>
     _menuWidth = math.min(screenWidth * 0.74, 288);
 
     return Scaffold(
-      key: _navigatorKey,
       resizeToAvoidBottomInset: false,
       backgroundColor:
           _isDarkMode ? const Color(0xFF05070D) : const Color(0xFF182146),
@@ -466,6 +845,7 @@ class _AppShellState extends State<AppShell>
                   controller: _appDataController,
                   onOpenSettings: () =>
                       _selectAdminSection(AdminSection.aiSettings),
+                  onExecuteActions: _executeAssistantActions,
                   onBack: () => setState(() => _activeAdminSection = null),
                 )
               : _primaryPageFor(_primaryTab);
@@ -510,6 +890,76 @@ class _AppShellState extends State<AppShell>
                 onHorizontalDragEnd: _handleDragEnd,
                 child: page,
               ),
+              if (_backendReachable == -1 && _appDataController.isLoggedIn)
+                Positioned(
+                  bottom: safeBottom + 72,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() => _backendReachable = 0);
+                        unawaited(_checkBackendReachable());
+                      },
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Container(
+                          key: const ValueKey('offline_chip'),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF6850)
+                                .withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFEF6850)
+                                    .withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.cloud_off_rounded,
+                                  color: Colors.white, size: 14),
+                              SizedBox(width: 6),
+                              Text(
+                                '离线模式',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Icon(Icons.refresh_rounded,
+                                  color: Colors.white70, size: 12),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              Positioned(
+                right: 18,
+                bottom: safeBottom + 96,
+                child: IgnorePointer(
+                  ignoring: progress > 0.55,
+                  child: AnimatedOpacity(
+                    opacity: progress > 0.55 ? 0 : 1,
+                    duration: const Duration(milliseconds: 160),
+                    child: _GlobalAssistantButton(
+                      isDarkMode: _isDarkMode,
+                      accent: _appDataController.primaryColor,
+                      onTap: _openAiChat,
+                    ),
+                  ),
+                ),
+              ),
             ],
           );
         },
@@ -536,14 +986,75 @@ class _PrimaryTabSurface extends StatelessWidget {
   }
 }
 
+class _GlobalAssistantButton extends StatelessWidget {
+  const _GlobalAssistantButton({
+    required this.isDarkMode,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'AI 全局助手',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            width: 54,
+            height: 54,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  accent,
+                  const Color(0xFF4BC4A1),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDarkMode ? 0.18 : 0.7),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.24),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _WeeklyReportPage extends StatefulWidget {
   const _WeeklyReportPage({
     required this.controller,
     required this.isDarkMode,
+    this.autoGenerate = false,
   });
 
   final AppDataController controller;
   final bool isDarkMode;
+  final bool autoGenerate;
 
   @override
   State<_WeeklyReportPage> createState() => _WeeklyReportPageState();
@@ -563,6 +1074,11 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
     final now = DateTime.now();
     _endDate = now;
     _startDate = now.subtract(const Duration(days: 7));
+    if (widget.autoGenerate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _generate();
+      });
+    }
   }
 
   void _generate() {
@@ -1403,9 +1919,9 @@ class _SideMenuState extends State<_SideMenu> {
                                 child: widget.controller.userProfile
                                             .avatarImagePath !=
                                         null
-                                    ? Image.file(
-                                        File(widget.controller.userProfile
-                                            .avatarImagePath!),
+                                    ? localImageFromPath(
+                                        widget.controller.userProfile
+                                            .avatarImagePath!,
                                         fit: BoxFit.cover,
                                         errorBuilder: (_, __, ___) => Center(
                                           child: Text(
@@ -1459,6 +1975,12 @@ class _SideMenuState extends State<_SideMenu> {
                         ),
                       ),
                       const SizedBox(height: 22),
+                      _SideMenuActionItem(
+                        label: '个人资料',
+                        icon: Icons.account_circle_outlined,
+                        onTap: widget.onOpenProfile,
+                      ),
+                      const SizedBox(height: 10),
                       const Text(
                         '更多',
                         style: TextStyle(
@@ -1470,14 +1992,30 @@ class _SideMenuState extends State<_SideMenu> {
                       ),
                       const SizedBox(height: 14),
                       _SideMenuActionItem(
-                        label: 'AI 管理',
+                        label: 'AI 功能',
                         icon: Icons.smart_toy_outlined,
                         selected:
-                            widget.currentSection == AdminSection.aiAssistant ||
-                                widget.currentSection ==
-                                    AdminSection.aiSettings,
+                            widget.currentSection == AdminSection.aiAssistant,
                         onTap: () =>
                             widget.onSelected(AdminSection.aiAssistant),
+                      ),
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: 'AI 设置',
+                        icon: Icons.tune_rounded,
+                        selected:
+                            widget.currentSection == AdminSection.aiSettings,
+                        onTap: () =>
+                            widget.onSelected(AdminSection.aiSettings),
+                      ),
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: '学迹动态',
+                        icon: Icons.dynamic_feed_outlined,
+                        selected: widget.currentSection ==
+                            AdminSection.learningMoments,
+                        onTap: () =>
+                            widget.onSelected(AdminSection.learningMoments),
                       ),
                       const SizedBox(height: 10),
                       _SideMenuActionItem(
@@ -1489,9 +2027,38 @@ class _SideMenuState extends State<_SideMenu> {
                       ),
                       const SizedBox(height: 10),
                       _SideMenuActionItem(
-                        label: '个人资料修改',
-                        icon: Icons.account_circle_outlined,
-                        onTap: widget.onOpenProfile,
+                        label: '成就殿堂',
+                        icon: Icons.emoji_events_outlined,
+                        selected:
+                            widget.currentSection == AdminSection.achievements,
+                        onTap: () =>
+                            widget.onSelected(AdminSection.achievements),
+                      ),
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: '知识图谱',
+                        icon: Icons.account_tree_outlined,
+                        selected:
+                            widget.currentSection ==
+                                AdminSection.knowledgeGraph,
+                        onTap: () =>
+                            widget.onSelected(AdminSection.knowledgeGraph),
+                      ),
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: 'AI 操作记录',
+                        icon: Icons.history_rounded,
+                        selected:
+                            widget.currentSection == AdminSection.auditLog,
+                        onTap: () => widget.onSelected(AdminSection.auditLog),
+                      ),
+                      const SizedBox(height: 10),
+                      _SideMenuActionItem(
+                        label: '回收站',
+                        icon: Icons.delete_outline_rounded,
+                        selected:
+                            widget.currentSection == AdminSection.trash,
+                        onTap: () => widget.onSelected(AdminSection.trash),
                       ),
                       const SizedBox(height: 10),
                       _SideMenuActionItem(

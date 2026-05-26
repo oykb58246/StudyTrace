@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-echo "==> Running Prisma migrations..."
-npx prisma migrate deploy
+echo "==> Synchronizing Prisma schema..."
+npx prisma db push --accept-data-loss
 
 echo "==> Starting application..."
 exec node dist/main

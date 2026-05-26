@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../models/note_block.dart';
 import '../../models/study_note.dart';
+import '../../services/ai_semantic_search_service.dart';
+import '../../services/ai_exceptions.dart';
+import '../../services/ai_study_service.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
@@ -18,23 +21,37 @@ class StudyNotesPage extends StatefulWidget {
 }
 
 class _StudyNotesPageState extends State<StudyNotesPage> {
+  final _searchController = TextEditingController();
   String? _folderId; // null = root
   String _search = '';
+  String _semanticQuery = '';
+  int _searchVersion = 0;
+  bool _isSemanticSearching = false;
+  List<StudyNote>? _semanticNotes;
   bool _selectionMode = false;
   final Set<String> _selectedNoteIds = <String>{};
 
   List<StudyNote> _currentNotes() {
     var notes = widget.controller.notesForFolder(_folderId);
     if (_search.isNotEmpty) {
+      if (_semanticQuery == _search && _semanticNotes != null) {
+        return _semanticNotes!;
+      }
       final q = _search.toLowerCase();
-      notes = notes.where((n) => n.title.toLowerCase().contains(q) || n.content.toLowerCase().contains(q)).toList();
+      notes = notes.where((n) => _noteSearchText(n).toLowerCase().contains(q)).toList();
     }
     return notes;
   }
 
-  void _goTo(StudyNote folder) => setState(() => _folderId = folder.id);
+  void _goTo(StudyNote folder) => setState(() {
+        _folderId = folder.id;
+        _semanticQuery = '';
+        _semanticNotes = null;
+      });
   void _goUp() => setState(() {
         _folderId = null;
+        _semanticQuery = '';
+        _semanticNotes = null;
         _exitSelectionMode();
       });
 
@@ -64,6 +81,56 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
         _selectionMode = false;
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    final version = ++_searchVersion;
+    setState(() {
+      _search = value.trim();
+      _semanticQuery = '';
+      _semanticNotes = null;
+      _isSemanticSearching = _search.isNotEmpty;
+    });
+    if (_search.isEmpty) {
+      setState(() => _isSemanticSearching = false);
+      return;
+    }
+    _runSemanticSearch(_search, version);
+  }
+
+  Future<void> _runSemanticSearch(String query, int version) async {
+    final notes = widget.controller.notesForFolder(_folderId);
+    final candidates = notes
+        .map((note) => SemanticSearchCandidate<StudyNote>(
+              id: note.id,
+              item: note,
+              text: _noteSearchText(note),
+            ))
+        .toList();
+    final service = widget.controller.createSemanticSearchService();
+    final hits = await service.search(query: query, candidates: candidates);
+    if (!mounted || version != _searchVersion) return;
+    setState(() {
+      _semanticQuery = query;
+      _semanticNotes = hits.map((hit) => hit.item).toList();
+      _isSemanticSearching = false;
+    });
+  }
+
+  String _noteSearchText(StudyNote note) {
+    final blockText = note.blocks.map((b) => b.content).join('\n');
+    return [
+      note.title,
+      note.courseName,
+      note.content,
+      blockText,
+    ].where((part) => part.trim().isNotEmpty).join('\n');
   }
 
   @override
@@ -113,16 +180,35 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
               child: TextField(
+                controller: _searchController,
                 autofocus: false,
-                onChanged: (v) => setState(() => _search = v),
+                onChanged: _onSearchChanged,
                 style: TextStyle(color: textColor, fontSize: 14),
                 decoration: InputDecoration(
                   hintText: '搜索笔记...',
                   hintStyle: TextStyle(color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.35) : AppColors.muted),
                   prefixIcon: Icon(Icons.search_rounded, color: bodyColor, size: 20),
-                  suffixIcon: _search.isNotEmpty
-                      ? IconButton(icon: const Icon(Icons.clear_rounded), onPressed: () => setState(() => _search = ''))
-                      : null,
+                  suffixIcon: _isSemanticSearching
+                      ? Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: widget.controller.primaryColor,
+                            ),
+                          ),
+                        )
+                      : _search.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded),
+                              onPressed: () {
+                                _searchController.clear();
+                                _onSearchChanged('');
+                              },
+                            )
+                          : null,
                   filled: true,
                   fillColor: widget.isDarkMode ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF2F5FC),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -255,25 +341,58 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
   Widget _buildFab() {
     final accent = widget.controller.primaryColor;
     return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 16),
+      child: FloatingActionButton(
+        heroTag: 'new_note_menu',
+        backgroundColor: accent,
+        foregroundColor: Colors.white,
+        onPressed: _showCreateMenu,
+        child: const Icon(Icons.add_rounded),
+      ),
+    );
+  }
+
+  void _showCreateMenu() {
+    final accent = widget.controller.primaryColor;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: widget.isDarkMode ? const Color(0xFF1A1F2E) : const Color(0xFFF5F7FF),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          FloatingActionButton.small(
-            heroTag: 'new_folder',
-            backgroundColor: const Color(0xFFF8AA5B),
-            foregroundColor: Colors.white,
-            onPressed: () => _createFolder(),
-            child: const Icon(Icons.create_new_folder_rounded),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: widget.isDarkMode ? Colors.white24 : Colors.black26, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 18),
+          ListTile(
+            leading: Icon(Icons.note_add_rounded, color: accent),
+            title: const Text('新建笔记'),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _openEditor();
+            },
           ),
-          const SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: 'new_note',
-            backgroundColor: accent,
-            foregroundColor: Colors.white,
-            onPressed: () => _openEditor(),
-            child: const Icon(Icons.add_rounded),
+          ListTile(
+            leading: const Icon(Icons.create_new_folder_rounded, color: Color(0xFFF8AA5B)),
+            title: const Text('新建文件夹'),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _createFolder();
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.document_scanner_rounded, color: accent),
+            title: const Text('拍照成笔记'),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _createNoteFromPhoto();
+            },
           ),
         ]),
-      );
+      ),
+    );
   }
 
   void _createFolder() {
@@ -310,6 +429,49 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _createNoteFromPhoto() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ocr = widget.controller.createOcrService();
+    try {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('正在调用 vivo OCR...')),
+      );
+      final text = (await ocr.captureAndRecognize(
+            onStatus: (status) {
+              messenger.showSnackBar(SnackBar(content: Text(status)));
+            },
+          ))
+              ?.trim() ??
+          '';
+      if (!mounted) return;
+      if (text.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('未识别到文字，可重新拍照或手动新建笔记')),
+        );
+        return;
+      }
+      final compact = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+      final title = compact.isEmpty
+          ? '拍照笔记'
+          : compact.substring(0, compact.length > 20 ? 20 : compact.length);
+      final note = await widget.controller.addStudyNote(
+        title: title,
+        content: text,
+        parentId: _folderId,
+        blocks: [
+          NoteBlock(id: 'block_${DateTime.now().microsecondsSinceEpoch}', content: text),
+        ],
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('拍照笔记已创建')),
+      );
+      _openEditor(note: note);
+    } finally {
+      ocr.dispose();
+    }
   }
 
   void _openEditor({StudyNote? note}) {
@@ -416,6 +578,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
   late List<NoteBlock> _blocks;
   late bool _previewMode;
   bool _saved = false;
+  bool _isAiRunning = false;
   final _scrollCtrl = ScrollController();
 
   static const _blockTypes = [
@@ -486,6 +649,156 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
     });
+  }
+
+  /// 弹出 AI 命令面板（Phase 2.2）
+  Future<void> _showAiCommandSheet() async {
+    // 找到一个"有内容的"最后一个文本类块作为 AI 源
+    int srcIndex = -1;
+    for (var i = _blocks.length - 1; i >= 0; i--) {
+      final b = _blocks[i];
+      if (b.type == NoteBlockType.divider) continue;
+      if (b.content.trim().isEmpty) continue;
+      srcIndex = i;
+      break;
+    }
+    if (srcIndex < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前没有可供 AI 处理的内容，先写点东西吧')),
+      );
+      return;
+    }
+    final items = <(String, String, IconData)>[
+      ('continue', '续写段落', Icons.short_text_rounded),
+      ('expand', '扩写展开', Icons.unfold_more_rounded),
+      ('rewrite_formal', '改写为正式', Icons.school_rounded),
+      ('rewrite_casual', '改写为口语', Icons.chat_bubble_outline_rounded),
+      ('rewrite_concise', '改写为简洁', Icons.filter_alt_rounded),
+      ('outline', '总结成要点', Icons.format_list_bulleted_rounded),
+    ];
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: widget.isDarkMode
+              ? const Color(0xFF1A1F2E)
+              : const Color(0xFFF5F7FF),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(left: 140),
+                decoration: BoxDecoration(
+                  color: widget.isDarkMode ? Colors.white24 : Colors.black26,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome_rounded,
+                        color: Color(0xFF4470E8), size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'AI 处理当前段落',
+                      style: TextStyle(
+                          color: widget.isDarkMode
+                              ? Colors.white
+                              : AppColors.ink,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              ...items.map((t) => ListTile(
+                    leading: Icon(t.$3),
+                    title: Text(t.$2),
+                    onTap: () => Navigator.of(ctx).pop(t.$1),
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    await _runAiTransform(srcIndex, action);
+  }
+
+  Future<void> _runAiTransform(int index, String intent) async {
+    final src = _blocks[index].content.trim();
+    if (src.isEmpty) return;
+    setState(() => _isAiRunning = true);
+    try {
+      final aiService = widget.controller.aiStudyService;
+      final result = await aiService.rewriteOrExpand(
+        text: src,
+        intent: intent,
+      );
+      if (result.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('AI 没有返回内容')),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        // AI 结果以多段的方式插入：按换行拆分成 text 块；bullet 列表识别
+        final lines = result.split(RegExp(r'\n+'));
+        final insertBlocks = <NoteBlock>[];
+        for (final line in lines) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty) continue;
+          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+            insertBlocks.add(NoteBlock(
+              id: _bid(),
+              type: NoteBlockType.bullet,
+              content: trimmed.substring(2).trim(),
+            ));
+          } else if (trimmed.startsWith('#')) {
+            insertBlocks.add(NoteBlock(
+              id: _bid(),
+              type: NoteBlockType.heading,
+              content: trimmed.replaceFirst(RegExp(r'^#+\s*'), ''),
+            ));
+          } else {
+            insertBlocks.add(NoteBlock(
+              id: _bid(),
+              type: NoteBlockType.text,
+              content: trimmed,
+            ));
+          }
+        }
+        _blocks.insertAll(index + 1, insertBlocks);
+      });
+    } on AiServiceException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('AI 生成失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAiRunning = false);
+    }
   }
 
   void _removeBlock(int index) {
@@ -679,25 +992,77 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
-                      children: _blockTypes.map((t) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: GestureDetector(
-                              onTap: () => _addBlock(t),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: widget.isDarkMode ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF2F5FC),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  Icon(_blockIcon(t), size: 14, color: textColor.withValues(alpha: 0.6)),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: _isAiRunning ? null : _showAiCommandSheet,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: accent.withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _isAiRunning
+                                      ? SizedBox(
+                                          width: 12,
+                                          height: 12,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2, color: accent),
+                                        )
+                                      : Icon(Icons.auto_awesome_rounded,
+                                          size: 14, color: accent),
                                   const SizedBox(width: 6),
-                                  Text(t.label, style: TextStyle(color: textColor.withValues(alpha: 0.6), fontSize: 12)),
-                                ]),
+                                  Text(
+                                    _isAiRunning ? 'AI 生成中…' : 'AI',
+                                    style: TextStyle(
+                                        color: accent,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ],
                               ),
                             ),
-                          ))
-                          .toList(),
+                          ),
+                        ),
+                        ..._blockTypes.map((t) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: GestureDetector(
+                                onTap: () => _addBlock(t),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: widget.isDarkMode
+                                        ? Colors.white
+                                            .withValues(alpha: 0.06)
+                                        : const Color(0xFFF2F5FC),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                    Icon(_blockIcon(t),
+                                        size: 14,
+                                        color: textColor
+                                            .withValues(alpha: 0.6)),
+                                    const SizedBox(width: 6),
+                                    Text(t.label,
+                                        style: TextStyle(
+                                            color: textColor
+                                                .withValues(alpha: 0.6),
+                                            fontSize: 12)),
+                                  ]),
+                                ),
+                              ),
+                            )),
+                      ],
                     ),
                   ),
                 ),

@@ -22,10 +22,14 @@ class TimerPage extends StatefulWidget {
     super.key,
     required this.isDarkMode,
     required this.controller,
+    this.initialMinutes,
+    this.autoStart = false,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
+  final int? initialMinutes;
+  final bool autoStart;
 
   @override
   State<TimerPage> createState() => _TimerPageState();
@@ -39,6 +43,46 @@ class _TimerPageState extends State<TimerPage> {
   final List<_FocusSession> _sessionHistory = [];
 
   int get _effectiveMinutes => _customMinutes;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialMinutes;
+    if (initial != null && initial > 0 && initial <= 180) {
+      _customMinutes = initial;
+      if (_presetMinutes.contains(initial)) {
+        _selectedPreset = initial;
+      }
+    }
+    if (widget.autoStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startFocusSession();
+      });
+    }
+  }
+
+  Future<void> _startFocusSession() async {
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => _FocusTimerPage(
+          isDarkMode: widget.isDarkMode,
+          controller: widget.controller,
+          minutes: _effectiveMinutes,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      final count = result['count'] as int? ?? 0;
+      final sessions = result['sessions'] as List<_FocusSession>? ?? [];
+      setState(() {
+        _sessionCount += count;
+        _sessionHistory.insertAll(0, sessions);
+        if (_sessionHistory.length > 50) {
+          _sessionHistory.removeRange(50, _sessionHistory.length);
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -157,26 +201,7 @@ class _TimerPageState extends State<TimerPage> {
               elevation: 0,
             ),
             onPressed: () async {
-              final result = await Navigator.of(context).push<Map<String, dynamic>>(
-                MaterialPageRoute(
-                  builder: (_) => _FocusTimerPage(
-                    isDarkMode: widget.isDarkMode,
-                    controller: widget.controller,
-                    minutes: _effectiveMinutes,
-                  ),
-                ),
-              );
-              if (result != null && mounted) {
-                final count = result['count'] as int? ?? 0;
-                final sessions = result['sessions'] as List<_FocusSession>? ?? [];
-                setState(() {
-                  _sessionCount += count;
-                  _sessionHistory.insertAll(0, sessions);
-                  if (_sessionHistory.length > 50) {
-                    _sessionHistory.removeRange(50, _sessionHistory.length);
-                  }
-                });
-              }
+              await _startFocusSession();
             },
             icon: const Icon(Icons.play_arrow_rounded, size: 24),
             label: const Text('开始专注',
@@ -340,7 +365,6 @@ class _FocusTimerPage extends StatefulWidget {
 }
 
 class _FocusTimerPageState extends State<_FocusTimerPage> {
-  final _aiService = AiStudyService();
   late int _remainingSeconds;
   Timer? _timer;
   bool _isRunning = false;
@@ -383,8 +407,14 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
           _isRunning = false;
           _isPaused = false;
           _completedCount++;
+          final sourceId =
+              'timer_${DateTime.now().microsecondsSinceEpoch}_$_completedCount';
           _sessions.add(_FocusSession(
               time: DateTime.now(), minutes: widget.minutes));
+          unawaited(widget.controller.recordTimerCompleted(
+            durationMinutes: widget.minutes,
+            sourceId: sourceId,
+          ));
           _showCompleteDialog();
         }
       });
@@ -594,7 +624,7 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                             if (input.isEmpty) return;
                             setSheetState(() => isGenerating = true);
                             try {
-                              final result = await _aiService
+                              final result = await widget.controller.aiStudyService
                                   .generateStudyLog(input);
                               setSheetState(
                                   () => generatedLog = result);

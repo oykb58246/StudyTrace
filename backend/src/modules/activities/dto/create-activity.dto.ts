@@ -11,8 +11,18 @@ export const activityTypes = [
   'taskCompleted',
   'subTaskCompleted',
   'studyLogCreated',
+  'noteCreated',
+  'flashcardBatchCreated',
   'timerCompleted',
   'dailyStreak',
+  'momentShared',
+  'challengeEvidence',
+  'evidencePackageShared',
+  'locationCheckIn',
+  'voiceReview',
+  'aiLoopApplied',
+  'translatedMoment',
+  'imageGenerated',
 ] as const;
 
 export type ActivityType = (typeof activityTypes)[number];

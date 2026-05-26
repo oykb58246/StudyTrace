@@ -372,7 +372,7 @@ function slideTeam() {
     ["成员 A", "产品经理", "统筹 PPT 逻辑、作品简介、设计理念、前景评估", C.blue],
     ["成员 B", "UI 与交互设计", "宣传海报、界面设计、核心交互流程", C.cyan],
     ["成员 C", "前端 / 客户端开发", "Flutter 架构、功能落地、可行性与 Demo", C.green],
-    ["成员 D", "大模型 / 后端开发", "蓝心与 DeepSeek 应用、Prompt 与多模态机制", C.amber],
+    ["成员 D", "大模型 / 后端开发", "vivo AIGC/蓝心、Prompt 与多模态机制", C.amber],
   ];
   normalSlide(
     "01-1 / TEAM",
@@ -707,7 +707,7 @@ function slideArchitecture() {
     ["状态管理层", "MVVM + ChangeNotifier 统一驱动页面刷新", C.cyan],
     ["业务服务层", "周报生成、AI 学习服务、凭据安全存储", C.green],
     ["数据模型层", "任务、日志、周报、AI 结果、用户资料", C.amber],
-    ["存储与外部能力", "SharedPreferences 本地 JSON + 蓝心 / DeepSeek API", C.red],
+    ["存储与外部能力", "SharedPreferences 本地 JSON + 后端代理 vivo AIGC", C.red],
   ];
   normalSlide(
     "03-1 / ARCHITECTURE",
@@ -823,7 +823,7 @@ function slideFeasibilityDemo() {
         { width: fill, height: fill, padding: 34, fill: "#0F172A", borderRadius: 34 },
         column({ width: fill, height: fill, gap: 22, justify: "center" }, [
           t("40 个任务完成", { size: 46, bold: true, color: C.white, width: fill }),
-          t("基础架构、核心页面、AIGC 能力、DeepSeek & 智能输入、知识闪卡等阶段均已进入可演示状态。", { size: 25, color: "#CBD5E1", width: fill }),
+          t("基础架构、核心页面、AIGC 能力、智能输入、知识闪卡等阶段均已进入可演示状态。", { size: 25, color: "#CBD5E1", width: fill }),
           rule({ width: fixed(260), stroke: C.blue2, weight: 5 }),
           t("结论：不是单纯策划方案，而是具备可运行 Demo 和持续扩展路径的客户端作品。", { size: 25, bold: true, color: C.white, width: fill }),
         ]),
@@ -843,7 +843,7 @@ function slideAiSection() {
   normalSlide(
     "04-1 / MODEL APPLICATIONS",
     "第四部分：大模型应用说明",
-    "蓝心大模型与 DeepSeek 共同支撑对话、图片理解、OCR、学习分析和风险预测。",
+    "vivo AIGC/蓝心能力支撑对话、图片理解、OCR、语义搜索、学习分析和风险预测。",
     grid({ width: fill, height: fill, columns: [fr(1), fr(1), fr(1)], rows: [fr(1), fr(1)], gap: 20 }, [
       labeledShot("AI 学习助手", "生成日志 / 拆解任务 / 风险提醒", C.blue, screenshots.ai),
       labeledShot("拍照记录学习", "移动端拍照入口", C.cyan, screenshots.home),
@@ -875,13 +875,13 @@ function slideAiApplications() {
 
 function slideModelEngines() {
   const engines = [
-    ["蓝心大模型", "Chat Completions / Vision / OCR", "适合图片理解、文字识别和智能对话。", C.blue],
-    ["DeepSeek", "Chat Completions / JSON 输出", "适合结构化学习日志、任务拆解、分析周报。", C.green],
+    ["蓝心大模型", "Chat Completions / Vision / OCR", "支撑图片理解、文字识别和智能对话。", C.blue],
+    ["语义理解能力", "查询改写 / 文本相似度排序", "支撑笔记搜索、相关内容召回和学习材料整理。", C.green],
   ];
   normalSlide(
-    "04-2 / DUAL ENGINE",
-    "蓝心 / DeepSeek 双引擎能力图",
-    "双引擎设计让作品既能展示多模态能力，也能保障核心文本分析与结构化输出稳定。",
+    "04-2 / AI CAPABILITY",
+    "vivo AIGC 能力图",
+    "统一后端代理让作品既能展示多模态能力，也能保障客户端密钥安全与发布可控。",
     grid({ width: fill, height: fill, columns: [fr(1), fr(1)], columnGap: 42 }, engines.map(([name, caps, desc, color]) =>
       panel(
         { width: fill, height: fill, padding: 36, fill: C.white, stroke: "#D8E3F4", borderRadius: 36 },
@@ -891,9 +891,9 @@ function slideModelEngines() {
           rule({ width: fixed(240), stroke: color, weight: 5 }),
           t(desc, { size: 24, color: C.muted, width: fill }),
           bulletList([
-            "API Key 安全存储",
-            "模型可切换",
-            "未配置时使用 Mock 演示模式",
+            "密钥只存后端环境变量",
+            "统一限额与调用日志",
+            "失败时回退本地能力",
           ], color, 21),
         ]),
       ),
@@ -906,7 +906,7 @@ function slideAiMechanism() {
   const steps = [
     ["用户输入", "文本 / 语音 / 图片 / OCR 结果"],
     ["Prompt 约束", "明确角色、字段、输出格式和风险维度"],
-    ["模型调用", "蓝心或 DeepSeek Chat Completions"],
+    ["模型调用", "后端代理 vivo AIGC/蓝心能力"],
     ["JSON 解析", "映射为日志、任务、周报、风险、闪卡模型"],
     ["页面回写", "预览编辑、一键保存、后续复盘"],
   ];

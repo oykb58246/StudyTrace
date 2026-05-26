@@ -11,6 +11,21 @@ class AiRiskWarning {
     this.level = RiskLevel.medium,
     this.category = 'deadline',
   });
+
+  factory AiRiskWarning.fromJson(Map<String, dynamic> json) {
+    return AiRiskWarning(
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      level: _parseRiskLevel(json['level']?.toString()),
+      category: json['category']?.toString() ?? 'deadline',
+    );
+  }
+
+  static RiskLevel _parseRiskLevel(String? value) => switch (value) {
+    'low' => RiskLevel.low,
+    'high' => RiskLevel.high,
+    _ => RiskLevel.medium,
+  };
 }
 
 enum RiskLevel { low, medium, high }

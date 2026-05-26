@@ -18,8 +18,9 @@ export class LeaderboardsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') groupId: string,
     @Query('range') range?: 'week' | 'month',
+    @Query('metric') metric?: string,
   ) {
     const safeRange = range === 'month' ? 'month' : 'week';
-    return this.leaderboards.getGroupLeaderboard(user.userId, groupId, safeRange);
+    return this.leaderboards.getGroupLeaderboard(user.userId, groupId, safeRange, metric);
   }
 }

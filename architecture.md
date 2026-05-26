@@ -25,7 +25,7 @@ StudyTrace 是一个面向大学生的课程任务管理与学习周报生成 Ap
 | UI | Material Design 3 |
 | 本地存储 | shared_preferences |
 | 状态管理 | ChangeNotifier，第一版保持简单 |
-| AI 功能 | 第一版使用本地模板生成，后续可接 DeepSeek / OpenAI / 通义千问 |
+| AI 功能 | 后端代理 vivo AIGC/蓝心能力，客户端不保存模型密钥 |
 
 ---
 

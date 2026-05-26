@@ -1,8 +1,11 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/study_task_item.dart';
+import '../../services/ai_exceptions.dart';
+import '../../services/ai_study_service.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
@@ -80,11 +83,37 @@ class LearningDashboardPage extends StatelessWidget {
           key: const Key('page_learning_dashboard'),
           padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
           children: [
-            Text('学习数据看板',
-                style: TextStyle(
-                    color: textColor,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700)),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('学习数据看板',
+                      style: TextStyle(
+                          color: textColor,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700)),
+                ),
+                TextButton.icon(
+                  onPressed: () => _showAiAnalysisSheet(
+                    context,
+                    isDarkMode: isDarkMode,
+                    summary: _buildDashboardSummary(
+                      totalLogs: logs.length,
+                      totalTasks: totalTasks,
+                      completedTasks: completedTasks,
+                      overdueTasks: overdueTasks,
+                      totalSubTasks: totalSubTasks,
+                      completedSubTasks: completedSubTasks,
+                      recentLogs: recentLogs,
+                      monthLogs: monthLogs,
+                      courseDist: courseCount,
+                      weeklyData: weeklyData,
+                    ),
+                  ),
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                  label: const Text('AI 解读'),
+                ),
+              ],
+            ),
             const SizedBox(height: 18),
             Row(
               children: [
@@ -450,6 +479,55 @@ class LearningDashboardPage extends StatelessWidget {
         const Color(0xFF8C7CFF),
         const Color(0xFF4CB9FF),
       ];
+
+  List<String> _buildDashboardSummary({
+    required int totalLogs,
+    required int totalTasks,
+    required int completedTasks,
+    required int overdueTasks,
+    required int totalSubTasks,
+    required int completedSubTasks,
+    required int recentLogs,
+    required int monthLogs,
+    required Map<String, int> courseDist,
+    required List<int> weeklyData,
+  }) {
+    final pct = totalTasks > 0
+        ? ((completedTasks / totalTasks) * 100).toStringAsFixed(0)
+        : '0';
+    final subPct = totalSubTasks > 0
+        ? ((completedSubTasks / totalSubTasks) * 100).toStringAsFixed(0)
+        : '0';
+    final topCourses = (courseDist.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value)))
+        .take(3)
+        .map((e) => '${e.key}: ${e.value} 条')
+        .join('、');
+    return [
+      '学习记录总数：$totalLogs（近 7 天 $recentLogs、近 30 天 $monthLogs）',
+      '任务总数：$totalTasks，完成率 $pct%，已逾期 $overdueTasks',
+      '子任务：$completedSubTasks / $totalSubTasks（$subPct%）',
+      '课程分布（Top 3）：${topCourses.isEmpty ? "无" : topCourses}',
+      '近 7 天每日日志数：${weeklyData.join(" / ")}',
+    ];
+  }
+
+  void _showAiAnalysisSheet(
+    BuildContext context, {
+    required bool isDarkMode,
+    required List<String> summary,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AiDashboardAnalysisSheet(
+        isDarkMode: isDarkMode,
+        summary: summary,
+        aiService: controller.aiStudyService,
+      ),
+    );
+  }
 }
 
 Widget _statCard(String label, String value, Color color, bool isDarkMode, Color textColor, Color bodyColor) {
@@ -468,3 +546,167 @@ Widget _statCard(String label, String value, Color color, bool isDarkMode, Color
 
 bool _sameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
+
+
+class _AiDashboardAnalysisSheet extends StatefulWidget {
+  const _AiDashboardAnalysisSheet({
+    required this.isDarkMode,
+    required this.summary,
+    required this.aiService,
+  });
+
+  final bool isDarkMode;
+  final List<String> summary;
+  final AiStudyService aiService;
+
+  @override
+  State<_AiDashboardAnalysisSheet> createState() =>
+      _AiDashboardAnalysisSheetState();
+}
+
+class _AiDashboardAnalysisSheetState extends State<_AiDashboardAnalysisSheet> {
+  String _text = '';
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final reply = await widget.aiService.generateAssistantReply(
+        input: '基于以下学习数据给出 3-5 条具体、可执行的学习建议，使用 Markdown 列表，每条不超过 30 字。',
+        context: widget.summary,
+        purpose: 'note',
+      );
+      if (!mounted) return;
+      setState(() {
+        _text = reply.trim();
+        _loading = false;
+      });
+    } on AiServiceException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'AI 解读失败：$e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.isDarkMode
+        ? const Color(0xFF1A1F2E)
+        : const Color(0xFFF5F7FF);
+    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor =
+        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final size = MediaQuery.of(context).size;
+    return Container(
+      height: size.height * 0.7,
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: widget.isDarkMode ? Colors.white24 : Colors.black26,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded,
+                  color: widget.isDarkMode
+                      ? Colors.white70
+                      : AppColors.accentDeep,
+                  size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'AI 解读数据看板',
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: '重新生成',
+                onPressed: _loading ? null : _fetch,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 12),
+                        Text('AI 正在分析你的数据...',
+                            style:
+                                TextStyle(color: bodyColor, fontSize: 13)),
+                      ],
+                    ),
+                  )
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.error_outline_rounded,
+                                color: Colors.redAccent, size: 32),
+                            const SizedBox(height: 8),
+                            Text(_error!,
+                                style: TextStyle(
+                                    color: bodyColor, fontSize: 13),
+                                textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            TextButton.icon(
+                              onPressed: _fetch,
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text('重试'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Markdown(
+                        data: _text.isEmpty ? '（AI 没有生成内容）' : _text,
+                        styleSheet: MarkdownStyleSheet.fromTheme(
+                          Theme.of(context).copyWith(
+                            textTheme: Theme.of(context).textTheme.apply(
+                                  bodyColor: bodyColor,
+                                  displayColor: textColor,
+                                ),
+                          ),
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}

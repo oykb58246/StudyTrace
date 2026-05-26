@@ -1,58 +1,139 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../models/weekly_report_item.dart';
+import 'platform_file_saver.dart';
 
 class ReportExportService {
   const ReportExportService();
 
-  Future<File> exportWeeklyReportMarkdown(WeeklyReportItem report) async {
-    final dir = await _exportDirectory();
-    final file = File('${dir.path}${Platform.pathSeparator}'
-        '${_reportFileName(report, extension: 'md')}');
-    await file.writeAsString(_markdownForReport(report), encoding: utf8);
-    return file;
-  }
-
-  Future<File> exportWeeklyReportPdf(WeeklyReportItem report) async {
-    final dir = await _exportDirectory();
-    final file = File('${dir.path}${Platform.pathSeparator}'
-        '${_reportFileName(report, extension: 'pdf')}');
-    final bytes = _SimplePdfTextWriter(
-      title: '学习周报 ${_fmtDate(report.startDate)} - ${_fmtDate(report.endDate)}',
-      body: [
-        '生成时间：${_fmtDateTime(report.createdAt)}',
-        '学习记录：${report.sourceLogIds.length} 条',
-        '',
-        report.content.trim(),
-      ].join('\n'),
-    ).build();
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
-  }
-
-  Future<File> exportAllReportsMarkdown(List<WeeklyReportItem> reports) async {
-    final dir = await _exportDirectory();
-    final now = DateTime.now();
-    final file = File('${dir.path}${Platform.pathSeparator}'
-        'studytrace_all_reports_${_stampDateTime(now)}.md');
-    await file.writeAsString(
-      _markdownForReports(reports, exportedAt: now),
-      encoding: utf8,
+  Future<SavedExportFile> exportWeeklyReportMarkdown(
+    WeeklyReportItem report,
+  ) async {
+    return saveExportFile(
+      fileName: _reportFileName(report, extension: 'md'),
+      mimeType: 'text/markdown;charset=utf-8',
+      text: _markdownForReport(report),
     );
-    return file;
   }
 
-  Future<Directory> _exportDirectory() async {
-    final base = await getApplicationDocumentsDirectory();
-    final dir =
-        Directory('${base.path}${Platform.pathSeparator}studytrace_exports');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    return dir;
+  Future<SavedExportFile> exportWeeklyReportPdf(WeeklyReportItem report) async {
+    final pdf = pw.Document();
+    final title =
+        '学习周报 ${_fmtDate(report.startDate)} - ${_fmtDate(report.endDate)}';
+    final meta = '生成时间：${_fmtDateTime(report.createdAt)}  |  '
+        '学习记录：${report.sourceLogIds.length} 条';
+    final content = report.content.trim();
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        header: (ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('StudyTrace',
+                    style: pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColor.fromHex('#7040F2'),
+                        fontWeight: pw.FontWeight.bold)),
+                pw.Text('学迹',
+                    style: const pw.TextStyle(
+                        fontSize: 10, color: PdfColors.grey600)),
+              ],
+            ),
+            pw.SizedBox(height: 8),
+            pw.Divider(thickness: 0.5, color: PdfColors.grey300),
+            pw.SizedBox(height: 12),
+          ],
+        ),
+        footer: (ctx) => pw.Container(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            '第 ${ctx.pageNumber} / ${ctx.pagesCount} 页',
+            style:
+                const pw.TextStyle(fontSize: 9, color: PdfColors.grey500),
+          ),
+        ),
+        build: (ctx) => [
+          pw.Text(title,
+              style: pw.TextStyle(
+                  fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 6),
+          pw.Text(meta,
+              style: const pw.TextStyle(
+                  fontSize: 10, color: PdfColors.grey600)),
+          pw.SizedBox(height: 16),
+          // 按段落渲染
+          ...content.split('\n').map((line) {
+            final trimmed = line.trim();
+            if (trimmed.isEmpty) return pw.SizedBox(height: 8);
+            if (trimmed.startsWith('###')) {
+              return pw.Padding(
+                padding: const pw.EdgeInsets.only(top: 10, bottom: 4),
+                child: pw.Text(
+                  trimmed.replaceFirst(RegExp(r'^#+\s*'), ''),
+                  style: pw.TextStyle(
+                      fontSize: 13, fontWeight: pw.FontWeight.bold),
+                ),
+              );
+            }
+            if (trimmed.startsWith('##')) {
+              return pw.Padding(
+                padding: const pw.EdgeInsets.only(top: 12, bottom: 4),
+                child: pw.Text(
+                  trimmed.replaceFirst(RegExp(r'^#+\s*'), ''),
+                  style: pw.TextStyle(
+                      fontSize: 15, fontWeight: pw.FontWeight.bold),
+                ),
+              );
+            }
+            if (trimmed.startsWith('- ')) {
+              return pw.Padding(
+                padding: const pw.EdgeInsets.only(left: 12, bottom: 3),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('• ', style: const pw.TextStyle(fontSize: 11)),
+                    pw.Expanded(
+                      child: pw.Text(trimmed.substring(2),
+                          style: const pw.TextStyle(
+                              fontSize: 11, lineSpacing: 3)),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 4),
+              child: pw.Text(trimmed,
+                  style: const pw.TextStyle(fontSize: 11, lineSpacing: 3)),
+            );
+          }),
+        ],
+      ),
+    );
+
+    final bytes = await pdf.save();
+    return saveExportFile(
+      fileName: _reportFileName(report, extension: 'pdf'),
+      mimeType: 'application/pdf',
+      bytes: bytes,
+    );
+  }
+
+  Future<SavedExportFile> exportAllReportsMarkdown(
+    List<WeeklyReportItem> reports,
+  ) async {
+    final now = DateTime.now();
+    return saveExportFile(
+      fileName: 'studytrace_all_reports_${_stampDateTime(now)}.md',
+      mimeType: 'text/markdown;charset=utf-8',
+      text: _markdownForReports(reports, exportedAt: now),
+    );
   }
 
   String _markdownForReport(WeeklyReportItem report) {
@@ -121,199 +202,6 @@ class ReportExportService {
         '${date.minute.toString().padLeft(2, '0')}'
         '${date.second.toString().padLeft(2, '0')}';
   }
-}
-
-class _SimplePdfTextWriter {
-  _SimplePdfTextWriter({
-    required this.title,
-    required this.body,
-  });
-
-  static const double _pageWidth = 595;
-  static const double _pageHeight = 842;
-  static const double _marginX = 56;
-  static const double _topY = 790;
-  static const double _bottomY = 56;
-
-  final String title;
-  final String body;
-
-  List<int> build() {
-    final pages = _paginate(_buildLines());
-    final objects = <int, List<int>>{};
-    final pageIds = <int>[];
-
-    objects[1] = ascii.encode('<< /Type /Catalog /Pages 2 0 R >>');
-    objects[3] = ascii.encode(_fontObject());
-
-    for (var i = 0; i < pages.length; i++) {
-      final pageId = 4 + i * 2;
-      final contentId = pageId + 1;
-      pageIds.add(pageId);
-      final content = ascii.encode(_contentStream(pages[i]));
-      objects[pageId] = ascii.encode(
-        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $_pageWidth $_pageHeight] '
-        '/Resources << /Font << /F1 3 0 R >> >> /Contents $contentId 0 R >>',
-      );
-      objects[contentId] = [
-        ...ascii.encode('<< /Length ${content.length} >>\nstream\n'),
-        ...content,
-        ...ascii.encode('\nendstream'),
-      ];
-    }
-
-    objects[2] = ascii.encode(
-      '<< /Type /Pages /Kids [${pageIds.map((id) => '$id 0 R').join(' ')}] '
-      '/Count ${pageIds.length} >>',
-    );
-
-    return _pdfBytes(objects);
-  }
-
-  List<_PdfLine> _buildLines() {
-    return [
-      for (final line in _wrapText(title, maxChars: 24))
-        _PdfLine(line, fontSize: 16, lineHeight: 24),
-      const _PdfLine('', fontSize: 11, lineHeight: 12),
-      for (final paragraph in body.split('\n')) ...[
-        if (paragraph.trim().isEmpty)
-          const _PdfLine('', fontSize: 11, lineHeight: 12)
-        else
-          for (final line in _wrapText(paragraph.trim(), maxChars: 38))
-            _PdfLine(line, fontSize: 11, lineHeight: 17),
-      ],
-    ];
-  }
-
-  List<List<_PdfLine>> _paginate(List<_PdfLine> lines) {
-    final pages = <List<_PdfLine>>[];
-    var current = <_PdfLine>[];
-    var y = _topY;
-
-    for (final line in lines) {
-      if (current.isNotEmpty && y - line.lineHeight < _bottomY) {
-        pages.add(current);
-        current = <_PdfLine>[];
-        y = _topY;
-      }
-      current.add(line);
-      y -= line.lineHeight;
-    }
-    if (current.isNotEmpty) pages.add(current);
-    return pages.isEmpty ? [const <_PdfLine>[]] : pages;
-  }
-
-  List<String> _wrapText(String text, {required int maxChars}) {
-    final normalized = text.replaceAll('\t', ' ').trimRight();
-    if (normalized.isEmpty) return const [''];
-
-    final lines = <String>[];
-    final buffer = StringBuffer();
-    var width = 0;
-
-    for (final rune in normalized.runes) {
-      final char = String.fromCharCode(rune);
-      final charWidth = rune < 128 ? 1 : 2;
-      if (buffer.isNotEmpty && width + charWidth > maxChars * 2) {
-        lines.add(buffer.toString().trimRight());
-        buffer.clear();
-        width = 0;
-      }
-      buffer.write(char);
-      width += charWidth;
-    }
-    if (buffer.isNotEmpty) lines.add(buffer.toString().trimRight());
-    return lines;
-  }
-
-  String _contentStream(List<_PdfLine> lines) {
-    final buffer = StringBuffer()..writeln('q');
-    var y = _topY;
-    for (final line in lines) {
-      if (line.text.isNotEmpty) {
-        buffer
-          ..writeln('BT')
-          ..writeln('/F1 ${line.fontSize} Tf')
-          ..writeln('1 0 0 1 $_marginX ${y.toStringAsFixed(1)} Tm')
-          ..writeln('<${_utf16Hex(line.text)}> Tj')
-          ..writeln('ET');
-      }
-      y -= line.lineHeight;
-    }
-    buffer.writeln('Q');
-    return buffer.toString();
-  }
-
-  String _utf16Hex(String text) {
-    final buffer = StringBuffer('FEFF');
-    for (final codeUnit in text.codeUnits) {
-      buffer.write(codeUnit.toRadixString(16).padLeft(4, '0').toUpperCase());
-    }
-    return buffer.toString();
-  }
-
-  String _fontObject() {
-    return '''
-<< /Type /Font
-/Subtype /Type0
-/BaseFont /STSong-Light
-/Encoding /UniGB-UCS2-H
-/DescendantFonts [
-<< /Type /Font
-/Subtype /CIDFontType0
-/BaseFont /STSong-Light
-/CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >>
-/FontDescriptor << /Type /FontDescriptor /FontName /STSong-Light /Flags 6 /FontBBox [-25 -254 1000 880] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 880 /StemV 80 >>
->>
-]
->>''';
-  }
-
-  List<int> _pdfBytes(Map<int, List<int>> objects) {
-    final maxObjectId = objects.keys.reduce((a, b) => a > b ? a : b);
-    final bytes = <int>[];
-    final offsets = List<int>.filled(maxObjectId + 1, 0);
-
-    bytes.addAll(ascii.encode('%PDF-1.4\n'));
-    bytes.addAll([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
-
-    for (var id = 1; id <= maxObjectId; id++) {
-      final object = objects[id];
-      if (object == null) continue;
-      offsets[id] = bytes.length;
-      bytes.addAll(ascii.encode('$id 0 obj\n'));
-      bytes.addAll(object);
-      bytes.addAll(ascii.encode('\nendobj\n'));
-    }
-
-    final xrefOffset = bytes.length;
-    bytes.addAll(ascii.encode('xref\n0 ${maxObjectId + 1}\n'));
-    bytes.addAll(ascii.encode('0000000000 65535 f \n'));
-    for (var id = 1; id <= maxObjectId; id++) {
-      bytes.addAll(
-        ascii.encode('${offsets[id].toString().padLeft(10, '0')} 00000 n \n'),
-      );
-    }
-    bytes.addAll(
-      ascii.encode(
-        'trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\n'
-        'startxref\n$xrefOffset\n%%EOF',
-      ),
-    );
-    return bytes;
-  }
-}
-
-class _PdfLine {
-  const _PdfLine(
-    this.text, {
-    required this.fontSize,
-    required this.lineHeight,
-  });
-
-  final String text;
-  final int fontSize;
-  final double lineHeight;
 }
 
 extension _TakeLast on String {

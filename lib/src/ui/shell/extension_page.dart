@@ -45,7 +45,9 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
+    return RefreshIndicator(
+      onRefresh: () async => widget.controller.notifyListeners(),
+      child: AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
         final accent = widget.controller.primaryColor;
@@ -118,50 +120,61 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text('全部课程',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: _courseFilter == null
-                                    ? accent
-                                    : widget.isDarkMode
-                                        ? Colors.white
-                                        : AppColors.ink)),
-                        selected: _courseFilter == null,
-                        selectedColor:
-                            accent.withValues(alpha: 0.2),
-                        checkmarkColor: accent,
-                        backgroundColor: widget.isDarkMode
-                            ? const Color(0xFF2A3040)
-                            : const Color(0xFFEEF1FA),
-                        side: BorderSide.none,
-                        onSelected: (_) => setState(() => _courseFilter = null),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _courseFilter = null),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _courseFilter == null
+                                ? accent.withValues(alpha: 0.2)
+                                : (widget.isDarkMode
+                                    ? const Color(0xFF2A3040)
+                                    : const Color(0xFFEEF1FA)),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text('全部课程',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: _courseFilter == null
+                                      ? accent
+                                      : (widget.isDarkMode
+                                          ? Colors.white
+                                          : AppColors.ink))),
+                        ),
                       ),
                     ),
-                    ...availableCourses.map((c) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: Text(c,
+                    ...availableCourses.map((c) {
+                      final selected = _courseFilter == c;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () => setState(
+                              () => _courseFilter = selected ? null : c),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? const Color(0xFF7394F9)
+                                      .withValues(alpha: 0.22)
+                                  : (widget.isDarkMode
+                                      ? const Color(0xFF2A3040)
+                                      : const Color(0xFFEEF1FA)),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(c,
                                 style: TextStyle(
                                     fontSize: 12,
-                                    color: _courseFilter == c
-                                        ? accent
-                                        : widget.isDarkMode
+                                    color: selected
+                                        ? const Color(0xFF7394F9)
+                                        : (widget.isDarkMode
                                             ? Colors.white
-                                            : AppColors.ink)),
-                            selected: _courseFilter == c,
-                            selectedColor:
-                                const Color(0xFF7394F9).withValues(alpha: 0.22),
-                            checkmarkColor: const Color(0xFF7394F9),
-                            backgroundColor: widget.isDarkMode
-                                ? const Color(0xFF2A3040)
-                                : const Color(0xFFEEF1FA),
-                            side: BorderSide.none,
-                            onSelected: (sel) {
-                              setState(() => _courseFilter = sel ? c : null);
-                            },
+                                            : AppColors.ink))),
                           ),
-                        )),
+                        ),
+                      );
+                    }),
                   ],
                 ),
               ),
@@ -233,6 +246,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
           ],
         );
       },
+    ),
     );
   }
 

@@ -98,7 +98,15 @@ export class GroupsService {
   async listMyGroups(userId: string) {
     const memberships = await this.prisma.groupMember.findMany({
       where: { userId, leftAt: null },
-      include: { group: true },
+      include: {
+        group: {
+          include: {
+            members: {
+              where: { leftAt: null },
+            },
+          },
+        },
+      },
       orderBy: { joinedAt: 'desc' },
     });
     return memberships.map((membership) => ({
@@ -106,6 +114,7 @@ export class GroupsService {
       name: membership.group.name,
       description: membership.group.description,
       inviteCode: membership.group.inviteCode,
+      memberCount: membership.group.members.length,
       role: membership.role.toLowerCase(),
       joinedAt: membership.joinedAt,
     }));
@@ -133,7 +142,7 @@ export class GroupsService {
 
   async listActivities(userId: string, groupId: string) {
     await this.ensureMember(userId, groupId);
-    return this.prisma.studyActivity.findMany({
+    const activities = await this.prisma.studyActivity.findMany({
       where: { groupId },
       include: {
         user: {
@@ -143,6 +152,22 @@ export class GroupsService {
       orderBy: { happenedAt: 'desc' },
       take: 50,
     });
+    return activities.map((activity) => ({
+      id: activity.id,
+      type: activity.type,
+      title: activity.title,
+      summary: activity.summary,
+      sourceType: activity.sourceType,
+      sourceId: activity.sourceId,
+      payloadJson: activity.payloadJson,
+      happenedAt: activity.happenedAt,
+      createdAt: activity.createdAt,
+      user: {
+        id: activity.user.id,
+        username: activity.user.username,
+        profile: activity.user.profile,
+      },
+    }));
   }
 
   async leave(userId: string, groupId: string) {

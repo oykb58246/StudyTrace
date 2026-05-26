@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../src/services/notification_service.dart';
 import '../src/theme/app_theme.dart';
@@ -14,6 +16,9 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'StudyTrace',
       theme: buildAppTheme(),
+      routes: {
+        '/login': (_) => const WelcomeScreen(),
+      },
       home: const WelcomeScreen(),
     );
   }

@@ -1,10 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:lordicon/lordicon.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -12,6 +11,8 @@ import '../../controllers/app_data_controller.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_study_service.dart';
+import '../../services/local_storage_service.dart';
+import '../../services/ocr_service.dart';
 import '../../theme/app_theme.dart';
 import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
@@ -31,6 +32,7 @@ class HomePage extends StatelessWidget {
     this.onOpenNotes,
     this.onOpenTimer,
     this.onOpenFlashCards,
+    this.onOpenLearningMoments,
     this.onOpenDashboard,
     this.onOpenStudyGroup,
     this.onOpenLeaderboard,
@@ -49,6 +51,7 @@ class HomePage extends StatelessWidget {
   final VoidCallback? onOpenNotes;
   final VoidCallback? onOpenTimer;
   final VoidCallback? onOpenFlashCards;
+  final VoidCallback? onOpenLearningMoments;
   final VoidCallback? onOpenDashboard;
   final VoidCallback? onOpenStudyGroup;
   final VoidCallback? onOpenLeaderboard;
@@ -119,6 +122,13 @@ class HomePage extends StatelessWidget {
                 isDarkMode: isDarkMode,
                 onTap: onOpenAiChat ?? onOpenAiAssistant,
               ),
+              const SizedBox(height: 14),
+              _HomeAiSuggestion(
+                isDarkMode: isDarkMode,
+                controller: controller,
+                onOpenAssistant: onOpenAiAssistant,
+                onOpenTasks: onOpenTasks,
+              ),
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -172,11 +182,15 @@ class HomePage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 18),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                clipBehavior: Clip.none,
-                child: Row(
-                  children: [
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final shortcuts = [
+                    _HomeShortcut(
+                      label: '学迹动态',
+                      asset: 'assets/icons/home_continue.png',
+                      isDarkMode: isDarkMode,
+                      onTap: onOpenLearningMoments,
+                    ),
                     _HomeShortcut(
                       label: '知识闪卡',
                       asset: 'assets/icons/home_flashcard.png',
@@ -207,8 +221,42 @@ class HomePage extends StatelessWidget {
                       isDarkMode: isDarkMode,
                       onTap: onOpenLeaderboard,
                     ),
-                  ],
-                ),
+                  ];
+                  final scrolledShortcuts = <Widget>[
+                    for (var i = 0; i < shortcuts.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 12),
+                      shortcuts[i],
+                    ],
+                  ];
+
+                  if (constraints.maxWidth >= 760) {
+                    return Align(
+                      alignment: Alignment.center,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: shortcuts,
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (constraints.maxWidth >= 520) {
+                    return Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: shortcuts,
+                    );
+                  }
+
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    clipBehavior: Clip.none,
+                    child: Row(children: scrolledShortcuts),
+                  );
+                },
               ),
               const SizedBox(height: 24),
               _ProgressPanel(
@@ -468,7 +516,7 @@ class _HomeAiChatEntry extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI 对话',
+                      'AI 学习驾驶舱',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -480,7 +528,7 @@ class _HomeAiChatEntry extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '问计划、记学习、做复盘',
+                      '拍照、记忆检索、路径规划',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -785,50 +833,47 @@ class _HomeShortcut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: SizedBox(
-            width: 72,
-            child: _GlassCard(
-              isDarkMode: isDarkMode,
-              height: 92,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-              radius: 22,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: isDarkMode
-                          ? Colors.white.withValues(alpha: 0.05)
-                          : Colors.white.withValues(alpha: 0.36),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Center(
-                      child: _HomeAnimatedIcon(asset: asset, size: 44),
-                    ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: SizedBox(
+          width: 84,
+          child: _GlassCard(
+            isDarkMode: isDarkMode,
+            height: 92,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+            radius: 22,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: isDarkMode
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : Colors.white.withValues(alpha: 0.36),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isDarkMode ? Colors.white70 : AppColors.ink,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  child: Center(
+                    child: _HomeAnimatedIcon(asset: asset, size: 44),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isDarkMode ? Colors.white70 : AppColors.ink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1238,10 +1283,9 @@ class _AiCreateInput extends StatefulWidget {
 }
 
 class _AiCreateInputState extends State<_AiCreateInput> {
-  final _aiService = AiStudyService();
   final _inputController = TextEditingController();
   final _speech = stt.SpeechToText();
-  final _imagePicker = ImagePicker();
+  late final OcrService _ocrService;
 
   _AiCreateMode _mode = _AiCreateMode.log;
   bool _isListening = false;
@@ -1254,6 +1298,7 @@ class _AiCreateInputState extends State<_AiCreateInput> {
   @override
   void initState() {
     super.initState();
+    _ocrService = widget.controller.createOcrService();
     if (_isPhoto) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _pickPhoto());
     } else {
@@ -1334,21 +1379,13 @@ class _AiCreateInputState extends State<_AiCreateInput> {
     _didAutoPick = true;
     try {
       setState(() => _statusText = '正在读取图片...');
-      final picked = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 92,
-      );
-      if (picked == null) {
-        if (mounted) setState(() => _statusText = '可重新拍照或手动输入内容');
-        return;
-      }
-      final inputImage = InputImage.fromFilePath(picked.path);
-      final recognizer = TextRecognizer(
-        script: TextRecognitionScript.chinese,
-      );
-      final result = await recognizer.processImage(inputImage);
-      await recognizer.close();
-      final text = result.text.trim();
+      final text = (await _ocrService.captureAndRecognize(
+            onStatus: (status) {
+              if (mounted) setState(() => _statusText = status);
+            },
+          ))
+              ?.trim() ??
+          '';
       if (!mounted) return;
       setState(() {
         _inputController.text = text;
@@ -1372,7 +1409,7 @@ class _AiCreateInputState extends State<_AiCreateInput> {
     setState(() => _isProcessing = true);
     try {
       if (_mode == _AiCreateMode.log) {
-        final log = await _aiService.generateStudyLog(input);
+        final log = await widget.controller.aiStudyService.generateStudyLog(input);
         await widget.controller.addStudyLog(
           date: DateTime.now(),
           courseName: log.courseName,
@@ -1382,7 +1419,7 @@ class _AiCreateInputState extends State<_AiCreateInput> {
           nextPlan: log.nextPlan,
         );
       } else {
-        final plan = await _aiService.generateTaskPlan(input);
+        final plan = await widget.controller.aiStudyService.generateTaskPlan(input);
         final now = DateTime.now();
         final planned = plan.plannedSubTasks.isNotEmpty
             ? plan.plannedSubTasks
@@ -1433,6 +1470,7 @@ class _AiCreateInputState extends State<_AiCreateInput> {
   @override
   void dispose() {
     _speech.stop();
+    _ocrService.dispose();
     _inputController.dispose();
     super.dispose();
   }
@@ -1620,7 +1658,6 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
   bool _isInitialized = false;
   bool _isCheckingSpeech = true;
   String _speechError = '';
-  final _aiService = AiStudyService();
   final _manualController = TextEditingController();
 
   @override
@@ -1714,7 +1751,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
     setState(() => _isProcessing = true);
 
     try {
-      final plan = await _aiService.generateTaskPlan(text);
+      final plan = await widget.controller.aiStudyService.generateTaskPlan(text);
       final now = DateTime.now();
       final subTasks = plan.plannedSubTasks.isNotEmpty
           ? plan.plannedSubTasks.map((p) => StudySubTaskItem(
@@ -1955,6 +1992,319 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+
+// ── Home 顶部 AI 建议卡 ──
+// 首次渲染异步读取缓存；过期 / 无缓存时调 AI 生成一条行动建议。
+class _HomeAiSuggestion extends StatefulWidget {
+  const _HomeAiSuggestion({
+    required this.isDarkMode,
+    required this.controller,
+    this.onOpenAssistant,
+    this.onOpenTasks,
+  });
+
+  final bool isDarkMode;
+  final AppDataController controller;
+  final VoidCallback? onOpenAssistant;
+  final VoidCallback? onOpenTasks;
+
+  @override
+  State<_HomeAiSuggestion> createState() => _HomeAiSuggestionState();
+}
+
+class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
+  static const _cacheKey = 'home_ai_suggestion_v1';
+  static const _cacheDuration = Duration(minutes: 30);
+  final _storage = LocalStorageService();
+
+  String? _text;
+  bool _loading = false;
+  bool _dismissed = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadOrFetch());
+  }
+
+  Future<void> _dismiss() async {
+    setState(() => _dismissed = true);
+    // 在缓存里记一下 dismissed，缓存过期前不再打扰用户
+    try {
+      await _storage.setString(
+        _cacheKey,
+        jsonEncode({
+          'savedAt': DateTime.now().toIso8601String(),
+          'text': _text ?? '',
+          'dismissed': true,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _loadOrFetch({bool force = false}) async {
+    if (_dismissed) return;
+    final storage = _storage;
+    if (!force) {
+      // 读缓存
+      try {
+        final raw = await storage.getString(_cacheKey);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw) as Map<String, dynamic>;
+          final savedAt = DateTime.tryParse(decoded['savedAt'] as String? ?? '');
+          final text = decoded['text'] as String? ?? '';
+          final dismissed = decoded['dismissed'] as bool? ?? false;
+          if (savedAt != null &&
+              text.isNotEmpty &&
+              DateTime.now().difference(savedAt) < _cacheDuration) {
+            if (mounted) {
+              setState(() {
+                _text = text;
+                _dismissed = dismissed;
+              });
+            }
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _hasError = false;
+    });
+    try {
+      final tasks = widget.controller.studyTasks;
+      final logs = widget.controller.studyLogs;
+      if (tasks.isEmpty && logs.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _text = '还没记录学习数据，从「AI 对话」开始一下吧。';
+          });
+        }
+        return;
+      }
+      final aiService = widget.controller.aiStudyService;
+      final warnings = await aiService.generateRiskWarnings(
+        logs: logs,
+        tasks: tasks,
+      );
+      String text;
+      if (warnings.isEmpty) {
+        text = '当前没有明显学习风险，继续保持学习节奏。';
+      } else {
+        final first = warnings.first;
+        final buf = StringBuffer();
+        if (first.title.isNotEmpty) buf.write(first.title);
+        if (first.description.isNotEmpty) {
+          if (buf.isNotEmpty) buf.write('：');
+          buf.write(first.description);
+        }
+        text = buf.toString();
+      }
+      await storage.setString(
+        _cacheKey,
+        jsonEncode({
+          'savedAt': DateTime.now().toIso8601String(),
+          'text': text,
+        }),
+      );
+      if (mounted) {
+        setState(() {
+          _text = text;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _hasError = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_dismissed) {
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: const SizedBox.shrink(key: ValueKey('dismissed')),
+      );
+    }
+    if (_text == null && !_loading && !_hasError) {
+      return const SizedBox.shrink();
+    }
+
+    final accent = widget.controller.primaryColor;
+    final bg = widget.isDarkMode
+        ? const Color(0xFF242B37).withValues(alpha: 0.9)
+        : Colors.white.withValues(alpha: 0.85);
+    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor =
+        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      child: Container(
+        key: ValueKey('suggestion_$_text'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+          color: accent.withValues(alpha: 0.18),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.auto_awesome_rounded, color: accent, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'AI 建议',
+                      style: TextStyle(
+                        color: titleColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'beta',
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const Spacer(),
+                    InkWell(
+                      onTap: _dismiss,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(Icons.close_rounded,
+                            size: 16, color: bodyColor),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (_loading)
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: accent),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('AI 正在分析你的学习数据...',
+                          style: TextStyle(color: bodyColor, fontSize: 12)),
+                    ],
+                  )
+                else if (_hasError)
+                  Row(
+                    children: [
+                      Text('AI 建议暂不可用',
+                          style: TextStyle(color: bodyColor, fontSize: 12)),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => _loadOrFetch(force: true),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  )
+                else
+                  Text(
+                    _text ?? '',
+                    style: TextStyle(
+                        color: bodyColor, fontSize: 13, height: 1.5),
+                  ),
+                if (!_loading && !_hasError && _text != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      if (widget.onOpenTasks != null)
+                        TextButton.icon(
+                          onPressed: widget.onOpenTasks,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.task_alt_rounded, size: 14),
+                          label: const Text('查看任务',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                      if (widget.onOpenAssistant != null)
+                        TextButton.icon(
+                          onPressed: widget.onOpenAssistant,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(
+                              Icons.auto_awesome_rounded, size: 14),
+                          label: const Text('AI 助手',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: '刷新建议',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _loadOrFetch(force: true),
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
       ),
     );
   }

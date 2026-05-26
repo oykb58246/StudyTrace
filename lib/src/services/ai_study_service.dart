@@ -1,105 +1,104 @@
+import 'dart:async';
 import 'dart:convert';
 
-import '../models/ai_config.dart';
+import 'package:http/http.dart' as http;
+
+import '../models/ai_app_action.dart';
 import '../models/ai_flash_card.dart';
 import '../models/ai_generated_log.dart';
+import '../models/ai_learning_loop.dart';
 import '../models/ai_risk_warning.dart';
 import '../models/ai_study_analysis.dart';
 import '../models/ai_task_plan.dart';
 import '../models/study_log_item.dart';
 import '../models/study_task_item.dart';
 import 'ai_credential_service.dart';
-import 'blueheart_model_client.dart';
-import 'deepseek_client.dart';
+import 'ai_exceptions.dart';
+import 'api_client.dart';
 import 'local_storage_service.dart';
 
-/// AIGC 学习服务
+/// AIGC study service.
 ///
-/// 优先使用蓝心大模型（内置 AppKey），DeepSeek 作为备选。
-/// 未配置任何 AI 服务时抛出错误提示用户配置。
+/// Production AI calls are proxied through the backend. The Flutter app does
+/// not keep model provider keys or call provider APIs directly.
 class AiStudyService {
   AiStudyService({
     LocalStorageService? storage,
     AiCredentialService? credentials,
-    DeepSeekClient? deepSeekClient,
-    BlueHeartModelClient? blueHeartClient,
+    ApiClient? backendClient,
   })  : _storage = storage ?? LocalStorageService(),
         _credentials = credentials ?? AiCredentialService(),
-        _deepSeekClient = deepSeekClient ?? DeepSeekClient(),
-        _blueHeartClient = blueHeartClient ?? BlueHeartModelClient();
+        _backendClient = backendClient;
 
   final LocalStorageService _storage;
   final AiCredentialService _credentials;
-  final DeepSeekClient _deepSeekClient;
-  final BlueHeartModelClient _blueHeartClient;
+  final ApiClient? _backendClient;
 
-  static const _systemPrompt = '''
-你是 StudyTrace 的 AI 学习助手，StudyTrace 就是你正在运行的这个 App。
-你内置在 App 中，用户正在跟你对话。App 本身就有以下功能，你只需要告诉用户怎么用，并**直接帮他们执行操作**。
-
-你可以在回复末尾加上 ACTION 标签，App 会自动执行对应操作。支持的 ACTION：
-
-【ACTION:OPEN_TIMER】— 打开专注计时器（番茄钟倒计时，5/15/25/45/60分钟可选）
-【ACTION:OPEN_FLASHCARD】— 打开知识闪卡
-【ACTION:ADD_TASK】— 根据用户描述创建学习任务（带子任务和截止时间）
-【ACTION:SUMMARY_NOTE】— 从收藏闪卡整理生成学习笔记
-【ACTION:CREATE_LOG】— 根据对话内容创建学习日志（自动提取课程名、内容、问题、收获、计划）
-【ACTION:MARK_COMPLETED】— 标记指定任务为已完成（需要任务标题匹配）
-【ACTION:MARK_IN_PROGRESS】— 标记指定任务为进行中
-【ACTION:SAVE_NOTE】— 将对话内容保存为学习笔记
-【ACTION:SWITCH_CALENDAR】— 切换到日历页
-【ACTION:SWITCH_TASKS】— 切换到任务页
-【ACTION:SWITCH_LOGS】— 切换到记录页
-【ACTION:SWITCH_ARCHIVE】— 切换到归档页
-【ACTION:BACK_HOME】— 回到首页
-
-使用规则：
-- 每个回复最多使用 1-2 个 ACTION，放在回复最末尾
-- 如果用户明确说"帮我保存/记录/标记完成/切换到XX页"等，直接用对应 ACTION
-- 如果只是闲聊咨询，不要加 ACTION
-
-重要规则：
-- 你运行在 StudyTrace App 内部，所有功能都在 App 里，不要建议用户去微信、浏览器或其他外部工具
-- 使用简单的 Markdown 格式：加粗用 **文字**，列表用 - 开头，代码用 `` 包裹
-- 不要用 Markdown 表格，用简短清晰的段落和列表
-- 回复要完整，不要省略，不超过500字
-
-StudyTrace 功能介绍：
-1. 专注计时器 — 番茄钟倒计时
-2. 知识闪卡 — AI 生成问答卡片
-3. 学习笔记 — 多格式编辑器
-4. 学习任务 — 管理作业/实验/论文/项目/考试
-5. 学习日志 — 每日学习记录
-6. 学习日历 — 每日安排
-7. 周报分析 — AI 分析学习数据
-8. 课程管理 — 按课程分类管理''';
-
-  // ═══════════════════════════════════════════════════════════
-  // Public API
-  // ═══════════════════════════════════════════════════════════
-
-  Future<AiGeneratedLog> generateStudyLog(String input) async {
-    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
-    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
-      try {
-        return await _blueHeartGenerateStudyLog(input, blueHeartKey);
-      } catch (_) {}
-    }
-    final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) return _deepSeekGenerateStudyLog(input, runtime);
-    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
-  }
+  Future<AiGeneratedLog> generateStudyLog(String input) =>
+      _trackUsage(_doGenerateStudyLog(input));
 
   Future<AiTaskPlan> generateTaskPlan(String input) async {
-    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
-    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
-      try {
-        return await _blueHeartGenerateTaskPlan(input, blueHeartKey);
-      } catch (_) {}
-    }
-    final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) return _deepSeekGenerateTaskPlan(input, runtime);
-    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/task-plan', {'input': input});
+      return AiTaskPlan.fromJson(data);
+    }());
+  }
+
+  Future<List<DailyPlan>> generateWeeklyPlan({
+    required List<StudyTaskItem> existingTasks,
+    required List<StudyLogItem> recentLogs,
+    required List<String> courses,
+    int days = 7,
+  }) async {
+    final pendingTasks = existingTasks
+        .where((task) => task.effectiveStatus != StudyTaskStatus.completed)
+        .take(12)
+        .map((task) => {
+              'title': task.title,
+              'courseName': task.courseName,
+              'deadline': task.deadline.toIso8601String(),
+              'status': task.status.name,
+              'note': task.note,
+            })
+        .toList();
+    final logsSummary = recentLogs
+        .take(10)
+        .map((log) => {
+              'date': log.date.toIso8601String(),
+              'courseName': log.courseName,
+              'content': log.content,
+              'nextPlan': log.nextPlan,
+            })
+        .toList();
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/weekly-plan', {
+        'tasks': pendingTasks,
+        'logs': logsSummary,
+        'courses': courses,
+        'days': days,
+      });
+      return _parseDailyPlans(data['plans']);
+    }());
+  }
+
+  Future<AiLearningLoopPlan> generateLearningLoop({
+    required String sourceText,
+    String? imageBase64,
+    String sourceKind = 'manual',
+    String target = 'all',
+    List<String> context = const [],
+  }) async {
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/learning-loop', {
+        'sourceText': sourceText,
+        if (imageBase64 != null && imageBase64.isNotEmpty)
+          'imageBase64': imageBase64,
+        'sourceKind': sourceKind,
+        'target': target,
+        if (context.isNotEmpty) 'context': context,
+      });
+      return AiLearningLoopPlan.fromJson(data);
+    }());
   }
 
   Future<AiStudyAnalysis> generateWeeklyAnalysis({
@@ -108,59 +107,106 @@ StudyTrace 功能介绍：
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
-    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
-      try {
-        return await _blueHeartGenerateWeeklyAnalysis(
-            logs: logs, tasks: tasks,
-            startDate: startDate, endDate: endDate, apiKey: blueHeartKey);
-      } catch (_) {}
-    }
-    final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) {
-      return _deepSeekGenerateWeeklyAnalysis(
-          logs: logs, tasks: tasks,
-          startDate: startDate, endDate: endDate, runtime: runtime);
-    }
-    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/weekly-analysis', {
+        'logs': logs.map((log) => log.toJson()).toList(),
+        'tasks': tasks.map((task) => task.toJson()).toList(),
+        'startDate': startDate.toIso8601String(),
+        'endDate': endDate.toIso8601String(),
+      });
+      return AiStudyAnalysis.fromJson(data);
+    }());
   }
 
   Future<List<AiRiskWarning>> generateRiskWarnings({
     required List<StudyLogItem> logs,
     required List<StudyTaskItem> tasks,
   }) async {
-    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
-    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
-      try {
-        return await _blueHeartGenerateRiskWarnings(
-            logs: logs, tasks: tasks, apiKey: blueHeartKey);
-      } catch (_) {}
-    }
-    final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) {
-      return _deepSeekGenerateRiskWarnings(
-          logs: logs, tasks: tasks, runtime: runtime);
-    }
-    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/risk-warnings', {
+        'logs': logs.map((log) => log.toJson()).toList(),
+        'tasks': tasks.map((task) => task.toJson()).toList(),
+      });
+      final warnings = data['warnings'];
+      if (warnings is! List) return <AiRiskWarning>[];
+      return warnings
+          .whereType<Map<String, dynamic>>()
+          .map(AiRiskWarning.fromJson)
+          .toList();
+    }());
   }
 
   Future<List<AiFlashCard>> generateFlashCards({
     required List<StudyLogItem> logs,
     int count = 5,
   }) async {
-    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
-    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
-      try {
-        return await _blueHeartGenerateFlashCards(
-            logs: logs, count: count, apiKey: blueHeartKey);
-      } catch (_) {}
-    }
-    final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) {
-      return _deepSeekGenerateFlashCards(
-          logs: logs, count: count, runtime: runtime);
-    }
-    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
+    if (logs.isEmpty) return [];
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/flash-cards', {
+        'logs': logs.map((log) => log.toJson()).toList(),
+        'count': count,
+      });
+      final cards = data['cards'];
+      if (cards is! List) return <AiFlashCard>[];
+      return cards
+          .whereType<Map<String, dynamic>>()
+          .map(AiFlashCard.fromJson)
+          .where((card) => card.question.trim().isNotEmpty)
+          .toList();
+    }());
+  }
+
+  Future<String> rewriteOrExpand({
+    required String text,
+    required String intent,
+  }) async {
+    final source = text.trim();
+    if (source.isEmpty) return '';
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/rewrite', {
+        'text': source,
+        'intent': intent,
+      });
+      return (data['text'] as String?)?.trim() ?? '';
+    }());
+  }
+
+  Future<FlashCardGrade> gradeFlashcard({
+    required String question,
+    required String correctAnswer,
+    required String userAnswer,
+    String courseName = '',
+  }) async {
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/grade-flashcard', {
+        'question': question,
+        'correctAnswer': correctAnswer,
+        'userAnswer': userAnswer,
+        if (courseName.isNotEmpty) 'courseName': courseName,
+      });
+      final score = (data['score'] as num?)?.toInt() ?? 3;
+      final feedback = (data['feedback'] as String?)?.trim() ?? '';
+      return FlashCardGrade(
+        score: score.clamp(1, 5),
+        feedback: feedback.isEmpty ? 'AI 没有给出反馈' : feedback,
+      );
+    }());
+  }
+
+  Future<AiAssistantTurn> generateAssistantTurn({
+    required String input,
+    List<String> appContext = const [],
+    List<Map<String, dynamic>> messages = const [],
+    String? imageBase64,
+    bool thinkingEnabled = false,
+  }) {
+    return _trackUsage(_doGenerateAssistantTurn(
+      input: input,
+      appContext: appContext,
+      messages: messages,
+      imageBase64: imageBase64,
+      thinkingEnabled: thinkingEnabled,
+    ));
   }
 
   Future<String> generateAssistantReply({
@@ -170,20 +216,20 @@ StudyTrace 功能介绍：
     String? imageBase64,
     String purpose = 'chat',
   }) async {
-    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
-    if (blueHeartKey != null && blueHeartKey.isNotEmpty) {
-      try {
-        return await _blueHeartGenerateAssistantReply(
-            input: input, context: context, messages: messages,
-            imageBase64: imageBase64, purpose: purpose, apiKey: blueHeartKey);
-      } catch (_) {}
-    }
-    final runtime = await _loadDeepSeekRuntime();
-    if (runtime != null) {
-      return _deepSeekGenerateAssistantReply(
-          input: input, context: context, purpose: purpose, runtime: runtime);
-    }
-    throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
+    return _trackUsage(() async {
+      final data = await _postBackend('/ai/chat', {
+        'input': input,
+        if (context.isNotEmpty) 'context': context,
+        if (messages.isNotEmpty) 'messages': messages,
+        if (imageBase64 != null && imageBase64.isNotEmpty)
+          'imageBase64': imageBase64,
+        'purpose': purpose,
+        'options': await _aiOptions(),
+      });
+      final content = data['content'];
+      if (content is String && content.trim().isNotEmpty) return content.trim();
+      throw const AiServiceException('AI 返回格式异常');
+    }());
   }
 
   Stream<String> generateAssistantReplyStream({
@@ -194,347 +240,226 @@ StudyTrace 功能介绍：
     String purpose = 'chat',
     bool thinkingEnabled = false,
   }) async* {
-    final blueHeartKey = await _credentials.loadBlueHeartAppKey();
-    if (blueHeartKey == null || blueHeartKey.isEmpty) {
-      throw const AiServiceException('请先在 AI 设置中配置蓝心或 DeepSeek');
-    }
-    try {
-      final config = await _storage.loadAiConfig();
-      final systemPrompt = switch (purpose) {
-        'note' => '你是 StudyTrace 的学习笔记整理助手。根据用户的收藏、对话和学习记录，生成可直接保存的学习笔记。',
-        'task' => '你是 StudyTrace 的任务编排助手。根据学习目标和上下文，给出可执行建议，并在需要时用【ACTION:OPEN_TIMER】、【ACTION:ADD_TASK】、【ACTION:MARK_COMPLETED】、【ACTION:MARK_IN_PROGRESS】或【ACTION:CREATE_LOG】标注动作。',
-        _ => _systemPrompt,
-      };
-      yield* _blueHeartClient.chatStream(
-        apiKey: blueHeartKey,
-        systemPrompt: systemPrompt,
-        userPrompt: messages.isEmpty ? input : null,
-        messages: messages.isEmpty ? null : [...messages, {'role': 'user', 'content': input}],
-        imageBase64: imageBase64,
-        model: config.blueHeartModel,
-        temperature: config.temperature,
-        maxTokens: config.maxTokens < 2000 ? 2000 : config.maxTokens,
-        topP: config.topP,
-        thinkingEnabled: thinkingEnabled || config.thinkingEnabled,
-        frequencyPenalty: config.frequencyPenalty,
-        presencePenalty: config.presencePenalty,
-        reasoningEffort: config.reasoningEffort,
-      );
-    } catch (e) {
-      yield 'AI 回复失败：$e';
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // DeepSeek 实现
-  // ═══════════════════════════════════════════════════════════
-
-  Future<_AiRuntime?> _loadDeepSeekRuntime() async {
+    final backend = _requireBackend();
     final config = await _storage.loadAiConfig();
-    if (!config.isEnabled || config.provider != 'deepseek') return null;
-    final apiKey = await _credentials.loadDeepSeekApiKey();
-    if (apiKey == null || apiKey.isEmpty) return null;
-    return _AiRuntime(config: config, apiKey: apiKey);
-  }
-
-  Future<AiGeneratedLog> _deepSeekGenerateStudyLog(String input, _AiRuntime runtime) async {
-    if (input.trim().isEmpty) return const AiGeneratedLog();
-    final result = await _deepSeekClient.chatJson(
-      config: runtime.config, apiKey: runtime.apiKey,
-      systemPrompt: _sys('你需要把大学生的自然语言学习描述整理成结构化学习日志。'),
-      userPrompt: '请根据输入生成 JSON，字段必须为：\n{"courseName":"课程名或未归类","content":"今日学习内容","problems":"遇到的问题","thoughts":"思考与收获","nextPlan":"下一步计划"}\n\n输入：\n$input',
-    );
-    return AiGeneratedLog(
-      courseName: _req(result, 'courseName'), content: _req(result, 'content'),
-      problems: _str(result['problems']), thoughts: _str(result['thoughts']),
-      nextPlan: _str(result['nextPlan']),
-    );
-  }
-
-  Future<AiTaskPlan> _deepSeekGenerateTaskPlan(String input, _AiRuntime runtime) async {
-    if (input.trim().isEmpty) {
-      return AiTaskPlan(mainTitle: '', taskType: StudyTaskType.other,
-          courseName: '', deadline: DateTime.now().add(const Duration(days: 7)),
-          subTasks: const [], schedule: '');
-    }
-    final result = await _deepSeekClient.chatJson(
-      config: runtime.config, apiKey: runtime.apiKey,
-      systemPrompt: _sys('你需要把复杂学习任务拆成可执行计划。'),
-      userPrompt: '今天：${DateTime.now().toIso8601String()}\n请生成 JSON：{"mainTitle":"","taskType":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","courseName":"","deadline":"ISO8601","difficulty":"较轻松|中等|困难","subTasks":[""],"plannedSubTasks":[{"title":"","deadline":"ISO8601","note":""}],"schedule":""}\n输入：$input',
-    );
-    final raw = result['plannedSubTasks'];
-    final planned = raw is List ? raw.whereType<Map<String, dynamic>>().map((j) => AiPlannedSubTask.fromJson(j)).toList() : <AiPlannedSubTask>[];
-    return AiTaskPlan.fromJson({...result, 'plannedSubTasks': raw ?? planned});
-  }
-
-  Future<AiStudyAnalysis> _deepSeekGenerateWeeklyAnalysis({
-    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks,
-    required DateTime startDate, required DateTime endDate, required _AiRuntime runtime,
-  }) async {
-    final result = await _deepSeekClient.chatJson(
-      config: runtime.config, apiKey: runtime.apiKey,
-      systemPrompt: _sys('你需要根据学习日志和任务数据生成分析型学习周报。'),
-      userPrompt: '分析周期：${_fmt(startDate)} 至 ${_fmt(endDate)}\n学习日志：${_logs(logs)}\n任务：${_tasks(tasks)}\n请生成 JSON：{"mainTopics":"","courseDistribution":"","frequentProblems":"","completedTasks":"","riskTasks":"","statusEvaluation":"","nextWeekPriority":""}',
-      maxTokens: 2200,
-    );
-    return AiStudyAnalysis(
-      mainTopics: _str(result['mainTopics']), courseDistribution: _str(result['courseDistribution']),
-      frequentProblems: _str(result['frequentProblems']), completedTasks: _str(result['completedTasks']),
-      riskTasks: _str(result['riskTasks']), statusEvaluation: _str(result['statusEvaluation']),
-      nextWeekPriority: _str(result['nextWeekPriority']),
-    );
-  }
-
-  Future<List<AiRiskWarning>> _deepSeekGenerateRiskWarnings({
-    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks, required _AiRuntime runtime,
-  }) async {
-    final result = await _deepSeekClient.chatJson(
-      config: runtime.config, apiKey: runtime.apiKey,
-      systemPrompt: _sys('你需要识别大学生学习计划中的风险，只输出明确可执行的提醒。'),
-      userPrompt: '今天：${_fmt(DateTime.now())}\n日志：${_logs(logs)}\n任务：${_tasks(tasks)}\n请生成 JSON：{"warnings":[{"title":"","description":"","level":"low|medium|high","category":"deadline|gap|completionRate|logFrequency|repeatedProblem"}]}\n没有风险返回 {"warnings":[]}',
-      maxTokens: 1800,
-    );
-    final raw = result['warnings'];
-    if (raw is! List) throw const AiServiceException('AI 返回格式异常');
-    return raw.map((item) {
-      if (item is! Map) throw const AiServiceException('AI 返回格式异常');
-      final m = item.cast<String, dynamic>();
-      return AiRiskWarning(
-        title: _req(m, 'title'), description: _req(m, 'description'),
-        level: _riskLevel(_str(m['level'], fallback: 'medium')),
-        category: _str(m['category'], fallback: 'deadline'),
-      );
-    }).toList();
-  }
-
-  Future<List<AiFlashCard>> _deepSeekGenerateFlashCards({
-    required List<StudyLogItem> logs, required int count, required _AiRuntime runtime,
-  }) async {
-    if (logs.isEmpty) return [];
-    final result = await _deepSeekClient.chatJson(
-      config: runtime.config, apiKey: runtime.apiKey,
-      systemPrompt: _sys('你需要根据学习日志生成问答闪卡，帮助巩固知识点。'),
-      userPrompt: '日志：${_logs(logs)}\n生成 $count 张闪卡，JSON：{"cards":[{"question":"","answer":"","courseName":"","hint":""}]}',
-      maxTokens: 2000,
-    );
-    final raw = result['cards'];
-    if (raw is! List) return [];
-    return raw.whereType<Map>().map((item) {
-      final m = item.cast<String, dynamic>();
-      final now = DateTime.now();
-      return AiFlashCard(
-        id: 'fc_ds_${now.microsecondsSinceEpoch}_${now.millisecondsSinceEpoch}',
-        question: _str(m['question'], fallback: ''),
-        answer: _str(m['answer'], fallback: ''),
-        courseName: _str(m['courseName'], fallback: ''),
-        hint: _str(m['hint']),
-        createdAt: now,
-      );
-    }).where((c) => c.question.isNotEmpty).toList();
-  }
-
-  Future<String> _deepSeekGenerateAssistantReply({
-    required String input, required List<String> context,
-    required String purpose, required _AiRuntime runtime,
-  }) async {
-    final sp = switch (purpose) {
-      'note' => '你是 StudyTrace 的学习笔记整理助手。',
-      'task' => '你是 StudyTrace 的任务编排助手。在需要时用【ACTION:ADD_TASK】、【ACTION:MARK_COMPLETED】标注动作。',
-      _ => '你是 StudyTrace 的 AI 学习助手。在需要时用【ACTION:OPEN_TIMER】、【ACTION:OPEN_FLASHCARD】、【ACTION:ADD_TASK】、【ACTION:CREATE_LOG】、【ACTION:MARK_COMPLETED】、【ACTION:MARK_IN_PROGRESS】、【ACTION:SAVE_NOTE】标注动作。',
+    final body = {
+      'input': input,
+      if (context.isNotEmpty) 'context': context,
+      if (messages.isNotEmpty) 'messages': messages,
+      if (imageBase64 != null && imageBase64.isNotEmpty)
+        'imageBase64': imageBase64,
+      'purpose': purpose,
+      'thinkingEnabled': thinkingEnabled || config.thinkingEnabled,
+      'options': await _aiOptions(minMaxTokens: 2000),
     };
-    return _deepSeekClient.chatText(
-      config: runtime.config, apiKey: runtime.apiKey, systemPrompt: sp,
-      userPrompt: [if (context.isNotEmpty) '上下文：\n${context.join('\n')}', '用户输入：$input',
-        if (purpose == 'note') '请输出简洁的学习笔记正文' else '请优先给出明确、可执行、简洁的回答。'].join('\n\n'),
-      maxTokens: purpose == 'note' ? 1800 : 1200,
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // 蓝心大模型实现
-  // ═══════════════════════════════════════════════════════════
-
-  Future<AiGeneratedLog> _blueHeartGenerateStudyLog(String input, String apiKey) async {
-    if (input.trim().isEmpty) return const AiGeneratedLog();
-    final cfg = await _storage.loadAiConfig();
-    final result = await _blueHeartClient.chatJson(
-      apiKey: apiKey, model: cfg.blueHeartModel,
-      temperature: cfg.temperature, maxTokens: cfg.maxTokens,
-      topP: cfg.topP, thinkingEnabled: cfg.thinkingEnabled,
-      systemPrompt: _sys('你需要把大学生的自然语言学习描述整理成结构化学习日志。'),
-      userPrompt: '请根据输入生成 JSON：{"courseName":"","content":"","problems":"","thoughts":"","nextPlan":""}\n输入：$input',
-    );
-    return AiGeneratedLog(
-      courseName: _req(result, 'courseName'), content: _req(result, 'content'),
-      problems: _str(result['problems']), thoughts: _str(result['thoughts']),
-      nextPlan: _str(result['nextPlan']),
-    );
-  }
-
-  Future<AiTaskPlan> _blueHeartGenerateTaskPlan(String input, String apiKey) async {
-    if (input.trim().isEmpty) {
-      return AiTaskPlan(mainTitle: '', taskType: StudyTaskType.other,
-          courseName: '', deadline: DateTime.now().add(const Duration(days: 7)),
-          subTasks: const [], schedule: '');
+    final request = http.Request(
+      'POST',
+      Uri.parse('${backend.baseUrl}/ai/chat/stream'),
+    )
+      ..headers['Content-Type'] = 'application/json'
+      ..headers['Accept'] = 'text/event-stream'
+      ..headers['Cache-Control'] = 'no-cache'
+      ..body = jsonEncode(body);
+    final token = await _credentials.getAuthToken();
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
     }
-    final cfg = await _storage.loadAiConfig();
-    final result = await _blueHeartClient.chatJson(
-      apiKey: apiKey, model: cfg.blueHeartModel,
-      temperature: cfg.temperature, maxTokens: cfg.maxTokens,
-      topP: cfg.topP, thinkingEnabled: cfg.thinkingEnabled,
-      systemPrompt: _sys('你需要把复杂学习任务拆成可执行计划。'),
-      userPrompt: '今天：${DateTime.now().toIso8601String()}\n请生成：{"mainTitle":"","taskType":"classHomework|...|other","courseName":"","deadline":"ISO8601","subTasks":[""],"schedule":""}\n输入：$input',
-    );
-    final raw = result['plannedSubTasks'];
-    final planned = raw is List ? raw.whereType<Map<String, dynamic>>().map((j) => AiPlannedSubTask.fromJson(j)).toList() : <AiPlannedSubTask>[];
-    return AiTaskPlan.fromJson({...result, 'plannedSubTasks': raw ?? planned});
+
+    try {
+      final response = await http.Client().send(request);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final errorBody = await response.stream.bytesToString();
+        throw AiServiceException('后端 AI 请求失败', detail: errorBody);
+      }
+      final stream =
+          response.stream.transform(utf8.decoder).transform(const LineSplitter());
+      await for (final line in stream) {
+        if (!line.startsWith('data:')) continue;
+        final data = line.substring(5).trim();
+        if (data.isEmpty || data == '[DONE]') continue;
+        final decoded = jsonDecode(data);
+        if (decoded is Map && decoded['delta'] is String) {
+          final delta = decoded['delta'] as String;
+          if (delta.isNotEmpty) yield delta;
+        }
+      }
+    } on AiServiceException {
+      rethrow;
+    } catch (error) {
+      throw AiServiceException('AI 服务暂时不可用，请稍后重试', detail: '$error');
+    }
   }
 
-  Future<AiStudyAnalysis> _blueHeartGenerateWeeklyAnalysis({
-    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks,
-    required DateTime startDate, required DateTime endDate, required String apiKey,
-  }) async {
-    final cfg = await _storage.loadAiConfig();
-    final result = await _blueHeartClient.chatJson(
-      apiKey: apiKey, model: cfg.blueHeartModel,
-      temperature: cfg.temperature, topP: cfg.topP,
-      thinkingEnabled: cfg.thinkingEnabled,
-      systemPrompt: _sys('你需要根据学习日志和任务数据生成分析型学习周报。'),
-      userPrompt: '分析：${_fmt(startDate)}~${_fmt(endDate)}\n日志：${_logs(logs)}\n任务：${_tasks(tasks)}\nJSON：{"mainTopics":"","courseDistribution":"","frequentProblems":"","completedTasks":"","riskTasks":"","statusEvaluation":"","nextWeekPriority":""}',
-      maxTokens: 2200,
-    );
-    return AiStudyAnalysis(
-      mainTopics: _str(result['mainTopics']), courseDistribution: _str(result['courseDistribution']),
-      frequentProblems: _str(result['frequentProblems']), completedTasks: _str(result['completedTasks']),
-      riskTasks: _str(result['riskTasks']), statusEvaluation: _str(result['statusEvaluation']),
-      nextWeekPriority: _str(result['nextWeekPriority']),
-    );
+  Future<int> todayUsageCount() => _storage.getTodayAiUsageCount();
+
+  Future<AiUsageToday> todayUsage() async {
+    final backend = _requireBackend();
+    try {
+      final data = await backend.getJson('/ai/usage/today');
+      return AiUsageToday.fromJson(data);
+    } on ApiException catch (error) {
+      throw AiServiceException(error.displayMessage, detail: error.detail);
+    }
   }
 
-  Future<List<AiRiskWarning>> _blueHeartGenerateRiskWarnings({
-    required List<StudyLogItem> logs, required List<StudyTaskItem> tasks, required String apiKey,
-  }) async {
-    final cfg = await _storage.loadAiConfig();
-    final result = await _blueHeartClient.chatJson(
-      apiKey: apiKey, model: cfg.blueHeartModel,
-      temperature: cfg.temperature, topP: cfg.topP,
-      thinkingEnabled: cfg.thinkingEnabled,
-      systemPrompt: _sys('你需要识别大学生学习计划中的风险，只输出明确可执行的提醒。'),
-      userPrompt: '今天：${_fmt(DateTime.now())}\n日志：${_logs(logs)}\n任务：${_tasks(tasks)}\nJSON：{"warnings":[{"title":"","description":"","level":"low|medium|high","category":"deadline|gap|completionRate|logFrequency|repeatedProblem"}]}',
-      maxTokens: 1800,
-    );
-    final raw = result['warnings'];
-    if (raw is! List) throw const AiServiceException('AI 返回格式异常');
-    return raw.map((item) {
-      if (item is! Map) throw const AiServiceException('AI 返回格式异常');
-      final m = item.cast<String, dynamic>();
-      return AiRiskWarning(
-        title: _req(m, 'title'), description: _req(m, 'description'),
-        level: _riskLevel(_str(m['level'], fallback: 'medium')),
-        category: _str(m['category'], fallback: 'deadline'),
-      );
-    }).toList();
+  Future<AiGeneratedLog> _doGenerateStudyLog(String input) async {
+    final data = await _postBackend('/ai/study-log', {'input': input});
+    return AiGeneratedLog.fromJson(data);
   }
 
-  Future<List<AiFlashCard>> _blueHeartGenerateFlashCards({
-    required List<StudyLogItem> logs, required int count, required String apiKey,
-  }) async {
-    if (logs.isEmpty) return [];
-    final cfg = await _storage.loadAiConfig();
-    final result = await _blueHeartClient.chatJson(
-      apiKey: apiKey, model: cfg.blueHeartModel,
-      temperature: cfg.temperature, topP: cfg.topP,
-      thinkingEnabled: cfg.thinkingEnabled,
-      systemPrompt: _sys('你需要根据学习日志生成问答闪卡，帮助巩固知识点。'),
-      userPrompt: '日志：${_logs(logs)}\n生成 $count 张闪卡：{"cards":[{"question":"","answer":"","courseName":"","hint":""}]}',
-      maxTokens: 2000,
-    );
-    final raw = result['cards'];
-    if (raw is! List) return [];
-    return raw.whereType<Map>().map((item) {
-      final m = item.cast<String, dynamic>();
-      final now = DateTime.now();
-      return AiFlashCard(
-        id: 'fc_ds_${now.microsecondsSinceEpoch}_${now.millisecondsSinceEpoch}',
-        question: _str(m['question'], fallback: ''),
-        answer: _str(m['answer'], fallback: ''),
-        courseName: _str(m['courseName'], fallback: ''),
-        hint: _str(m['hint']),
-        createdAt: now,
-      );
-    }).where((c) => c.question.isNotEmpty).toList();
-  }
-
-  Future<String> _blueHeartGenerateAssistantReply({
-    required String input, required List<String> context,
+  Future<AiAssistantTurn> _doGenerateAssistantTurn({
+    required String input,
+    List<String> appContext = const [],
     List<Map<String, dynamic>> messages = const [],
-    String? imageBase64, required String purpose, required String apiKey,
+    String? imageBase64,
+    bool thinkingEnabled = false,
   }) async {
-    final sp = switch (purpose) {
-      'note' => '你是 StudyTrace 的学习笔记整理助手。根据用户输入生成可直接保存的学习笔记。',
-      'task' => '你是 StudyTrace 的任务编排助手。在需要时用【ACTION:ADD_TASK】、【ACTION:MARK_COMPLETED】标注动作。',
-      _ => _systemPrompt,
-    };
-    final cfg = await _storage.loadAiConfig();
-    return _blueHeartClient.chatText(
-      apiKey: apiKey, model: cfg.blueHeartModel,
-      temperature: cfg.temperature, topP: cfg.topP,
-      thinkingEnabled: cfg.thinkingEnabled,
-      frequencyPenalty: cfg.frequencyPenalty,
-      presencePenalty: cfg.presencePenalty,
-      reasoningEffort: cfg.reasoningEffort,
-      systemPrompt: messages.isEmpty ? sp : null,
-      userPrompt: messages.isEmpty
-          ? [if (context.isNotEmpty) '上下文：\n${context.join('\n')}', '用户输入：$input',
-              if (purpose == 'note') '请输出简洁的学习笔记正文' else '请优先给出明确、可执行、简洁的回答。'].join('\n\n')
-          : null,
-      messages: messages.isEmpty ? null : [...messages, {'role': 'user', 'content': input}],
-      imageBase64: imageBase64,
-      maxTokens: purpose == 'note' ? 1800 : 1200,
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // Helpers
-  // ═══════════════════════════════════════════════════════════
-
-  String _sys(String task) => '你是 StudyTrace 的 AI 学习助手。$task\n只返回合法 JSON，不要返回 Markdown、注释或额外解释。\n字段内容使用简洁中文，适合大学生日常学习记录。';
-
-  String _req(Map<String, dynamic> json, String key) {
-    final v = json[key];
-    if (v is String && v.trim().isNotEmpty) return v.trim();
+    final data = await _postBackend('/ai/chat', {
+      'input': input,
+      if (appContext.isNotEmpty) 'context': appContext,
+      if (messages.isNotEmpty) 'messages': messages,
+      if (imageBase64 != null && imageBase64.isNotEmpty)
+        'imageBase64': imageBase64,
+      'purpose': 'assistant_turn',
+      'thinkingEnabled': thinkingEnabled,
+      'options': await _aiOptions(minMaxTokens: 2200),
+    });
+    final content = data['content'];
+    if (content is String && content.trim().isNotEmpty) {
+      try {
+        final parsed = jsonDecode(content.trim());
+        if (parsed is Map<String, dynamic>) {
+          return AiAssistantTurn.fromJson(parsed);
+        }
+        if (parsed is Map) {
+          return AiAssistantTurn.fromJson(parsed.cast<String, dynamic>());
+        }
+      } catch (_) {
+        return AiAssistantTurn(reply: content.trim());
+      }
+    }
     throw const AiServiceException('AI 返回格式异常');
   }
 
-  String _str(Object? value, {String fallback = ''}) {
-    if (value == null) return fallback;
-    if (value is String) return value.trim();
-    return value.toString().trim();
+  Future<Map<String, dynamic>> _postBackend(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final backend = _requireBackend();
+    try {
+      return await backend.postJson(path, body: body);
+    } on ApiException catch (error) {
+      throw AiServiceException(error.displayMessage, detail: error.detail);
+    }
   }
 
-  RiskLevel _riskLevel(String value) => switch (value.trim()) {
-    'low' => RiskLevel.low, 'medium' => RiskLevel.medium,
-    'high' => RiskLevel.high,
-    _ => throw const AiServiceException('AI 返回格式异常'),
-  };
+  ApiClient _requireBackend() {
+    final backend = _backendClient;
+    if (backend == null) {
+      throw const AiServiceException('请先登录并连接云端 AI 服务');
+    }
+    return backend;
+  }
 
-  String _fmt(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  Future<Map<String, dynamic>> _aiOptions({int minMaxTokens = 1200}) async {
+    final config = await _storage.loadAiConfig();
+    return {
+      'temperature': config.temperature,
+      'maxTokens': config.maxTokens < minMaxTokens
+          ? minMaxTokens
+          : config.maxTokens,
+      'topP': config.topP,
+      'frequencyPenalty': config.frequencyPenalty,
+      'presencePenalty': config.presencePenalty,
+      'reasoningEffort': config.reasoningEffort,
+    };
+  }
 
-  String _logs(List<StudyLogItem> logs) => jsonEncode(logs.map((l) => {
-    'date': _fmt(l.date), 'courseName': l.courseName,
-    'content': l.content, 'problems': l.problems,
-    'thoughts': l.thoughts, 'nextPlan': l.nextPlan,
-  }).toList());
+  List<DailyPlan> _parseDailyPlans(Object? raw) {
+    if (raw is! List) return [];
+    final plans = <DailyPlan>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final map = item.cast<String, dynamic>();
+      final date = DateTime.tryParse((map['date'] as String?) ?? '');
+      if (date == null) continue;
+      final rawTasks = map['tasks'];
+      final tasks = <PlannedTaskItem>[];
+      if (rawTasks is List) {
+        for (final task in rawTasks) {
+          if (task is! Map) continue;
+          final taskMap = task.cast<String, dynamic>();
+          final title = (taskMap['title'] as String?)?.trim() ?? '';
+          if (title.isEmpty) continue;
+          tasks.add(PlannedTaskItem(
+            title: title,
+            courseName: (taskMap['courseName'] as String?)?.trim() ?? '',
+            note: (taskMap['note'] as String?)?.trim() ?? '',
+          ));
+        }
+      }
+      if (tasks.isNotEmpty) plans.add(DailyPlan(date: date, tasks: tasks));
+    }
+    return plans;
+  }
 
-  String _tasks(List<StudyTaskItem> tasks) => jsonEncode(tasks.map((t) => {
-    'title': t.title, 'type': t.type.name, 'typeLabel': t.type.label,
-    'courseName': t.courseName, 'deadline': _fmt(t.deadline),
-    'status': t.status.name, 'statusLabel': t.status.label, 'note': t.note,
-  }).toList());
+  Future<T> _trackUsage<T>(Future<T> future) async {
+    final value = await future;
+    unawaited(_storage.incrementAiUsage().catchError((_) => 0));
+    return value;
+  }
 }
 
-class _AiRuntime {
-  const _AiRuntime({required this.config, required this.apiKey});
-  final AiConfig config;
-  final String apiKey;
+class DailyPlan {
+  const DailyPlan({required this.date, required this.tasks});
+  final DateTime date;
+  final List<PlannedTaskItem> tasks;
+}
+
+class PlannedTaskItem {
+  const PlannedTaskItem({
+    required this.title,
+    this.courseName = '',
+    this.note = '',
+  });
+
+  final String title;
+  final String courseName;
+  final String note;
+}
+
+class FlashCardGrade {
+  const FlashCardGrade({required this.score, required this.feedback});
+
+  final int score;
+  final String feedback;
+
+  String get label => switch (score) {
+        1 => '完全错误',
+        2 => '主要错误',
+        3 => '部分正确',
+        4 => '基本正确',
+        5 => '完全正确',
+        _ => '未知',
+      };
+}
+
+class AiUsageToday {
+  const AiUsageToday({
+    required this.used,
+    required this.limit,
+    required this.remaining,
+  });
+
+  final int used;
+  final int limit;
+  final int remaining;
+
+  factory AiUsageToday.fromJson(Map<String, dynamic> json) {
+    return AiUsageToday(
+      used: (json['used'] as num?)?.toInt() ?? 0,
+      limit: (json['limit'] as num?)?.toInt() ?? 0,
+      remaining: (json['remaining'] as num?)?.toInt() ?? 0,
+    );
+  }
 }

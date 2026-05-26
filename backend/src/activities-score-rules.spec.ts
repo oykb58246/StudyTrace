@@ -5,6 +5,9 @@ describe('scoreForActivity', () => {
     expect(scoreForActivity('taskCompleted').points).toBe(10);
     expect(scoreForActivity('subTaskCompleted').points).toBe(3);
     expect(scoreForActivity('studyLogCreated').points).toBe(5);
+    expect(scoreForActivity('noteCreated').points).toBe(3);
+    expect(scoreForActivity('flashcardBatchCreated', { cardCount: 4 }).points).toBe(8);
+    expect(scoreForActivity('momentShared').points).toBe(1);
     expect(scoreForActivity('dailyStreak').points).toBe(2);
   });
 

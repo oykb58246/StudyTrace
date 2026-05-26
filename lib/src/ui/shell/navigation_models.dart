@@ -23,11 +23,16 @@ enum AdminSection {
   statistics,
   timer,
   flashCard,
+  learningMoments,
   studyGroup,
   leaderboard,
+  achievements,
+  knowledgeGraph,
   automations,
   analytics,
   settings,
+  auditLog,
+  trash,
 }
 
 extension PrimaryTabMeta on PrimaryTab {
@@ -143,7 +148,7 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.overview:
         return '作品总览';
       case AdminSection.aiAssistant:
-        return 'AI 学习助手';
+        return 'AI 功能';
       case AdminSection.aiSettings:
         return 'AI 设置';
       case AdminSection.notes:
@@ -154,16 +159,26 @@ extension AdminSectionMeta on AdminSection {
         return '专注计时';
       case AdminSection.flashCard:
         return '知识闪卡';
+      case AdminSection.learningMoments:
+        return '学迹动态';
       case AdminSection.studyGroup:
         return '学习小组';
       case AdminSection.leaderboard:
         return '排行榜';
+      case AdminSection.achievements:
+        return '成就殿堂';
+      case AdminSection.knowledgeGraph:
+        return '知识图谱';
       case AdminSection.automations:
         return '任务编排';
       case AdminSection.analytics:
         return '数据看板';
       case AdminSection.settings:
         return '系统设置';
+      case AdminSection.auditLog:
+        return 'AI 操作记录';
+      case AdminSection.trash:
+        return '回收站';
     }
   }
 
@@ -172,9 +187,9 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.overview:
         return '学习数据总览与周报入口。';
       case AdminSection.aiAssistant:
-        return 'AI 学习日志生成、任务拆解、周报分析和风险提醒。';
+        return 'AI 学习助手、聊天、日志生成、任务拆解与周报分析。';
       case AdminSection.aiSettings:
-        return '模型、Key、推理参数与高级 AI 选项。';
+        return 'AI 模型状态、参数调节与云服务配置。';
       case AdminSection.notes:
         return '记录课堂笔记、学习心得与知识整理。';
       case AdminSection.statistics:
@@ -183,16 +198,26 @@ extension AdminSectionMeta on AdminSection {
         return '番茄钟计时器，帮助保持专注学习节奏。';
       case AdminSection.flashCard:
         return 'AI 从学习记录生成知识闪卡，巩固复习。';
+      case AdminSection.learningMoments:
+        return '像朋友圈一样记录学习图文，并把任务、日志、笔记和 AI 操作汇成可追溯时间线。';
       case AdminSection.studyGroup:
         return '参与学习小组，与同伴交流讨论，共同进步。';
       case AdminSection.leaderboard:
         return '查看全站或好友学习榜单，激发学习动力。';
+      case AdminSection.achievements:
+        return '积分、徽章与连续打卡，学习更有动力。';
+      case AdminSection.knowledgeGraph:
+        return '可视化知识点关联，直观展示学习结构。';
       case AdminSection.automations:
         return '编排自动任务流、触发条件与执行记录。';
       case AdminSection.analytics:
         return '追踪学习趋势、活跃度与完成情况。';
       case AdminSection.settings:
         return '管理通知、权限、隐私与系统偏好。';
+      case AdminSection.auditLog:
+        return '查看 AI 操作历史与执行结果。';
+      case AdminSection.trash:
+        return '回收站中已删除的数据，可恢复或永久删除。';
     }
   }
 
@@ -212,16 +237,26 @@ extension AdminSectionMeta on AdminSection {
         return Icons.timer_rounded;
       case AdminSection.flashCard:
         return Icons.style_rounded;
+      case AdminSection.learningMoments:
+        return Icons.dynamic_feed_rounded;
       case AdminSection.studyGroup:
         return Icons.groups_rounded;
       case AdminSection.leaderboard:
         return Icons.leaderboard_rounded;
+      case AdminSection.achievements:
+        return Icons.emoji_events_rounded;
+      case AdminSection.knowledgeGraph:
+        return Icons.account_tree_rounded;
       case AdminSection.automations:
         return Icons.alt_route_rounded;
       case AdminSection.analytics:
         return Icons.trending_up_rounded;
       case AdminSection.settings:
         return Icons.settings_rounded;
+      case AdminSection.auditLog:
+        return Icons.history_rounded;
+      case AdminSection.trash:
+        return Icons.delete_outline_rounded;
     }
   }
 
@@ -241,16 +276,26 @@ extension AdminSectionMeta on AdminSection {
         return const Color(0xFF4BC4A1);
       case AdminSection.flashCard:
         return const Color(0xFFF8AA5B);
+      case AdminSection.learningMoments:
+        return const Color(0xFF19A974);
       case AdminSection.studyGroup:
         return const Color(0xFFFF7C7C);
       case AdminSection.leaderboard:
         return const Color(0xFFFFC043);
+      case AdminSection.achievements:
+        return const Color(0xFFFF9F43);
+      case AdminSection.knowledgeGraph:
+        return const Color(0xFF4CB9FF);
       case AdminSection.automations:
         return const Color(0xFF4BC4A1);
       case AdminSection.analytics:
         return const Color(0xFFF8AA5B);
       case AdminSection.settings:
         return AppColors.accentDeep;
+      case AdminSection.auditLog:
+        return const Color(0xFF7394F9);
+      case AdminSection.trash:
+        return const Color(0xFFEF6850);
     }
   }
 }

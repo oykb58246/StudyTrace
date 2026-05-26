@@ -2,7 +2,7 @@
 
 ## 项目概要
 
-StudyTrace — Flutter 大学生学习管理 App。MVVM 架构，SharedPreferences 本地存储，DeepSeek AI 集成。详细结构见 `项目当前总结.md`。
+StudyTrace — Flutter 大学生学习管理 App。MVVM 架构，SharedPreferences 本地存储，后端托管 vivo AIGC/蓝心能力。详细结构见 `项目当前总结.md`。
 
 ---
 

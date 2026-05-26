@@ -307,7 +307,7 @@
         "定义 polishReport 方法",
         "第一版不调用真实 API",
         "返回模拟润色文本",
-        "在代码中明确标注后续可接 DeepSeek、OpenAI 或通义千问"
+        "历史预留多模型接口；当前商业化版本统一走后端 vivo 蓝心代理"
       ],
       "passes": true
     },
@@ -442,7 +442,7 @@
     {
       "id": 34,
       "title": "AiStudyService 实现",
-      "description": "实现四大 AI 能力的 mock 服务",
+      "description": "历史任务：实现四大 AI 能力的早期占位服务；当前已迁移为后端 vivo 蓝心代理",
       "steps": [
         "创建 AiStudyService 类",
         "实现 generateStudyLog 方法",
@@ -481,13 +481,13 @@
     },
     {
       "id": 37,
-      "title": "DeepSeek API 与智能输入接入",
-      "description": "接入 DeepSeek 文本大模型，在系统设置中配置 API Key，并为 AI 助手增加图片 OCR 与语音输入",
+      "title": "历史方案：旧模型直连与智能输入接入（已废弃）",
+      "description": "历史任务：曾接入旧模型直连；商业化上线版本已移除客户端供应商 Key 和旧模型直连路径，统一使用后端 vivo 蓝心代理",
       "steps": [
         "新增 AI 配置模型和安全凭据服务",
-        "新增 DeepSeek Chat Completions 客户端",
-        "改造 AiStudyService，未配置 API Key 时保留 mock 演示模式",
-        "系统设置页支持填写、保存、删除、测试 DeepSeek API Key 和切换模型",
+        "历史：新增旧模型直连客户端（当前已删除）",
+        "当前：AiStudyService 统一调用后端 AI 代理",
+        "当前：系统设置页只保留云服务地址和生成参数，不保存供应商 Key",
         "AI 助手页显示真实/演示模式状态",
         "AI 助手页支持图片/拍照 OCR 输入",
         "AI 助手页支持设备语音转文字输入",
@@ -526,7 +526,7 @@
       "description": "基于学习日志 AI 生成问答闪卡，支持点击翻转、前后翻页浏览",
       "steps": [
         "创建 AiFlashCard 模型",
-        "AiStudyService 新增 generateFlashCards（DeepSeek + mock）",
+        "AiStudyService 新增 generateFlashCards（当前统一走后端 vivo 蓝心代理）",
         "创建 FlashCardPage 闪卡浏览页面",
         "侧边菜单添加知识闪卡入口",
         "flutter analyze 通过"

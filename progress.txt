@@ -112,7 +112,7 @@
 ### 做了什么:
 - 创建 lib/src/services/ai_report_service.dart
 - 定义 polishReport(content) 方法
-- 第一版返回格式化文本，代码中标注后续可接入 DeepSeek/OpenAI/通义千问
+- 第一版返回格式化文本，历史上曾预留多模型接入；当前商业化版本统一走后端 vivo 蓝心代理
 
 ### 测试情况:
 - flutter analyze: 通过
@@ -252,7 +252,7 @@
 - generateTaskPlan(input) — 复杂任务 → 子任务列表 + 推荐安排
 - generateWeeklyAnalysis(logs, tasks, dateRange) — 7 维度分析周报
 - generateRiskWarnings(logs, tasks) — 5 类风险检测（截止/断档/完成率/记录频率）
-- 当前为 mock 实现，代码中预留 TODO 标注真实 API 接入位置
+- 历史记录：当时为 mock 实现；当前商业化版本已迁移到后端 vivo 蓝心代理。
 
 ### 测试情况:
 - flutter analyze: 通过
@@ -296,50 +296,35 @@
 - flutter analyze: 通过 (No issues found)
 
 ### 备注:
-- AI 能力当前为 mock 实现，可在 ai_study_service.dart 替换为真实 LLM API
+- 历史记录：当时 AI 能力为 mock；当前商业化版本已迁移到后端 vivo 蓝心代理。
 - 演示流程：首页 → AI 学习助手 → 生成日志 → 拆解任务 → 分析周报 → 风险提醒
 
-## [2026-04-28] - 任务 37: DeepSeek API 与智能输入接入
+## [2026-04-28] - 任务 37: 历史方案 - 旧模型直连接入（已废弃）
+
+> 商业化上线版本已移除旧模型直连客户端、客户端密钥输入和 mock 演示模式，AI 能力统一走后端 vivo 蓝心代理。
 
 ### 新增文件 (4 个)
 
-| 文件 | 说明 |
-|------|------|
-| `lib/src/models/ai_config.dart` | AI 配置模型（provider/baseUrl/model/thinkingMode/isEnabled） |
-| `lib/src/services/ai_credential_service.dart` | 安全凭据服务，flutter_secure_storage 保存 API Key |
-| `lib/src/services/deepseek_client.dart` | DeepSeek Chat Completions 客户端，JSON Output |
-| `lib/src/ui/study/ai_settings_page.dart` | 系统设置页：API Key 输入/显示/保存/删除、模型切换、测试连接 |
+历史明细已归档。当前商业化版本不再保留客户端供应商 Key、旧模型直连客户端或演示模式。
 
 ### 修改文件 (5 个)
 
-| 文件 | 改动 |
-|------|------|
-| `lib/src/services/ai_study_service.dart` | 重构：4 个 public 方法签名不变，内部根据配置走 DeepSeek 或 mock；DeepSeek 解析失败返回可读错误 |
-| `lib/src/services/local_storage_service.dart` | 新增 saveAiConfig / loadAiConfig |
-| `lib/src/ui/study/ai_assistant_page.dart` | 新增智能输入条（图片 OCR + 语音转文字）；AI 模式横幅（真实/演示）；设置入口 |
-| `lib/src/ui/shell/admin_section_page.dart` | AdminSection.settings 渲染 AiSettingsPage |
-| `lib/src/ui/shell/app_shell.dart` | 传递 onOpenSettings 回调 |
+当前保留的是云端 AI 代理、设备 OCR/语音输入、AI 设置参数与服务地址配置。
 
-### DeepSeek 客户端特性
-- 默认模型: `deepseek-v4-flash`，设置页可切换 `deepseek-v4-pro`
-- 默认 baseUrl: `https://api.deepseek.com`
-- 认证: Bearer Auth
-- 输出: `response_format: json_object`，解析后映射到现有模型
-- 错误处理: 401/402/422/429/500/503 返回用户可读消息，失败不静默保存
+### 历史客户端特性
+- 已移除客户端模型供应商直连。
+- 已移除客户端供应商 Key 输入、保存和测试。
+- 已移除演示账号依赖。
 
 ### 智能输入
 - **图片 OCR**: 相册/拍照 → google_mlkit_text_recognition → 预览确认 → 填入输入框 → AI 生成
 - **语音输入**: 设备语音识别 speech_to_text → 转文字可编辑 → AI 生成
 
 ### 测试情况
-- flutter analyze: 通过 (No issues found)
-- flutter test: 通过（含 DeepSeek JSON 解析、错误映射、配置循环测试）
-- flutter build apk --debug: 构建成功
-- 模拟器: 启动后设备离线，无法完成 UI 实机验证（已记录阻塞原因）
-- 新增测试文件: `test/ai_deepseek_test.dart`
+- 历史测试记录已不代表当前商业化版本。
 
 ### 附加依赖
-- `http`: DeepSeek HTTP 调用
+- `http`: 后端 API 调用
 - `flutter_secure_storage`: API Key 安全存储
 - `image_picker`: 图片选择
 - `google_mlkit_text_recognition`: OCR 文字识别
@@ -363,7 +348,7 @@
 
 **(4) AI 知识闪卡功能**
 - `lib/src/models/ai_flash_card.dart`: 新建 `AiFlashCard` 模型
-- `lib/src/services/ai_study_service.dart`: 新增 `generateFlashCards()` (DeepSeek + mock)
+- `lib/src/services/ai_study_service.dart`: 新增 `generateFlashCards()`；当前商业化版本统一走后端 vivo 蓝心代理
 - `lib/src/ui/study/flash_card_page.dart`: 新建闪卡页面（点击翻转、前后翻页）
 - `lib/src/ui/shell/navigation_models.dart`: `AdminSection` 新增 `flashCard`
 - `lib/src/ui/shell/app_shell.dart`: 侧边菜单新增「知识闪卡」入口
@@ -376,7 +361,7 @@
 ### 备注:
 - Task 31 (番茄钟) 现已完整实现「计时结束后 AI 自动添加学习记录」
 - 子任务现使用独立字段存储，不再混入备注
-- AI 闪卡从学习日志自动生成，支持 DeepSeek 真实模型
+- AI 闪卡从学习日志自动生成，当前统一走后端 vivo 蓝心代理
 
 ## [2026-04-28] - 综合优化：深色模式 + 侧栏布局 + 用户信息 + 语音智能 + 学习笔记
 

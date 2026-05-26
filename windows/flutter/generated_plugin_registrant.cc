@@ -8,6 +8,8 @@
 
 #include <file_selector_windows/file_selector_windows.h>
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
+#include <flutter_tts/flutter_tts_plugin.h>
+#include <record_windows/record_windows_plugin_c_api.h>
 #include <rive_common/rive_plugin.h>
 #include <speech_to_text_windows/speech_to_text_windows.h>
 
@@ -16,6 +18,10 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FileSelectorWindows"));
   FlutterSecureStorageWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
+  FlutterTtsPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterTtsPlugin"));
+  RecordWindowsPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("RecordWindowsPluginCApi"));
   RivePluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("RivePlugin"));
   SpeechToTextWindowsRegisterWithRegistrar(

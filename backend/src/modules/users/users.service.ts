@@ -35,6 +35,11 @@ export class UsersService {
     return profile;
   }
 
+  async deleteMe(userId: string) {
+    await this.prisma.user.delete({ where: { id: userId } });
+    return { ok: true };
+  }
+
   private serialize(user: {
     id: string;
     username: string;

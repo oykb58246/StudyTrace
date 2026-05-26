@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:rive/rive.dart' hide Image, LinearGradient, RadialGradient;
 
+import '../../controllers/app_data_controller.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 import '../shared/app_assets.dart';
 import '../shared/rive_safe_widget.dart';
@@ -110,8 +113,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       return;
     }
 
-    // Check if credentials are filled
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+    if (_emailController.text.trim().isEmpty ||
+        _passwordController.text.isEmpty) {
       setState(() => _ctaState = _CtaState.error);
       await Future<void>.delayed(const Duration(milliseconds: 520));
       if (mounted) {
@@ -120,37 +123,90 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       return;
     }
 
+    final identifier = _emailController.text.trim();
+    final password = _passwordController.text;
+
     setState(() => _ctaState = _CtaState.loading);
-    await Future<void>.delayed(const Duration(milliseconds: 820));
-    if (!mounted) {
-      return;
-    }
 
-    setState(() => _ctaState = _CtaState.success);
-    await Future<void>.delayed(const Duration(milliseconds: 460));
-    if (!mounted) {
-      return;
-    }
+    try {
+      final controller = AppDataController();
+      await _submitAuth(
+        controller: controller,
+        identifier: identifier,
+        password: password,
+      );
 
-    setState(() => _ctaState = _CtaState.confetti);
-    await Future<void>.delayed(const Duration(milliseconds: 520));
-    if (!mounted) {
-      return;
-    }
+      if (!mounted) return;
 
-    // Check if this is the sample data account
-    final shouldLoadSampleData =
-        _emailController.text == '123' && _passwordController.text == '123';
+      setState(() => _ctaState = _CtaState.success);
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+      if (!mounted) return;
 
-    if (mounted) {
+      setState(() => _ctaState = _CtaState.confetti);
+      await Future<void>.delayed(const Duration(milliseconds: 320));
+      if (!mounted) return;
+
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
           builder: (_) => AppShell(
-            shouldLoadSampleData: shouldLoadSampleData,
+            initialController: controller,
           ),
         ),
       );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _ctaState = _CtaState.idle);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_friendlyAuthError(error))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _ctaState = _CtaState.idle);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('登录失败，请稍后重试')),
+      );
     }
+  }
+
+  Future<void> _submitAuth({
+    required AppDataController controller,
+    required String identifier,
+    required String password,
+  }) {
+    if (_isRegisterMode) {
+      return controller.registerAccount(
+        username: identifier,
+        password: password,
+      );
+    }
+    return controller.loginWithCredentials(
+      identifier: identifier,
+      password: password,
+    );
+  }
+
+  String _friendlyAuthError(ApiException error) {
+    final message = error.displayMessage.trim();
+    if (message.isEmpty) {
+      return _isRegisterMode ? '注册失败，请稍后重试' : '登录失败，请稍后重试';
+    }
+    if (message.contains('Unauthorized') ||
+        message.contains('Invalid credentials')) {
+      return '账号或密码错误，请检查后重试';
+    }
+    if (message.contains('Conflict') ||
+        message.contains('already exists') ||
+        message.contains('duplicate')) {
+      return '用户名或邮箱已被注册，请换一个试试';
+    }
+    if (message.contains('password') && message.contains('8')) {
+      return '密码至少需要 8 位';
+    }
+    if (message.contains('username') &&
+        (message.contains('3') || message.contains('32'))) {
+      return '用户名需要 3-32 位';
+    }
+    return message;
   }
 
   Future<void> _handleBackToLanding() async {
@@ -490,9 +546,15 @@ class _LoginPageState extends State<_LoginPage> {
               controller: widget.emailController,
               keyboardType: TextInputType.text,
               textInputAction: TextInputAction.next,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 15,
+              ),
               decoration: const InputDecoration(
                 hintText: '用户名',
-                suffixIcon: Icon(Icons.person_outline_rounded),
+                filled: true,
+                fillColor: Colors.white,
+                suffixIcon: Icon(Icons.person_outline_rounded, color: AppColors.muted),
               ),
             )
           else
@@ -501,9 +563,15 @@ class _LoginPageState extends State<_LoginPage> {
               controller: widget.emailController,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 15,
+              ),
               decoration: const InputDecoration(
                 hintText: '用户名 / 邮箱',
-                suffixIcon: Icon(Icons.person_outline_rounded),
+                filled: true,
+                fillColor: Colors.white,
+                suffixIcon: Icon(Icons.person_outline_rounded, color: AppColors.muted),
               ),
             ),
           const SizedBox(height: 16),
@@ -513,13 +581,20 @@ class _LoginPageState extends State<_LoginPage> {
             controller: widget.passwordController,
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 15,
+            ),
             decoration: InputDecoration(
               hintText: '密码',
+              filled: true,
+              fillColor: Colors.white,
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscurePassword
                       ? Icons.visibility_off_rounded
                       : Icons.visibility_rounded,
+                  color: AppColors.muted,
                 ),
                 onPressed: () =>
                     setState(() => _obscurePassword = !_obscurePassword),
@@ -535,7 +610,7 @@ class _LoginPageState extends State<_LoginPage> {
                     color: const Color(0xFF4470E8),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                  ),
+                ),
             ),
           ),
         ],

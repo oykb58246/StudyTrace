@@ -7,6 +7,7 @@ import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../models/daily_reminder_settings.dart';
+import '../models/learning_alert.dart';
 import '../models/study_task_item.dart';
 import 'local_storage_service.dart';
 
@@ -21,6 +22,7 @@ class NotificationService {
 
   static const _scheduledKey = 'studytrace_notification_ids_v1';
   static const _dailyReminderId = 250000;
+  static const _learningAlertDigestId = 250100;
   final Set<int> _scheduledIds = {};
   bool _initialized = false;
 
@@ -56,6 +58,32 @@ class NotificationService {
 
   Future<DailyReminderSettings> loadDailyReminderSettings() {
     return _storage.loadDailyReminderSettings();
+  }
+
+  Future<LearningAlertSettings> loadLearningAlertSettings() {
+    return _storage.loadLearningAlertSettings();
+  }
+
+  Future<void> setLearningAlertSettings(
+    LearningAlertSettings settings, {
+    List<LearningAlert> currentAlerts = const [],
+  }) async {
+    await _storage.saveLearningAlertSettings(settings);
+    if (!settings.enabled || !settings.dailyDigestEnabled) {
+      await cancelLearningAlertDigest();
+      return;
+    }
+    await scheduleLearningAlertDigest(settings, currentAlerts);
+  }
+
+  Future<void> cancelLearningAlertDigest() async {
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+      await _plugin.cancel(id: _learningAlertDigestId);
+    } catch (_) {
+      // ignore: platform notification services may be unavailable in tests
+    }
   }
 
   Future<void> setDailyLearningReminder({
@@ -106,6 +134,11 @@ class NotificationService {
       } else {
         await cancelDailyLearningReminder();
       }
+
+      final alerts = await loadLearningAlertSettings();
+      if (!alerts.enabled || !alerts.dailyDigestEnabled) {
+        await cancelLearningAlertDigest();
+      }
     } catch (_) {
       // ignore: do not let notification recovery block app startup
     }
@@ -136,7 +169,11 @@ class NotificationService {
     await prefs.setString(_scheduledKey, jsonEncode(_scheduledIds.toList()));
   }
 
-  void _onTap(NotificationResponse? response) {}
+  void _onTap(NotificationResponse? response) {
+    final payload = response?.payload;
+    if (payload == null || payload.isEmpty) return;
+    // Payload is intentionally stored for future deep-link routing.
+  }
 
   /// Schedule a notification for a task's reminder time.
   Future<int?> scheduleTaskReminder(StudyTaskItem task) async {
@@ -169,7 +206,10 @@ class NotificationService {
       scheduledDate: tzDate,
       notificationDetails: details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.dateAndTime,
+      payload: jsonEncode({
+        'kind': 'task_reminder',
+        'taskId': task.id,
+      }),
     );
 
     _scheduledIds.add(id);
@@ -219,7 +259,10 @@ class NotificationService {
       scheduledDate: tzDate,
       notificationDetails: details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.dateAndTime,
+      payload: jsonEncode({
+        'kind': 'deadline',
+        'taskId': task.id,
+      }),
     );
 
     _scheduledIds.add(id);
@@ -301,6 +344,7 @@ class NotificationService {
         notificationDetails: details,
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.time,
+        payload: jsonEncode({'kind': 'daily_learning'}),
       );
     } catch (_) {
       // ignore: do not let notification errors break settings UI
@@ -323,9 +367,106 @@ class NotificationService {
     return scheduled;
   }
 
-  int _taskReminderId(StudyTaskItem task) => task.id.hashCode.abs() % 100000;
+  Future<void> scheduleLearningAlertDigest(
+    LearningAlertSettings settings,
+    List<LearningAlert> alerts,
+  ) async {
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+      if (alerts.isEmpty) {
+        await cancelLearningAlertDigest();
+        return;
+      }
 
-  int _deadlineReminderId(StudyTaskItem task) => _taskReminderId(task) + 100000;
+      final details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          'studytrace_learning_alerts',
+          '学习预警',
+          channelDescription: '学习风险、复习和任务进度预警',
+          importance: Importance.high,
+          priority: Priority.high,
+          showWhen: true,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
+
+      final highCount =
+          alerts.where((a) => a.level == LearningAlertLevel.high).length;
+      final first = alerts.first;
+      await _plugin.zonedSchedule(
+        id: _learningAlertDigestId,
+        title: highCount > 0 ? '有 $highCount 条高风险学习预警' : '今日学习预警',
+        body: first.title,
+        scheduledDate: _nextDailyTime(settings.digestTime),
+        notificationDetails: details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+        payload: jsonEncode({
+          'kind': 'learning_alert_digest',
+          'alertId': first.id,
+          'sourceType': first.sourceType,
+          'sourceId': first.sourceId,
+        }),
+      );
+    } catch (_) {
+      // ignore: platform notification services may be unavailable in tests
+    }
+  }
+
+  Future<void> showLearningAlertNow(LearningAlert alert) async {
+    try {
+      if (!_initialized) await init();
+      if (!_initialized) return;
+      final details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          'studytrace_learning_alerts',
+          '学习预警',
+          channelDescription: '学习风险、复习和任务进度预警',
+          importance: Importance.high,
+          priority: Priority.high,
+          showWhen: true,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
+      await _plugin.show(
+        id: _stableNotificationId('alert_${alert.id}', 300000),
+        title: alert.title,
+        body: alert.description,
+        notificationDetails: details,
+        payload: jsonEncode({
+          'kind': 'learning_alert',
+          'alertId': alert.id,
+          'sourceType': alert.sourceType,
+          'sourceId': alert.sourceId,
+        }),
+      );
+    } catch (_) {
+      // ignore: manual alert notifications are best-effort
+    }
+  }
+
+  int _taskReminderId(StudyTaskItem task) =>
+      _stableNotificationId('task_${task.id}', 1000);
+
+  int _deadlineReminderId(StudyTaskItem task) =>
+      _stableNotificationId('deadline_${task.id}', 101000);
+
+  int _stableNotificationId(String value, int offset) {
+    var hash = 0;
+    for (final unit in value.codeUnits) {
+      hash = (hash * 31 + unit) & 0x3fffffff;
+    }
+    return offset + (hash % 90000);
+  }
 
   String _formatReminderBody(StudyTaskItem task) {
     final buf = StringBuffer();

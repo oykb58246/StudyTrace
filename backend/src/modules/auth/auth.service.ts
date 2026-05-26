@@ -88,6 +88,37 @@ export class AuthService {
     );
   }
 
+  async logout(userId: string, refreshToken?: string) {
+    if (refreshToken) {
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          tokenHash: this.hashToken(refreshToken),
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+      return { ok: true };
+    }
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
+  async deleteAccount(userId: string, accessToken?: string) {
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+      this.prisma.user.delete({ where: { id: userId } }),
+    ]);
+    void accessToken;
+    return { ok: true };
+  }
+
   private async issueTokenPair(userId: string, username: string, user: unknown) {
     const accessToken = await this.jwt.signAsync({ sub: userId, username });
     const refreshToken = randomBytes(48).toString('base64url');

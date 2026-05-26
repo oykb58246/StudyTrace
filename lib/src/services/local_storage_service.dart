@@ -3,14 +3,19 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/achievement.dart';
+import '../models/ai_action_record.dart';
 import '../models/ai_config.dart';
 import '../models/ai_flash_card.dart';
 import '../models/daily_reminder_settings.dart';
 import '../models/history_item.dart';
+import '../models/learning_alert.dart';
+import '../models/learning_moment.dart';
 import '../models/study_log_item.dart';
 import '../models/study_note.dart';
 import '../models/study_task_item.dart';
 import '../models/todo_item.dart';
+import '../models/trash_item.dart';
 import '../models/user_profile.dart';
 import '../models/weekly_report_item.dart';
 
@@ -24,6 +29,9 @@ class LocalStorageService {
   static const _skinVivoKey = 'studytrace_skin_vivo_v1';
   static const _serverBaseUrlKey = 'studytrace_server_base_url_v1';
   static const _aiConfigKey = 'studytrace_ai_config_v1';
+  static const _learningMomentsKey = 'studytrace_learning_moments_v1';
+  static const _learningAlertSettingsKey =
+      'studytrace_learning_alert_settings_v1';
   static const _dailyReminderEnabledKey =
       'studytrace_daily_learning_reminder_enabled_v1';
   static const _dailyReminderHourKey =
@@ -234,6 +242,26 @@ class LocalStorageService {
     await prefs.setInt(_dailyReminderMinuteKey, settings.time.minute);
   }
 
+  Future<LearningAlertSettings> loadLearningAlertSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_learningAlertSettingsKey);
+    if (raw == null || raw.isEmpty) return LearningAlertSettings.defaults;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return LearningAlertSettings.defaults;
+      return LearningAlertSettings.fromJson(decoded.cast<String, dynamic>());
+    } catch (_) {
+      return LearningAlertSettings.defaults;
+    }
+  }
+
+  Future<void> saveLearningAlertSettings(
+    LearningAlertSettings settings,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_learningAlertSettingsKey, jsonEncode(settings.toJson()));
+  }
+
   // --- User Profile ---
   static const _profileKey = 'studytrace_user_profile_v1';
 
@@ -317,6 +345,8 @@ class LocalStorageService {
 
   // --- 课程管理 ---
   static const _coursesKey = 'studytrace_courses_v1';
+  static const _trashKey = 'studytrace_trash_v1';
+  static const _aiAuditKey = 'studytrace_ai_audit_log_v1';
 
   Future<List<String>> loadCourses() async {
     final prefs = await SharedPreferences.getInstance();
@@ -327,5 +357,114 @@ class LocalStorageService {
   Future<void> saveCourses(List<String> courses) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_coursesKey, courses);
+  }
+
+  // --- 回收站 ---
+  Future<List<TrashItem>> loadTrashItems() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_trashKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((e) => TrashItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveTrashItems(List<TrashItem> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(items.map((e) => e.toJson()).toList());
+    await prefs.setString(_trashKey, encoded);
+  }
+
+  // --- AI 操作审计 ---
+  Future<List<AiActionRecord>> loadAiActionRecords() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_aiAuditKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((e) => AiActionRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveAiActionRecords(List<AiActionRecord> records) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = records.length > 100
+        ? records.sublist(records.length - 100)
+        : records;
+    final encoded = jsonEncode(trimmed.map((e) => e.toJson()).toList());
+    await prefs.setString(_aiAuditKey, encoded);
+  }
+
+  // --- 游戏化状态 ---
+  Future<List<LearningMoment>> loadLearningMoments() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_learningMomentsKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((item) => LearningMoment.fromJson(item.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveLearningMoments(List<LearningMoment> moments) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(moments.map((e) => e.toJson()).toList());
+    await prefs.setString(_learningMomentsKey, encoded);
+  }
+
+  static const _gamificationKey = 'studytrace_gamification_v1';
+
+  Future<GamificationState> loadGamificationState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_gamificationKey);
+    if (raw == null || raw.isEmpty) return const GamificationState();
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const GamificationState();
+      return GamificationState.fromJson(decoded.cast<String, dynamic>());
+    } catch (_) {
+      return const GamificationState();
+    }
+  }
+
+  Future<void> saveGamificationState(GamificationState state) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_gamificationKey, jsonEncode(state.toJson()));
+  }
+
+  // ─── AI 今日调用次数 ───
+  // 存储格式：`ai_usage_yyyymmdd` → int。跨天自动重置（前一天的 key 会留在
+  // SharedPreferences 里，但不会被读取；一年积累最多 365 个 int 键，不清理
+  // 也无副作用）。
+  static String _aiUsageKey(DateTime date) =>
+      'studytrace_ai_usage_${date.year}${date.month.toString().padLeft(2, '0')}'
+      '${date.day.toString().padLeft(2, '0')}';
+
+  Future<int> getTodayAiUsageCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_aiUsageKey(DateTime.now())) ?? 0;
+  }
+
+  Future<int> incrementAiUsage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _aiUsageKey(DateTime.now());
+    final next = (prefs.getInt(key) ?? 0) + 1;
+    await prefs.setInt(key, next);
+    return next;
   }
 }

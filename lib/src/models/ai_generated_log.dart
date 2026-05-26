@@ -15,6 +15,16 @@ class AiGeneratedLog {
     this.nextPlan = '',
   });
 
+  factory AiGeneratedLog.fromJson(Map<String, dynamic> json) {
+    return AiGeneratedLog(
+      courseName: json['courseName']?.toString() ?? '',
+      content: json['content']?.toString() ?? '',
+      problems: json['problems']?.toString() ?? '',
+      thoughts: json['thoughts']?.toString() ?? '',
+      nextPlan: json['nextPlan']?.toString() ?? '',
+    );
+  }
+
   bool get isEmpty =>
       courseName.isEmpty &&
       content.isEmpty &&

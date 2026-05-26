@@ -17,5 +17,7 @@ COPY package*.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+COPY startup.sh ./startup.sh
+RUN chmod +x ./startup.sh
 EXPOSE 3000
-CMD ["node", "dist/main"]
+CMD ["./startup.sh"]

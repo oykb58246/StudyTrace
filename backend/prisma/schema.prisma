@@ -27,6 +27,12 @@ model User {
   activities   StudyActivity[]
   scoreEvents  ScoreEvent[]
   aiUsageLogs  AiUsageLog[]
+  createdChallenges GroupChallenge[] @relation("ChallengeCreator")
+  challengeParticipations ChallengeParticipation[]
+  challengeEvidences ChallengeEvidence[]
+  evidencePackages EvidencePackage[]
+  locationCheckIns LocationCheckIn[]
+  memoryChunks MemoryChunk[]
 }
 
 model UserProfile {
@@ -85,6 +91,9 @@ model Group {
   invites    GroupInvite[]
   activities StudyActivity[]
   scores     ScoreEvent[]
+  challenges GroupChallenge[]
+  evidencePackages EvidencePackage[]
+  locationCheckIns LocationCheckIn[]
 }
 
 model GroupMember {
@@ -173,4 +182,125 @@ model AiUsageLog {
 
   @@index([userId, createdAt])
   @@index([endpoint, createdAt])
+}
+
+model GroupChallenge {
+  id          String   @id @default(cuid())
+  groupId     String
+  createdById String
+  title       String
+  description String?
+  planJson    Json
+  scoringJson Json?
+  coverImageUrl String?
+  status      String   @default("active")
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdBy User @relation("ChallengeCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  participations ChallengeParticipation[]
+  evidences ChallengeEvidence[]
+
+  @@index([groupId, status])
+  @@index([createdById])
+}
+
+model ChallengeParticipation {
+  id          String   @id @default(cuid())
+  challengeId String
+  userId      String
+  progress    Int      @default(0)
+  evidenceCount Int    @default(0)
+  completedAt DateTime?
+  joinedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  challenge GroupChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, userId])
+  @@index([userId])
+}
+
+model ChallengeEvidence {
+  id          String   @id @default(cuid())
+  challengeId String
+  userId      String
+  evidenceType String
+  title       String
+  summary     String?
+  sourceType  String?
+  sourceId    String?
+  payloadJson Json?
+  happenedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  challenge GroupChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([challengeId, happenedAt])
+  @@index([userId, happenedAt])
+  @@index([sourceType, sourceId])
+}
+
+model EvidencePackage {
+  id          String   @id @default(cuid())
+  userId      String
+  groupId     String?
+  title       String
+  courseName  String?
+  description String?
+  sourceRefsJson Json
+  metricsJson Json
+  coverImageUrl String?
+  visibility  String   @default("private")
+  featured    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([groupId, featured])
+}
+
+model LocationCheckIn {
+  id          String   @id @default(cuid())
+  userId      String
+  groupId     String?
+  title       String
+  address     String?
+  latitude    Float?
+  longitude   Float?
+  poiPayloadJson Json?
+  visibility  String   @default("private")
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([groupId, createdAt])
+}
+
+model MemoryChunk {
+  id          String   @id @default(cuid())
+  userId      String
+  sourceType  String
+  sourceId    String
+  title       String
+  content     String
+  embeddingJson Json?
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sourceType])
+  @@index([sourceType, sourceId])
 }

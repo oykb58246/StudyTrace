@@ -258,7 +258,7 @@ class AboutPage extends StatelessWidget {
         _TechChip('Flutter', const Color(0xFF02569B), cardBg, isDarkMode),
         _TechChip('Dart', const Color(0xFF0175C2), cardBg, isDarkMode),
         _TechChip('蓝心大模型', const Color(0xFF4470E8), cardBg, isDarkMode),
-        _TechChip('DeepSeek', const Color(0xFF4D6BFE), cardBg, isDarkMode),
+        _TechChip('vivo AIGC', const Color(0xFF4D6BFE), cardBg, isDarkMode),
         _TechChip('Lottie', const Color(0xFF00DDB3), cardBg, isDarkMode),
         _TechChip('Rive', const Color(0xFFFF4D6A), cardBg, isDarkMode),
         _TechChip('ML Kit', const Color(0xFF34A853), cardBg, isDarkMode),
