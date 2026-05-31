@@ -66,6 +66,18 @@ flutter:
     - assets/Backgrounds/
     - assets/avatars/
     - assets/icons/
+    - assets/icons/ai_badges/
     - assets/icons/lordicon/
     - assets/Fonts/
     - logo/
+  fonts:
+    - family: StudyTraceSans
+      fonts:
+        - asset: assets/Fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/Fonts/Inter-SemiBold.ttf
+          weight: 600
+    - family: StudyTraceDisplay
+      fonts:
+        - asset: assets/Fonts/Poppins-Bold.ttf
+          weight: 700

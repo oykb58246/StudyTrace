@@ -143,7 +143,7 @@ class LearningAlertService {
           ? LearningAlertLevel.high
           : LearningAlertLevel.medium,
       title: '学习记录断档 $gapDays 天',
-      description: '建议补一条最近学习记录，或让 AI 帮你生成今日学习路径。',
+      description: '建议补一条最近学习记录，或让AI学习助手整理今日学习安排。',
       createdAt: now,
     );
   }

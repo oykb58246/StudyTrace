@@ -9,6 +9,8 @@ import '../../services/activity_service.dart';
 import '../../services/api_client.dart';
 import '../../services/group_service.dart';
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
+import '../shared/common_widgets.dart';
 
 class StudyGroupPage extends StatefulWidget {
   const StudyGroupPage({
@@ -140,8 +142,26 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             )
           else if (_error != null)
             _buildErrorState(bodyColor, accent)
-          else if (_groups.isEmpty)
-            _buildEmptyState(bodyColor, titleColor, accent)
+          else if (_groups.isEmpty) ...[
+            _buildEmptyState(),
+            const SizedBox(height: 12),
+            Center(
+              child: FilledButton.icon(
+                onPressed: _showJoinGroupSheet,
+                icon: const Icon(Icons.group_add_rounded),
+                label: const Text('加入小组'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ]
           else
             ..._groups.map((g) => _buildGroupCard(g, titleColor, bodyColor, accent)),
         ],
@@ -154,15 +174,8 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     Color bodyColor,
     Color accent,
   ) {
-    return Container(
+    return StudyCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: accent.withValues(alpha: widget.isDarkMode ? 0.22 : 0.12),
-        ),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -183,7 +196,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI 共学挑战',
+                      '共学挑战',
                       style: TextStyle(
                         color: titleColor,
                         fontSize: 16,
@@ -216,7 +229,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             )
           else
             Text(
-              'AI 会基于当前课程、任务和学迹证据生成 3-7 天挑战；成员完成任务、番茄钟或动态后进入组内动态与排行榜。',
+              '会基于当前课程、任务和学习轨迹生成 3-7 天挑战；成员完成任务、番茄钟或动态后进入组内动态与排行榜。',
               style: TextStyle(color: bodyColor, fontSize: 13, height: 1.45),
             ),
           if (_challenges.isNotEmpty) ...[
@@ -238,27 +251,28 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${challenge.participantCount} 人参与 · ${challenge.evidenceCount} 条证据',
+                          '${challenge.participantCount} 人参与 · ${challenge.evidenceCount} 条学习记录',
                           style: TextStyle(color: bodyColor, fontSize: 12),
                         ),
                         if ((challenge.coverImageUrl ?? '').startsWith('vivo-task:')) ...[
                           const SizedBox(height: 4),
                           Text(
-                            "封面任务：${challenge.coverImageUrl!.replaceFirst('vivo-task:', '')}",
+                            '封面生成中，稍后刷新查看',
                             style: TextStyle(color: bodyColor, fontSize: 11),
                           ),
                         ],
                         const SizedBox(height: 8),
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
                             OutlinedButton(
                               onPressed: () => _joinChallenge(challenge),
                               child: const Text('加入'),
                             ),
-                            const SizedBox(width: 8),
                             FilledButton.tonal(
                               onPressed: () => _submitLatestEvidence(challenge),
-                              child: const Text('提交最新证据'),
+                              child: const Text('提交最新记录'),
                             ),
                           ],
                         ),
@@ -270,7 +284,19 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton.icon(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    accent.withValues(alpha: widget.isDarkMode ? 0.18 : 0.12),
+                foregroundColor: accent,
+                disabledBackgroundColor:
+                    accent.withValues(alpha: widget.isDarkMode ? 0.12 : 0.08),
+                disabledForegroundColor: bodyColor,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
               onPressed: _isGeneratingChallenge ? null : _generateChallenge,
               icon: _isGeneratingChallenge
                   ? const SizedBox(
@@ -278,7 +304,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.auto_awesome_rounded),
+                  : const Icon(Icons.flag_rounded),
               label: Text(_isGeneratingChallenge ? '生成中...' : '生成共学挑战'),
             ),
           ),
@@ -290,9 +316,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
   Future<void> _generateChallenge() async {
     if (_isGeneratingChallenge) return;
     if (_groups.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先创建或加入一个学习小组')),
-      );
+      StudyToast.show(context, '请先创建或加入一个学习小组');
       return;
     }
     setState(() => _isGeneratingChallenge = true);
@@ -310,7 +334,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         context: [
           '课程：$courses',
           '待办：$pending',
-          '已有学迹证据数：$evidenceCount',
+          '已有学习记录数：$evidenceCount',
         ],
       );
       String? coverImageUrl;
@@ -338,7 +362,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       }
       final saved = await widget.controller.communityEvidenceService.createChallenge(
         groupId: group.id,
-        title: '${group.name} 证据链挑战',
+        title: '${group.name} 学习轨迹挑战',
         description: text.trim(),
         planJson: {'draftText': text.trim(), 'durationDays': 7},
         scoringJson: const {
@@ -357,9 +381,9 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _challengeText = '7 天学习证据链挑战：每天完成 1 个可验证行动，'
+        _challengeText = '7 天学习轨迹挑战：每天完成 1 个可验证行动，'
             '如提交学习日志、完成番茄钟、沉淀笔记或发布学迹动态；'
-            '最终按连续天数、AI 闭环次数和证据包完整度进行组内展示。';
+            '最终按连续天数、复盘次数和记录完整度进行组内展示。';
       });
     } finally {
       if (mounted) setState(() => _isGeneratingChallenge = false);
@@ -371,14 +395,14 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       await widget.controller.communityEvidenceService
           .joinChallenge(challenge.groupId, challenge.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已加入共学挑战')),
-      );
+      StudyToast.show(context, '已加入共学挑战');
       await _loadGroups();
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('加入挑战失败，请稍后重试')),
+      await StudyToast.dialog(
+        context,
+        title: '加入挑战失败',
+        message: '请稍后重试。',
       );
     }
   }
@@ -386,9 +410,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
   Future<void> _submitLatestEvidence(GroupChallenge challenge) async {
     final events = widget.controller.learningTraceEvents;
     if (events.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先完成一次学习行动，生成可提交证据')),
-      );
+      StudyToast.show(context, '请先完成一次学习行动，生成可提交记录');
       return;
     }
     final event = events.first;
@@ -403,14 +425,14 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         sourceId: event.sourceId,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('学习证据已提交到挑战')),
-      );
+      StudyToast.show(context, '学习记录已提交到挑战');
       await _loadGroups();
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('提交证据失败，请稍后重试')),
+      await StudyToast.dialog(
+        context,
+        title: '提交记录失败',
+        message: '请稍后重试。',
       );
     }
   }
@@ -424,7 +446,11 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       ),
       child: Column(
         children: [
-          Icon(Icons.lock_rounded, size: 48, color: accent.withValues(alpha: 0.5)),
+          StudyAssetIcon(
+            asset: AppAssets.uiRefreshEmptyGroup,
+            size: 96,
+            fallbackIcon: Icons.lock_rounded,
+          ),
           const SizedBox(height: 16),
           Text(
             '请先登录',
@@ -453,7 +479,11 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       ),
       child: Column(
         children: [
-          Icon(Icons.cloud_off_rounded, size: 48, color: accent.withValues(alpha: 0.5)),
+          StudyAssetIcon(
+            asset: AppAssets.uiRefreshEmptyGroup,
+            size: 96,
+            fallbackIcon: Icons.cloud_off_rounded,
+          ),
           const SizedBox(height: 16),
           Text(_error!, style: TextStyle(color: bodyColor, fontSize: 14)),
           const SizedBox(height: 16),
@@ -466,73 +496,10 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     );
   }
 
-  Widget _buildEmptyState(Color bodyColor, Color titleColor, Color accent) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          if (!widget.isDarkMode)
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.groups_rounded, size: 48, color: accent.withValues(alpha: 0.5)),
-          const SizedBox(height: 16),
-          Text(
-            '还没有加入任何小组',
-            style: TextStyle(
-              color: titleColor,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '创建一个小组或通过邀请码加入',
-            style: TextStyle(color: bodyColor, fontSize: 13),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton.icon(
-                onPressed: _showCreateGroupSheet,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('创建小组'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                onPressed: _showJoinGroupSheet,
-                icon: const Icon(Icons.group_add_rounded),
-                label: const Text('加入小组'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: accent,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  side: BorderSide(color: accent.withValues(alpha: 0.4)),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+  Widget _buildEmptyState() {
+    return StudyEmptyState.group(
+      actionLabel: '创建小组',
+      onAction: _showCreateGroupSheet,
     );
   }
 
@@ -542,23 +509,10 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     Color bodyColor,
     Color accent,
   ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          if (!widget.isDarkMode)
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: StudyCard(
+        padding: const EdgeInsets.all(18),
         onTap: () => _showGroupDetail(group),
         child: Row(
           children: [
@@ -569,7 +523,12 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                 color: accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(Icons.groups_rounded, color: accent, size: 26),
+              child: StudyAssetIcon(
+                asset: AppAssets.featureGroupRankIcon,
+                color: accent,
+                size: 28,
+                fallbackIcon: Icons.groups_rounded,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -581,7 +540,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                     style: TextStyle(
                       color: titleColor,
                       fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -648,7 +607,6 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: Container(
-            padding: const EdgeInsets.fromLTRB(22, 18, 22, 34),
             decoration: BoxDecoration(
               color: widget.isDarkMode
                   ? const Color(0xFF1A1F2E)
@@ -656,10 +614,16 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(30)),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.82,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 34),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 Center(
                   child: Container(
                     width: 40,
@@ -727,25 +691,31 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                             final name = nameCtrl.text.trim();
                             if (name.isEmpty) return;
                             setSheetState(() => isCreating = true);
+                            var shouldResetLoading = true;
                             try {
                               final svc = widget.controller.groupService;
                               final group = await svc.create(
                                 name: name,
                                 description: descCtrl.text.trim(),
                               );
-                              if (mounted) {
+                              if (mounted && ctx.mounted) {
+                                shouldResetLoading = false;
                                 Navigator.of(ctx).pop();
                                 _loadGroups();
                                 _showInviteCodeDialog(group);
                               }
                             } on ApiException catch (e) {
                               if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(e.message)),
+                                await StudyToast.dialog(
+                                  context,
+                                  title: '创建小组失败',
+                                  message: e.message,
                                 );
                               }
                             } finally {
-                              setSheetState(() => isCreating = false);
+                              if (shouldResetLoading && ctx.mounted) {
+                                setSheetState(() => isCreating = false);
+                              }
                             }
                           },
                     style: ElevatedButton.styleFrom(
@@ -758,7 +728,9 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                     child: Text(isCreating ? '创建中...' : '创建'),
                   ),
                 ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -780,7 +752,6 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: Container(
-            padding: const EdgeInsets.fromLTRB(22, 18, 22, 34),
             decoration: BoxDecoration(
               color: widget.isDarkMode
                   ? const Color(0xFF1A1F2E)
@@ -788,10 +759,16 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(30)),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.82,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 34),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 Center(
                   child: Container(
                     width: 40,
@@ -844,24 +821,28 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                             final code = codeCtrl.text.trim();
                             if (code.isEmpty) return;
                             setSheetState(() => isJoining = true);
+                            var shouldResetLoading = true;
                             try {
                               final svc = widget.controller.groupService;
                               await svc.join(inviteCode: code);
-                              if (mounted) {
+                              if (mounted && ctx.mounted) {
+                                shouldResetLoading = false;
                                 Navigator.of(ctx).pop();
                                 _loadGroups();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已成功加入小组')),
-                                );
+                                StudyToast.show(context, '已成功加入小组');
                               }
                             } on ApiException catch (e) {
                               if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(e.message)),
+                                await StudyToast.dialog(
+                                  context,
+                                  title: '加入小组失败',
+                                  message: e.message,
                                 );
                               }
                             } finally {
-                              setSheetState(() => isJoining = false);
+                              if (shouldResetLoading && ctx.mounted) {
+                                setSheetState(() => isJoining = false);
+                              }
                             }
                           },
                     style: ElevatedButton.styleFrom(
@@ -874,7 +855,9 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                     child: Text(isJoining ? '加入中...' : '加入'),
                   ),
                 ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -897,9 +880,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
               onTap: () {
                 if (group.inviteCode != null) {
                   Clipboard.setData(ClipboardData(text: group.inviteCode!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已复制到剪贴板')),
-                  );
+                  StudyToast.show(context, '已复制到剪贴板');
                 }
               },
               child: Container(
@@ -981,6 +962,8 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
               children: [
                 Text(
                   '$nickname · ${_activityLabel(activity.type)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: bodyColor,
                     fontSize: 12,
@@ -990,6 +973,8 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                 const SizedBox(height: 3),
                 Text(
                   activity.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: titleColor,
                     fontSize: 14,
@@ -1153,15 +1138,18 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                       onTap: () {
                         Clipboard.setData(
                             ClipboardData(text: group.inviteCode!));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('邀请码已复制')),
-                        );
+                        StudyToast.show(context, '邀请码已复制');
                       },
                       child: Row(
                         children: [
-                          Text('邀请码：${group.inviteCode}',
-                              style: TextStyle(
-                                  color: bodyColor, fontSize: 13)),
+                          Flexible(
+                            child: Text(
+                              '邀请码：${group.inviteCode}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: bodyColor, fontSize: 13),
+                            ),
+                          ),
                           const SizedBox(width: 6),
                           Icon(Icons.copy_rounded, size: 14, color: bodyColor),
                         ],
@@ -1209,6 +1197,8 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                               Expanded(
                                 child: Text(
                                   m.username,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: titleColor,
                                     fontSize: 14,
@@ -1279,8 +1269,10 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                             }
                           } on ApiException catch (e) {
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(e.message)),
+                              await StudyToast.dialog(
+                                context,
+                                title: '退出小组失败',
+                                message: e.message,
                               );
                             }
                           }

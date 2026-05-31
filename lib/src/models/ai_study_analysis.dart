@@ -32,7 +32,7 @@ class AiStudyAnalysis {
 
   String toFormattedText() {
     final buffer = StringBuffer();
-    buffer.writeln('## AI 学习周报分析');
+    buffer.writeln('## 学习周报分析');
     buffer.writeln();
     if (mainTopics.isNotEmpty) {
       buffer.writeln('### 本周主要学习主题');

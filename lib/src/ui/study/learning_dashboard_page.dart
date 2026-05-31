@@ -6,7 +6,7 @@ import '../../controllers/app_data_controller.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_exceptions.dart';
 import '../../services/ai_study_service.dart';
-import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 
 class LearningDashboardPage extends StatelessWidget {
@@ -72,10 +72,9 @@ class LearningDashboardPage extends StatelessWidget {
           weekLabels.add('${start.month}/${start.day}');
         }
 
-        final accent = controller.primaryColor;
-        final textColor = isDarkMode ? Colors.white : AppColors.ink;
-        final bodyColor =
-            isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        const accent = StudyUi.primary;
+        final textColor = StudyUi.title(isDarkMode);
+        final bodyColor = StudyUi.body(isDarkMode);
 
         return RefreshIndicator(
           onRefresh: () async => controller.notifyListeners(),
@@ -90,7 +89,7 @@ class LearningDashboardPage extends StatelessWidget {
                       style: TextStyle(
                           color: textColor,
                           fontSize: 24,
-                          fontWeight: FontWeight.w700)),
+                          fontWeight: FontWeight.w800)),
                 ),
                 TextButton.icon(
                   onPressed: () => _showAiAnalysisSheet(
@@ -109,10 +108,55 @@ class LearningDashboardPage extends StatelessWidget {
                       weeklyData: weeklyData,
                     ),
                   ),
-                  icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                  label: const Text('AI 解读'),
+                  icon: const StudyAssetIcon(
+                    asset: AppAssets.aiSuggestionIcon,
+                    preserveColor: true,
+                    fallbackIcon: Icons.lightbulb_rounded,
+                    size: 18,
+                  ),
+                  label: const Text('学习建议'),
                 ),
               ],
+            ),
+            const SizedBox(height: 14),
+            StudyCard(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Image.asset(
+                    AppAssets.uiRefreshFeatureDashboard,
+                    width: 86,
+                    height: 86,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.query_stats_rounded,
+                      color: StudyUi.muted(isDarkMode),
+                      size: 48,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '看见最近的学习节奏',
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '记录、任务、课程分布和复习进度会在这里汇总。',
+                          style: TextStyle(color: bodyColor, height: 1.45),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 18),
             Row(
@@ -121,7 +165,7 @@ class LearningDashboardPage extends StatelessWidget {
                   child: _statCard(
                     '总记录',
                     '${logs.length}',
-                    const Color(0xFF7394F9),
+                    StudyUi.secondary,
                     isDarkMode,
                     textColor,
                     bodyColor,
@@ -159,35 +203,34 @@ class LearningDashboardPage extends StatelessWidget {
               children: [
                 Expanded(child: _statCard('子任务', '$completedSubTasks/$totalSubTasks', accent, isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
-                Expanded(child: _statCard('课程', '${courseCount.length}', const Color(0xFF4BC4A1), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('课程', '${courseCount.length}', StudyUi.success, isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
-                Expanded(child: _statCard('逾期', '$overdueTasks', const Color(0xFFEF6850), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('逾期', '$overdueTasks', StudyUi.danger, isDarkMode, textColor, bodyColor)),
               ],
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: _statCard('连续打卡', '${controller.studyStreak}天', const Color(0xFFFF6B35), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('连续打卡', '${controller.studyStreak}天', StudyUi.warning, isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
-                Expanded(child: _statCard('近7天', '$recentLogs条', const Color(0xFF7394F9), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('近7天', '$recentLogs条', StudyUi.secondary, isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
-                Expanded(child: _statCard('近30天', '$monthLogs条', const Color(0xFFF8AA5B), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('近30天', '$monthLogs条', StudyUi.warning, isDarkMode, textColor, bodyColor)),
               ],
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: _statCard('AI周报', '${reports.length}', const Color(0xFF8C7CFF), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('学习周报', '${reports.length}', StudyUi.secondary, isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
-                Expanded(child: _statCard('笔记', '${controller.studyNotes.length}', const Color(0xFF4CB9FF), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('笔记', '${controller.studyNotes.length}', StudyUi.primary, isDarkMode, textColor, bodyColor)),
                 const SizedBox(width: 12),
-                Expanded(child: _statCard('已完成', '$completedTasks', const Color(0xFF4BC4A1), isDarkMode, textColor, bodyColor)),
+                Expanded(child: _statCard('已完成', '$completedTasks', StudyUi.success, isDarkMode, textColor, bodyColor)),
               ],
             ),
             if (totalSubTasks > 0) ...[
               const SizedBox(height: 12),
-              GlassCard(
-                color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+              StudyCard(
                 child: Row(
                   children: [
                     Expanded(
@@ -226,8 +269,7 @@ class LearningDashboardPage extends StatelessWidget {
               const SizedBox(height: 22),
               Text('近 7 天学习记录', style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
-              GlassCard(
-                color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+              StudyCard(
                 child: SizedBox(
                   height: 200,
                   child: BarChart(
@@ -257,9 +299,7 @@ class LearningDashboardPage extends StatelessWidget {
                                   '${value.toInt()}',
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: isDarkMode
-                                        ? Colors.white38
-                                        : AppColors.muted,
+                                    color: StudyUi.muted(isDarkMode),
                                   ),
                                 );
                               }
@@ -280,9 +320,7 @@ class LearningDashboardPage extends StatelessWidget {
                                   '${day.month}/${day.day}',
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: isDarkMode
-                                        ? Colors.white38
-                                        : AppColors.muted,
+                                    color: StudyUi.muted(isDarkMode),
                                   ),
                                 ),
                               );
@@ -308,8 +346,7 @@ class LearningDashboardPage extends StatelessWidget {
               const SizedBox(height: 22),
               Text('近4周学习趋势', style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
-              GlassCard(
-                color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+              StudyCard(
                 child: SizedBox(
                   height: 120,
                   child: Row(
@@ -326,7 +363,7 @@ class LearningDashboardPage extends StatelessWidget {
                               Container(
                                 height: (monthlyData[i] / (monthlyData.reduce((a, b) => a > b ? a : b) + 1)) * 70,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF8C7CFF).withValues(alpha: 0.6),
+                                  color: StudyUi.secondary.withValues(alpha: 0.55),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                               ),
@@ -346,8 +383,7 @@ class LearningDashboardPage extends StatelessWidget {
               const SizedBox(height: 22),
               Text('课程分布', style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
-              GlassCard(
-                color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+              StudyCard(
                 child: SizedBox(
                   height: 220,
                   child: PieChart(
@@ -366,8 +402,7 @@ class LearningDashboardPage extends StatelessWidget {
                 children: _buildLegend(courseCount, bodyColor),
               ),
               const SizedBox(height: 12),
-              GlassCard(
-                color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+              StudyCard(
                 child: Column(
                   children: courseCount.entries
                       .take(8)
@@ -476,7 +511,7 @@ class LearningDashboardPage extends StatelessWidget {
         const Color(0xFF4BC4A1),
         const Color(0xFFF8AA5B),
         const Color(0xFFF77D8E),
-        const Color(0xFF8C7CFF),
+        const Color(0xFF2F7D78),
         const Color(0xFF4CB9FF),
       ];
 
@@ -531,16 +566,10 @@ class LearningDashboardPage extends StatelessWidget {
 }
 
 Widget _statCard(String label, String value, Color color, bool isDarkMode, Color textColor, Color bodyColor) {
-  return GlassCard(
-    color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
-    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-    child: Column(
-      children: [
-        Text(value, style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: bodyColor, fontSize: 11)),
-      ],
-    ),
+  return StudyMetricTile(
+    label: label,
+    value: value,
+    color: color,
   );
 }
 
@@ -600,7 +629,7 @@ class _AiDashboardAnalysisSheetState extends State<_AiDashboardAnalysisSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'AI 解读失败：$e';
+        _error = '学习建议生成失败：$e';
         _loading = false;
       });
     }
@@ -609,11 +638,10 @@ class _AiDashboardAnalysisSheetState extends State<_AiDashboardAnalysisSheet> {
   @override
   Widget build(BuildContext context) {
     final bg = widget.isDarkMode
-        ? const Color(0xFF1A1F2E)
-        : const Color(0xFFF5F7FF);
-    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        ? StudyUi.background(true)
+        : StudyUi.background(false);
+    final textColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
     final size = MediaQuery.of(context).size;
     return Container(
       height: size.height * 0.7,
@@ -635,14 +663,15 @@ class _AiDashboardAnalysisSheetState extends State<_AiDashboardAnalysisSheet> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Icon(Icons.auto_awesome_rounded,
-                  color: widget.isDarkMode
-                      ? Colors.white70
-                      : AppColors.accentDeep,
-                  size: 20),
+              const StudyAssetIcon(
+                asset: AppAssets.aiSuggestionIcon,
+                preserveColor: true,
+                fallbackIcon: Icons.lightbulb_rounded,
+                size: 22,
+              ),
               const SizedBox(width: 8),
               Text(
-                'AI 解读数据看板',
+                '学习建议',
                 style: TextStyle(
                   color: textColor,
                   fontSize: 18,
@@ -666,7 +695,7 @@ class _AiDashboardAnalysisSheetState extends State<_AiDashboardAnalysisSheet> {
                       children: [
                         const CircularProgressIndicator(),
                         const SizedBox(height: 12),
-                        Text('AI 正在分析你的数据...',
+                        Text('正在整理学习数据...',
                             style:
                                 TextStyle(color: bodyColor, fontSize: 13)),
                       ],
@@ -694,7 +723,7 @@ class _AiDashboardAnalysisSheetState extends State<_AiDashboardAnalysisSheet> {
                         ),
                       )
                     : Markdown(
-                        data: _text.isEmpty ? '（AI 没有生成内容）' : _text,
+                        data: _text.isEmpty ? '（暂时没有建议内容）' : _text,
                         styleSheet: MarkdownStyleSheet.fromTheme(
                           Theme.of(context).copyWith(
                             textTheme: Theme.of(context).textTheme.apply(

@@ -27,10 +27,13 @@ import {
   SpeechTranscribeDto,
   TextInputDto,
   TranslateDto,
+  VideoTaskQueryDto,
+  VideoTaskSubmitDto,
   WeeklyAnalysisDto,
   WeeklyPlanDto,
 } from './dto/ai-common.dto';
 import { assistantJsonPrompt, assistantSystemPrompt, systemJsonPrompt } from './ai-prompts';
+import { vivoCapabilityLabel } from './vivo-capabilities';
 import { VivoGatewayService } from './vivo-gateway.service';
 
 type ModelRuntime = {
@@ -52,7 +55,7 @@ export class AiService {
     return this.callJson(userId, 'study-log', [
       { role: 'system', content: `${systemJsonPrompt} 你需要把大学生的自然语言学习描述整理成结构化学习日志。` },
       { role: 'user', content: `请根据输入生成 JSON：{"courseName":"","content":"","problems":"","thoughts":"","nextPlan":""}\n输入：${dto.input}` },
-    ]);
+    ], dto);
   }
 
   generateTaskPlan(userId: string, dto: TextInputDto) {
@@ -63,7 +66,7 @@ export class AiService {
         content:
           `今天：${new Date().toISOString()}\n请生成 JSON：{"mainTitle":"","taskType":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","courseName":"","deadline":"ISO8601","difficulty":"较轻松|中等|困难","subTasks":[""],"plannedSubTasks":[{"title":"","deadline":"ISO8601","note":""}],"schedule":""}\n输入：${dto.input}`,
       },
-    ]);
+    ], dto);
   }
 
   generateWeeklyAnalysis(userId: string, dto: WeeklyAnalysisDto) {
@@ -74,7 +77,7 @@ export class AiService {
         content:
           `分析周期：${dto.startDate} 至 ${dto.endDate}\n学习日志：${JSON.stringify(dto.logs)}\n任务：${JSON.stringify(dto.tasks)}\n请生成 JSON：{"mainTopics":"","courseDistribution":"","frequentProblems":"","completedTasks":"","riskTasks":"","statusEvaluation":"","nextWeekPriority":""}`,
       },
-    ]);
+    ], dto);
   }
 
   generateRiskWarnings(userId: string, dto: RiskWarningsDto) {
@@ -85,7 +88,7 @@ export class AiService {
         content:
           `今天：${new Date().toISOString()}\n日志：${JSON.stringify(dto.logs)}\n任务：${JSON.stringify(dto.tasks)}\n请生成 JSON：{"warnings":[{"title":"","description":"","level":"low|medium|high","category":"deadline|gap|completionRate|logFrequency|repeatedProblem"}]}。没有风险返回 {"warnings":[]}`,
       },
-    ]);
+    ], dto);
   }
 
   generateFlashCards(userId: string, dto: FlashCardsDto) {
@@ -95,7 +98,7 @@ export class AiService {
         role: 'user',
         content: `日志：${JSON.stringify(dto.logs)}\n生成 ${dto.count ?? 5} 张闪卡，JSON：{"cards":[{"question":"","answer":"","courseName":"","hint":""}]}`,
       },
-    ]);
+    ], dto);
   }
 
   generateWeeklyPlan(userId: string, dto: WeeklyPlanDto) {
@@ -109,7 +112,7 @@ export class AiService {
           `请生成未来 ${days} 天的学习计划，每天 2-4 个任务，兼顾待办任务与日志中提到的下一步计划。` +
           '输出 JSON：{"plans":[{"date":"YYYY-MM-DD","tasks":[{"title":"任务名","courseName":"课程名","note":"简短说明"}]}]}',
       },
-    ]);
+    ], dto);
   }
 
   async generateLearningLoop(userId: string, dto: LearningLoopDto) {
@@ -136,11 +139,19 @@ export class AiService {
     const capabilities = dto.imageBase64
       ? '["通用OCR","蓝心多模态理解","蓝心对话"]'
       : '["蓝心对话"]';
+    const outputSchema =
+      target === 'task'
+        ? '请输出 JSON：{"summary":"","courseName":"","concepts":[],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[]},"flashcards":[],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"task.add_direct","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":'
+        : '请输出 JSON：{"summary":"","courseName":"","concepts":[""],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[{"type":"heading|text|bullet|todo","content":""}]},"flashcards":[{"question":"","answer":"","hint":"","courseName":""}],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"log.create|task.add_direct|note.save|flashcard.create_batch","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":';
+    const outputConstraint =
+      target === 'task'
+        ? '约束：taskDrafts 最多 2 个，每个 subTasks 最多 3 个；reviewPlan 最多 4 条；noteDraft.blocks 和 flashcards 必须返回空数组；如果信息不足，生成 2-4 个今天可执行的专注块。'
+        : '约束：taskDrafts 最多 3 个，每个 subTasks 最多 4 个；flashcards 最多 6 张；reviewPlan 最多 4 条；如果材料信息不足，仍给出保守、可编辑的草稿。';
     const prompt =
       `${context}来源类型：${sourceKind}\n生成目标：${target}\n${imageHint}\n今天：${new Date().toISOString()}\n学习材料：\n${sourceText}\n\n` +
-      '请输出 JSON：{"summary":"","courseName":"","concepts":[""],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[{"type":"heading|text|bullet|todo","content":""}]},"flashcards":[{"question":"","answer":"","hint":"","courseName":""}],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"log.create|task.add_direct|note.save|flashcard.create_batch","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":' +
+      outputSchema +
       `${capabilities}}\n` +
-      '约束：taskDrafts 最多 3 个，每个 subTasks 最多 4 个；flashcards 最多 6 张；reviewPlan 最多 4 条；如果材料信息不足，仍给出保守、可编辑的草稿。';
+      outputConstraint;
     const userMessageContent = dto.imageBase64
       ? [
           { type: 'text', text: prompt },
@@ -165,7 +176,7 @@ export class AiService {
     const startedAt = Date.now();
     const requestId = randomUUID();
     try {
-      const result = await this.callJson(userId, 'learning-loop', messages);
+      const result = await this.callJson(userId, 'learning-loop', messages, dto);
       return {
         ...result,
         capabilityTraces: [
@@ -185,7 +196,7 @@ export class AiService {
       const fallbackResult = await this.callJson(userId, 'learning-loop/ocr-fallback', [
         messages[0],
         { role: 'user', content: prompt },
-      ]);
+      ], dto);
       return {
         ...fallbackResult,
         capabilityTraces: [
@@ -224,7 +235,7 @@ export class AiService {
           '你是 StudyTrace 的学习笔记编辑助手。直接返回改写后的正文，不要有开场白、解释或引号。',
       },
       { role: 'user', content: `${this.rewritePrompt(dto.intent)}\n\n原文：\n${source}` },
-    ], {});
+    ], dto);
     return { text };
   }
 
@@ -241,7 +252,7 @@ export class AiService {
           `题目：${dto.question}\n参考答案：${dto.correctAnswer}\n用户回答：${dto.userAnswer}\n${dto.courseName ? `课程：${dto.courseName}\n` : ''}` +
           '请给用户的回答打分并给出反馈，输出 JSON：{"score":1-5,"feedback":"用 1-2 句中文给出反馈"}',
       },
-    ]);
+    ], dto);
   }
 
   async ocr(userId: string, dto: OcrDto) {
@@ -350,7 +361,7 @@ export class AiService {
   }
 
   async translate(userId: string, dto: TranslateDto) {
-    const text = dto.text.trim();
+    const text = this.clipText(dto.text, 1200);
     if (!text) return { text: '', from: dto.from ?? 'auto', to: dto.to ?? 'en', capabilityTraces: [] };
     const runtime = this.getBlueHeartAbilityRuntime('text-translation');
     const requestId = randomUUID();
@@ -450,6 +461,89 @@ export class AiService {
       };
     } catch (error) {
       await this.logUsage(userId, 'image-generation/query', runtime, false, startedAt, dto.taskId.length, 0, error);
+      throw new ServiceUnavailableException(this.errorMessage(error));
+    }
+  }
+
+  async submitVideoTask(userId: string, dto: VideoTaskSubmitDto) {
+    const runtime = this.getBlueHeartAbilityRuntime(
+      this.config.get<string>('VIVO_VIDEO_MODEL') ?? 'Doubao-Seedance-1.0-pro',
+    );
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    const endpoint = this.config.get<string>('VIVO_VIDEO_SUBMIT_PATH') ?? '/api/v1/submit_task';
+    const prompt = dto.prompt.trim();
+    await this.assertDailyLimit(userId);
+    try {
+      const decoded = await this.vivo.postJson(endpoint, {
+        request_id: requestId,
+        task_id: requestId.replace(/-/g, ''),
+        user_id: userId,
+        prompt,
+        model: dto.model ?? runtime.model,
+        ratio: dto.ratio ?? this.config.get<string>('VIVO_VIDEO_RATIO_DEFAULT') ?? '16:9',
+        resolution: dto.resolution ?? this.config.get<string>('VIVO_VIDEO_RESOLUTION_DEFAULT') ?? '720p',
+        duration: dto.duration ?? this.config.get<string>('VIVO_VIDEO_DURATION_DEFAULT') ?? '5',
+        ...(dto.imageBase64
+          ? {
+              image:
+                dto.imageBase64.startsWith('data:')
+                  ? dto.imageBase64
+                  : `data:image/png;base64,${dto.imageBase64}`,
+            }
+          : {}),
+        ...(dto.imageUrl ? { image_url: dto.imageUrl } : {}),
+      });
+      const result = (decoded as any)?.result ?? (decoded as any)?.data ?? decoded;
+      const taskId = String(result?.task_id ?? result?.taskId ?? result?.id ?? '');
+      if (!taskId) throw new Error('video task id missing');
+      await this.logUsage(userId, 'video-generation/submit', runtime, true, startedAt, prompt.length, taskId.length);
+      return {
+        taskId,
+        status: result?.status ?? 'submitted',
+        capabilityTraces: [
+          this.vivo.trace('Video generation', endpoint, requestId, startedAt, true, {
+            model: runtime.model,
+          }),
+        ],
+      };
+    } catch (error) {
+      await this.logUsage(userId, 'video-generation/submit', runtime, false, startedAt, prompt.length, 0, error);
+      throw new ServiceUnavailableException(this.errorMessage(error));
+    }
+  }
+
+  async queryVideoTask(userId: string, dto: VideoTaskQueryDto) {
+    const runtime = this.getBlueHeartAbilityRuntime('video-generation');
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    const endpoint = this.config.get<string>('VIVO_VIDEO_QUERY_PATH') ?? '/api/v1/query_task';
+    await this.assertDailyLimit(userId);
+    try {
+      const decoded = await this.vivo.getJson(endpoint, { task_id: dto.taskId });
+      const result = (decoded as any)?.result ?? (decoded as any)?.data ?? decoded;
+      const videosUrl = this.extractStringList(
+        result?.videos_url ??
+          result?.videosUrl ??
+          result?.video_url ??
+          result?.videoUrl ??
+          result?.url,
+      );
+      await this.logUsage(userId, 'video-generation/query', runtime, true, startedAt, dto.taskId.length, JSON.stringify(decoded).length);
+      return {
+        taskId: dto.taskId,
+        status: result?.status ?? 'processing',
+        videosUrl,
+        coverUrl: result?.cover_url ?? result?.coverUrl,
+        auditStatus: result?.audit_status ?? result?.auditStatus,
+        capabilityTraces: [
+          this.vivo.trace('Video generation status', endpoint, requestId, startedAt, true, {
+            model: runtime.model,
+          }),
+        ],
+      };
+    } catch (error) {
+      await this.logUsage(userId, 'video-generation/query', runtime, false, startedAt, dto.taskId.length, 0, error);
       throw new ServiceUnavailableException(this.errorMessage(error));
     }
   }
@@ -596,14 +690,17 @@ export class AiService {
       source,
       unlocked: current >= target,
     });
+    const providerLabel = (slug: string, fallback: string) =>
+      vivoCapabilityLabel(slug, fallback);
     return {
       badges: [
-        badge('llm', '大模型', usageTotal, 1, 'AiUsageLog'),
-        badge('ocr', 'OCR 识别', endpointHas('ocr') ? Number(usage.get('ocr') ?? 1) : 0, 1, 'AiUsageLog'),
-        badge('translation', '双语动态', activity('translatedMoment'), 1, 'StudyActivity'),
-        badge('image', '封面生成', activity('imageGenerated') || (endpointHas('image') ? 1 : 0), 1, 'AiUsageLog + StudyActivity'),
+        badge('llm', providerLabel('large-model', '大模型'), usageTotal, 1, 'AiUsageLog'),
+        badge('ocr', providerLabel('general-ocr', 'OCR 识别'), endpointHas('ocr') ? Number(usage.get('ocr') ?? 1) : 0, 1, 'AiUsageLog'),
+        badge('translation', providerLabel('text-translation', '双语动态'), activity('translatedMoment'), 1, 'StudyActivity'),
+        badge('image', providerLabel('image-generation', '封面生成'), activity('imageGenerated') || (endpointHas('image') ? 1 : 0), 1, 'AiUsageLog + StudyActivity'),
+        badge('video', providerLabel('video-generation', '视频生成'), endpointHas('video-generation') ? 1 : 0, 1, 'AiUsageLog'),
         badge('voice', '语音复盘', activity('voiceReview'), 1, 'StudyActivity'),
-        badge('memory', '记忆检索', endpointHas('embeddings') ? 1 : 0, 1, 'MemoryChunk'),
+        badge('memory', providerLabel('text-embedding', '记忆检索'), endpointHas('embeddings') ? 1 : 0, 1, 'MemoryChunk'),
         badge('loop', 'AI 落地', activity('aiLoopApplied'), 1, 'StudyActivity'),
         badge('share', '学迹分享', activity('momentShared'), 1, 'StudyActivity'),
         badge('package', '证据包', evidencePackageCount, 1, 'EvidencePackage'),
@@ -750,8 +847,13 @@ export class AiService {
     return (this.config.get<string>('BLUEHEART_STREAM_IMAGE_MODE') ?? 'ocr') !== 'vision';
   }
 
-  private async callJson(userId: string, endpoint: string, messages: Record<string, unknown>[]) {
-    const content = await this.callText(userId, endpoint, messages, {});
+  private async callJson(
+    userId: string,
+    endpoint: string,
+    messages: Record<string, unknown>[],
+    dto: Partial<ChatDto> = {},
+  ) {
+    const content = await this.callText(userId, endpoint, messages, dto);
     return this.decodeJsonObject(content);
   }
 
@@ -893,6 +995,16 @@ export class AiService {
       Array.isArray(data?.result) ? data.result[0] : null,
     ];
     return candidates.map((value) => String(value ?? '').trim()).find((value) => value.length > 0) ?? '';
+  }
+
+  private extractStringList(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => String(item ?? '').trim())
+        .filter((item) => item.length > 0);
+    }
+    const text = String(value ?? '').trim();
+    return text ? [text] : [];
   }
 
   private numberArray(value: unknown): number[] {

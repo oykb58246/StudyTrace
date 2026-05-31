@@ -7,9 +7,12 @@ import '../../controllers/app_data_controller.dart';
 import '../../models/ai_capability_trace.dart';
 import '../../models/community_evidence.dart' as cloud;
 import '../../models/learning_moment.dart';
+import '../../services/api_client.dart';
 import '../../services/group_service.dart';
 import '../../services/picked_image_store.dart';
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
+import '../shared/common_widgets.dart';
 import '../shared/local_image.dart';
 
 class LearningMomentsPage extends StatefulWidget {
@@ -31,15 +34,18 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   final _picker = ImagePicker();
   final List<String> _imagePaths = [];
   final List<GroupInfo> _groups = [];
+  final List<LearningMoment> _cloudMoments = [];
 
   String _selectedCourse = '';
   String? _selectedGroupId;
+  final List<String> _selectedAllowedGroupIds = [];
+  final List<String> _selectedDeniedGroupIds = [];
   LearningMomentVisibility _visibility = LearningMomentVisibility.private;
-  LearningTraceEventType? _typeFilter;
   bool _isPosting = false;
-  bool _isGeneratingDraft = false;
+  bool _isLoadingFeed = false;
+  String? _feedError;
+  late bool _lastLoggedIn;
   bool _isLoadingGroups = false;
-  bool _isTranslating = false;
   bool _isSavingPackage = false;
   bool _isCheckingLocation = false;
   final List<cloud.EvidencePackage> _cloudPackages = [];
@@ -50,6 +56,9 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   @override
   void initState() {
     super.initState();
+    _lastLoggedIn = widget.controller.isLoggedIn;
+    widget.controller.addListener(_handleControllerChanged);
+    unawaited(_loadMomentFeed());
     unawaited(_loadGroups());
     unawaited(_loadCloudPackages());
     unawaited(_loadLocationCheckIns());
@@ -57,7 +66,62 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   }
 
   @override
+  void didUpdateWidget(covariant LearningMomentsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    oldWidget.controller.removeListener(_handleControllerChanged);
+    _lastLoggedIn = widget.controller.isLoggedIn;
+    widget.controller.addListener(_handleControllerChanged);
+    unawaited(_loadMomentFeed());
+    unawaited(_loadGroups());
+  }
+
+  void _handleControllerChanged() {
+    final loggedIn = widget.controller.isLoggedIn;
+    if (loggedIn == _lastLoggedIn) return;
+    _lastLoggedIn = loggedIn;
+    if (loggedIn) {
+      unawaited(_loadMomentFeed());
+      unawaited(_loadGroups());
+      unawaited(_loadCloudPackages());
+      unawaited(_loadLocationCheckIns());
+      unawaited(_loadCapabilityBadges());
+    } else if (mounted) {
+      setState(() {
+        _cloudMoments.clear();
+        _groups.clear();
+        _feedError = null;
+      });
+    }
+  }
+
+  Future<void> _loadMomentFeed() async {
+    if (!widget.controller.isLoggedIn || _isLoadingFeed) return;
+    setState(() {
+      _isLoadingFeed = true;
+      _feedError = null;
+    });
+    try {
+      final moments = await widget.controller.learningMomentService.feed();
+      if (!mounted) return;
+      setState(() {
+        _cloudMoments
+          ..clear()
+          ..addAll(moments);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _feedError = _friendlyCloudError(error, '动态加载失败，下拉可重试');
+      });
+    } finally {
+      if (mounted) setState(() => _isLoadingFeed = false);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.controller.removeListener(_handleControllerChanged);
     _contentController.dispose();
     super.dispose();
   }
@@ -75,14 +139,19 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         if (_selectedGroupId != null &&
             !_groups.any((group) => group.id == _selectedGroupId)) {
           _selectedGroupId = null;
-          _visibility = LearningMomentVisibility.private;
         }
+        _selectedAllowedGroupIds
+            .removeWhere((id) => !_groups.any((group) => group.id == id));
+        _selectedDeniedGroupIds
+            .removeWhere((id) => !_groups.any((group) => group.id == id));
       });
     } catch (_) {
       if (mounted) {
         setState(() {
           _groups.clear();
           _selectedGroupId = null;
+          _selectedAllowedGroupIds.clear();
+          _selectedDeniedGroupIds.clear();
           _visibility = LearningMomentVisibility.private;
         });
       }
@@ -137,6 +206,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                 current: (item['current'] as num?)?.toInt() ?? 0,
                 target: (item['target'] as num?)?.toInt() ?? 1,
                 source: item['source']?.toString() ?? '',
+                nextStep: _badgeNextStepForLabel(
+                  item['label']?.toString() ?? '',
+                ),
+                iconAsset: _badgeAssetForLabel(item['label']?.toString() ?? ''),
               ),
             )
             .where((badge) => badge.label.isNotEmpty)
@@ -159,161 +232,104 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: titleColor,
-        title: const Text(
-          '学迹动态',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: StudyUi.chipBackground(accent, widget.isDarkMode),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.dynamic_feed_rounded,
+                color: StudyUi.primary,
+                size: 17,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Flexible(
+              child: Text(
+                '学迹动态',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
         ),
         actions: [
           IconButton(
-            tooltip: '刷新小组',
-            onPressed: widget.controller.isLoggedIn ? _loadGroups : null,
-            icon: const Icon(Icons.refresh_rounded),
+            tooltip: '学迹工具',
+            onPressed: _showMomentsTools,
+            icon: const Icon(Icons.more_horiz_rounded),
           ),
         ],
       ),
       body: AnimatedBuilder(
         animation: widget.controller,
         builder: (context, _) {
-          final allEvents = widget.controller.learningTraceEvents;
-          final events = _filteredEvents(allEvents);
-          final packages = _buildEvidencePackages(allEvents);
-          return ListView(
+          final moments = widget.controller.isLoggedIn
+              ? _cloudMoments
+              : widget.controller.learningMoments;
+          final listView = ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
             children: [
-              _HeaderPanel(
+              _PostEntryCard(
                 isDarkMode: widget.isDarkMode,
                 accent: accent,
                 titleColor: titleColor,
                 bodyColor: bodyColor,
-                eventCount: allEvents.length,
-                momentCount: widget.controller.learningMoments.length,
-                packageCount: packages.length,
-              ),
-              const SizedBox(height: 14),
-              _CapabilityBadgePanel(
-                isDarkMode: widget.isDarkMode,
-                accent: accent,
-                titleColor: titleColor,
-                bodyColor: bodyColor,
-                badges: _cloudCapabilityBadges.isNotEmpty
-                    ? _cloudCapabilityBadges
-                    : _buildCapabilityBadges(allEvents),
-                traces: _lastCapabilityTraces,
-              ),
-              const SizedBox(height: 14),
-              _ComposerCard(
-                isDarkMode: widget.isDarkMode,
-                accent: accent,
-                titleColor: titleColor,
-                bodyColor: bodyColor,
-                controller: _contentController,
-                courses: widget.controller.courseNames,
-                groups: _groups,
-                selectedCourse: _selectedCourse,
-                selectedGroupId: _selectedGroupId,
-                imagePaths: _imagePaths,
-                isPosting: _isPosting,
-                isGeneratingDraft: _isGeneratingDraft,
-                isTranslating: _isTranslating,
-                isCheckingLocation: _isCheckingLocation,
-                onCourseChanged: (value) {
-                  setState(() => _selectedCourse = value ?? '');
-                },
-                onGroupChanged: (value) {
-                  setState(() {
-                    _selectedGroupId =
-                        value == null || value.isEmpty ? null : value;
-                    _visibility = _selectedGroupId == null
-                        ? LearningMomentVisibility.private
-                        : LearningMomentVisibility.group;
-                  });
-                },
-                onPickImages: _pickImages,
-                onRemoveImage: (path) {
-                  setState(() => _imagePaths.remove(path));
-                },
-                onGenerateDraft: _generateMomentDraft,
-                onTranslate: _translateMomentDraft,
-                onLocationCheckIn: _createLocationCheckIn,
-                onPost: _publishMoment,
-              ),
-              const SizedBox(height: 14),
-              _CampusMapPanel(
-                isDarkMode: widget.isDarkMode,
-                accent: accent,
-                titleColor: titleColor,
-                bodyColor: bodyColor,
-                locations: _locationCheckIns,
-                isCheckingLocation: _isCheckingLocation,
-                onCheckIn: _createLocationCheckIn,
-              ),
-              const SizedBox(height: 14),
-              _EvidencePackagePanel(
-                isDarkMode: widget.isDarkMode,
-                accent: accent,
-                titleColor: titleColor,
-                bodyColor: bodyColor,
-                packages: packages,
-                cloudPackages: _cloudPackages,
-                onUsePackage: _useEvidencePackage,
-                onSavePackage: _saveEvidencePackage,
-                onGenerateCover: _generateEvidenceCover,
-                onToggleFeatured: _togglePackageFeatured,
-                onSharePackage: _sharePackageToGroup,
-              ),
-              const SizedBox(height: 14),
-              _FeaturedWallPanel(
-                isDarkMode: widget.isDarkMode,
-                accent: accent,
-                titleColor: titleColor,
-                bodyColor: bodyColor,
-                packages: _cloudPackages.where((package) => package.featured),
-                events: allEvents.where((event) => event.isShareable).take(4),
-                onShare: _shareTraceEvent,
-              ),
-              const SizedBox(height: 18),
-              _TraceToolbar(
-                accent: accent,
-                titleColor: titleColor,
-                bodyColor: bodyColor,
-                filter: _typeFilter,
-                onFilterChanged: (value) => setState(() => _typeFilter = value),
+                onTap: _openComposerSheet,
               ),
               const SizedBox(height: 10),
-              if (events.isEmpty)
-                _EmptyTimeline(
-                  isDarkMode: widget.isDarkMode,
-                  accent: accent,
-                  bodyColor: bodyColor,
-                )
+              if (moments.isEmpty)
+                _isLoadingFeed
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(28),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : _EmptyTimeline(
+                        isDarkMode: widget.isDarkMode,
+                        accent: accent,
+                        bodyColor: bodyColor,
+                        message: widget.controller.isLoggedIn ? _feedError : null,
+                      )
               else
-                ...events.map(
-                  (event) => _TraceEventCard(
-                    event: event,
+                ...moments.map(
+                  (moment) => _MomentCard(
+                    moment: moment,
+                    groups: _groups,
                     isDarkMode: widget.isDarkMode,
                     accent: accent,
                     titleColor: titleColor,
                     bodyColor: bodyColor,
-                    onShare: event.isShareable
-                        ? () => _shareTraceEvent(event)
+                    onLike: () => _toggleMomentLike(moment),
+                    onComment: () => _commentMoment(moment),
+                    onDelete: moment.isMine
+                        ? () => _deleteMoment(moment.id)
                         : null,
-                    onDelete: event.type == LearningTraceEventType.moment &&
-                            event.sourceId != null
-                        ? () => _deleteMoment(event.sourceId!)
+                    onEditVisibility: widget.controller.isLoggedIn && moment.isMine
+                        ? () => _editMomentVisibility(moment)
                         : null,
+                    onDeleteComment: (comment) =>
+                        _deleteMomentComment(moment, comment),
                   ),
                 ),
             ],
           );
+          if (!widget.controller.isLoggedIn) return listView;
+          return RefreshIndicator(
+            onRefresh: _loadMomentFeed,
+            child: listView,
+          );
         },
       ),
     );
-  }
-
-  List<LearningTraceEvent> _filteredEvents(List<LearningTraceEvent> events) {
-    final filter = _typeFilter;
-    if (filter == null) return events;
-    return events.where((event) => event.type == filter).toList();
   }
 
   List<_EvidencePackage> _buildEvidencePackages(
@@ -355,21 +371,304 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     final hasLoop = records.any((record) => record.toolId.contains('loop')) ||
         events.any((event) => event.type == LearningTraceEventType.aiAction);
     return [
-      _CapabilityBadge('大模型', events.isNotEmpty || records.isNotEmpty),
-      _CapabilityBadge('通用 OCR', hasImageMoment || _imagePaths.isNotEmpty),
-      _CapabilityBadge('AI Actions', hasAiAction || records.isNotEmpty),
-      _CapabilityBadge('学习记忆', hasMemory),
-      _CapabilityBadge('闭环留痕', hasLoop || events.length >= 3),
-      _CapabilityBadge('学迹分享', moments.isNotEmpty),
+      _CapabilityBadge(
+        '资料整理',
+        events.isNotEmpty || records.isNotEmpty,
+        current: (events.length + records.length).clamp(0, 6).toInt(),
+        target: 6,
+        source: '把记录、任务、笔记沉淀进学迹',
+        nextStep: '再完成一次学习记录或助手整理',
+        iconAsset: AppAssets.aiBadgeOrganize,
+      ),
+      _CapabilityBadge(
+        '图片识读',
+        hasImageMoment || _imagePaths.isNotEmpty,
+        current: (moments.where((moment) => moment.imagePaths.isNotEmpty).length +
+                _imagePaths.length)
+            .clamp(0, 3)
+            .toInt(),
+        target: 3,
+        source: '用图片材料生成学习轨迹',
+        nextStep: '发布一条带图片的学迹动态',
+        iconAsset: AppAssets.aiBadgeVision,
+      ),
+      _CapabilityBadge(
+        '智能执行',
+        hasAiAction || records.isNotEmpty,
+        current: records.where((record) => record.statusLabel == '已完成').length.clamp(0, 5).toInt(),
+        target: 5,
+        source: '让蓝心模型执行可落地学习动作',
+        nextStep: '用蓝心模型创建任务、笔记或今日安排',
+        iconAsset: AppAssets.aiBadgeAssistant,
+      ),
+      _CapabilityBadge(
+        '学习记忆',
+        hasMemory,
+        current: records.where((record) => record.toolId.contains('memory')).length.clamp(0, 3).toInt(),
+        target: 3,
+        source: '从个人学习资料中召回证据',
+        nextStep: '在学习对话里追问过去的任务或笔记',
+        iconAsset: AppAssets.aiBadgeMemory,
+      ),
+      _CapabilityBadge(
+        '复盘留痕',
+        hasLoop || events.length >= 3,
+        current: events.where((event) => event.isAiGenerated).length.clamp(0, 4).toInt(),
+        target: 4,
+        source: '形成可复盘的学习闭环',
+        nextStep: '保存一次计划并启动专注',
+        iconAsset: AppAssets.aiBadgeReview,
+      ),
+      _CapabilityBadge(
+        '学迹分享',
+        moments.isNotEmpty,
+        current: moments.length.clamp(0, 3).toInt(),
+        target: 3,
+        source: '把学习成果发布成动态',
+        nextStep: '发布或转发一条学迹动态',
+        iconAsset: AppAssets.aiBadgeShare,
+      ),
     ];
   }
 
+  static String _badgeAssetForLabel(String label) {
+    if (label.contains('OCR') || label.contains('图片')) {
+      return AppAssets.aiBadgeVision;
+    }
+    if (label.contains('记忆') || label.contains('检索')) {
+      return AppAssets.aiBadgeMemory;
+    }
+    if (label.contains('复盘') || label.contains('落地')) {
+      return AppAssets.aiBadgeReview;
+    }
+    if (label.contains('分享') || label.contains('动态')) {
+      return AppAssets.aiBadgeShare;
+    }
+    if (label.contains('助手') || label.contains('大模型') || label.contains('AI')) {
+      return AppAssets.aiBadgeAssistant;
+    }
+    return AppAssets.aiBadgeOrganize;
+  }
+
+  static String _badgeNextStepForLabel(String label) {
+    if (label.contains('OCR') || label.contains('图片')) {
+      return '发布一条带图片的学迹动态';
+    }
+    if (label.contains('记忆') || label.contains('检索')) {
+      return '在学习对话里追问过去的任务或笔记';
+    }
+    if (label.contains('复盘') || label.contains('落地')) {
+      return '保存一次计划并启动专注';
+    }
+    if (label.contains('分享') || label.contains('动态')) {
+      return '发布或转发一条学迹动态';
+    }
+    if (label.contains('助手') || label.contains('大模型') || label.contains('AI')) {
+      return '用助手创建任务、笔记或今日安排';
+    }
+    return '再完成一次学习记录或助手整理';
+  }
+
+  Future<void> _openComposerSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final accent = widget.controller.primaryColor;
+        final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+        final bodyColor =
+            widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        return DraggableScrollableSheet(
+          initialChildSize: 0.82,
+          minChildSize: 0.55,
+          maxChildSize: 0.94,
+          expand: false,
+          builder: (context, scrollController) => StatefulBuilder(
+            builder: (context, setSheetState) => Padding(
+              padding: EdgeInsets.only(
+                left: 14,
+                right: 14,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 14,
+              ),
+              child: _ComposerCard(
+                scrollController: scrollController,
+                isDarkMode: widget.isDarkMode,
+                accent: accent,
+                titleColor: titleColor,
+                bodyColor: bodyColor,
+                controller: _contentController,
+                courses: widget.controller.courseNames,
+                groups: _groups,
+                selectedCourse: _selectedCourse,
+                visibility: _visibility,
+                selectedAllowedGroupIds: _selectedAllowedGroupIds,
+                selectedDeniedGroupIds: _selectedDeniedGroupIds,
+                imagePaths: _imagePaths,
+                isPosting: _isPosting,
+                onCourseChanged: (value) {
+                  setState(() => _selectedCourse = value ?? '');
+                  setSheetState(() {});
+                },
+                onVisibilityChanged: (value) {
+                  if (!widget.controller.isLoggedIn &&
+                      value != LearningMomentVisibility.private) {
+                    _showTip('请先登录，再发布公开或小组动态');
+                    return;
+                  }
+                  setState(() {
+                    _visibility = value;
+                    if (value != LearningMomentVisibility.includeGroups) {
+                      _selectedAllowedGroupIds.clear();
+                    }
+                    if (value != LearningMomentVisibility.excludeGroups) {
+                      _selectedDeniedGroupIds.clear();
+                    }
+                  });
+                  setSheetState(() {});
+                },
+                onChooseGroups: (visibility) async {
+                  final current = visibility == LearningMomentVisibility.includeGroups
+                      ? _selectedAllowedGroupIds
+                      : _selectedDeniedGroupIds;
+                  final selected = await _showGroupMultiSelect(
+                    title: visibility == LearningMomentVisibility.includeGroups
+                        ? '指定小组可以看'
+                        : '指定小组不可看',
+                    initialIds: current,
+                  );
+                  if (selected == null) return;
+                  setState(() {
+                    if (visibility == LearningMomentVisibility.includeGroups) {
+                      _selectedAllowedGroupIds
+                        ..clear()
+                        ..addAll(selected);
+                    } else {
+                      _selectedDeniedGroupIds
+                        ..clear()
+                        ..addAll(selected);
+                    }
+                  });
+                  setSheetState(() {});
+                },
+                onPickImages: () async {
+                  await _pickImages();
+                  if (mounted) setSheetState(() {});
+                },
+                onRemoveImage: (path) {
+                  setState(() => _imagePaths.remove(path));
+                  setSheetState(() {});
+                },
+                onPost: () async {
+                  final posted = await _publishMoment();
+                  if (posted && mounted) Navigator.of(sheetContext).pop();
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showMomentsTools() async {
+    final allEvents = widget.controller.learningTraceEvents;
+    final packages = _buildEvidencePackages(allEvents);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final accent = widget.controller.primaryColor;
+        final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+        final bodyColor =
+            widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        return DraggableScrollableSheet(
+          initialChildSize: 0.82,
+          minChildSize: 0.42,
+          maxChildSize: 0.94,
+          builder: (context, scrollController) => Container(
+            decoration: BoxDecoration(
+              color: widget.isDarkMode ? const Color(0xFF111827) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: bodyColor.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _CapabilityBadgePanel(
+                  isDarkMode: widget.isDarkMode,
+                  accent: accent,
+                  titleColor: titleColor,
+                  bodyColor: bodyColor,
+                  badges: _cloudCapabilityBadges.isNotEmpty
+                      ? _cloudCapabilityBadges
+                      : _buildCapabilityBadges(allEvents),
+                  traces: _lastCapabilityTraces,
+                ),
+                const SizedBox(height: 14),
+                _CampusMapPanel(
+                  isDarkMode: widget.isDarkMode,
+                  accent: accent,
+                  titleColor: titleColor,
+                  bodyColor: bodyColor,
+                  locations: _locationCheckIns,
+                  isCheckingLocation: _isCheckingLocation,
+                  onCheckIn: _createLocationCheckIn,
+                ),
+                const SizedBox(height: 14),
+                _EvidencePackagePanel(
+                  isDarkMode: widget.isDarkMode,
+                  accent: accent,
+                  titleColor: titleColor,
+                  bodyColor: bodyColor,
+                  packages: packages,
+                  cloudPackages: _cloudPackages,
+                  onUsePackage: (package) {
+                    _useEvidencePackage(package);
+                    Navigator.of(context).pop();
+                    unawaited(_openComposerSheet());
+                  },
+                  onSavePackage: _saveEvidencePackage,
+                  onGenerateCover: _generateEvidenceCover,
+                  onToggleFeatured: _togglePackageFeatured,
+                  onSharePackage: _sharePackageToGroup,
+                ),
+                const SizedBox(height: 14),
+                _FeaturedWallPanel(
+                  isDarkMode: widget.isDarkMode,
+                  accent: accent,
+                  titleColor: titleColor,
+                  bodyColor: bodyColor,
+                  packages: _cloudPackages.where((package) => package.featured),
+                  events: allEvents.where((event) => event.isShareable).take(4),
+                  onShare: _shareTraceEvent,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _pickImages() async {
-    if (_imagePaths.length >= 3) return;
+    if (_imagePaths.length >= 9) return;
     try {
       final picked = await _picker.pickMultiImage(imageQuality: 82);
       if (picked.isEmpty) return;
-      final remain = 3 - _imagePaths.length;
+      final remain = 9 - _imagePaths.length;
       final saved = <String>[];
       for (final image in picked.take(remain)) {
         saved.add(await persistPickedImage(image, prefix: 'learning_moment'));
@@ -378,80 +677,6 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       setState(() => _imagePaths.addAll(saved));
     } catch (_) {
       _showSnack('图片选择失败，请稍后重试');
-    }
-  }
-
-  Future<void> _generateMomentDraft() async {
-    if (_isGeneratingDraft) return;
-    setState(() => _isGeneratingDraft = true);
-    final recentEvents = widget.controller.learningTraceEvents.take(8).map(
-          (event) => '${event.typeLabel}｜${event.courseName}｜${event.title}'
-              '${event.summary.trim().isEmpty ? '' : '｜${event.summary.trim()}'}',
-        );
-    final prompt = [
-      '请为 StudyTrace 学迹动态生成一条可发布的学习证据动态。',
-      '要求：突出真实学习过程、AI 辅助行动、可追溯证据链；不要写成 AI 导学、错题或题库广告。',
-      if (_selectedCourse.isNotEmpty) '关联课程：$_selectedCourse',
-      if (_imagePaths.isNotEmpty) '用户已添加 ${_imagePaths.length} 张学习现场图片。',
-      '最近学习轨迹：',
-      ...recentEvents,
-      '输出 80-140 字中文正文，可带 2-4 个短标签。',
-    ].join('\n');
-    try {
-      final text = await widget.controller.aiStudyService.generateAssistantReply(
-        input: prompt,
-        purpose: 'note',
-      );
-      if (!mounted) return;
-      setState(() => _contentController.text = text.trim());
-    } catch (_) {
-      final fallback = _localMomentDraft();
-      if (mounted) {
-        setState(() => _contentController.text = fallback);
-        _showSnack('AI 动态草稿暂不可用，已生成本地草稿');
-      }
-    } finally {
-      if (mounted) setState(() => _isGeneratingDraft = false);
-    }
-  }
-
-  String _localMomentDraft() {
-    final events = widget.controller.learningTraceEvents;
-    final course =
-        _selectedCourse.isNotEmpty ? _selectedCourse : '今天的学习任务';
-    final aiCount = events.where((event) => event.isAiGenerated).length;
-    return '完成了 $course 的阶段性整理：任务、记录、笔记和闪卡都沉淀进学迹时间线，'
-        '其中 $aiCount 条轨迹带有 AI 辅助痕迹。#学习证据链 #AI学习操作层';
-  }
-
-  Future<void> _translateMomentDraft() async {
-    final content = _contentController.text.trim();
-    if (content.isEmpty || _isTranslating) return;
-    setState(() => _isTranslating = true);
-    try {
-      final result =
-          await widget.controller.vivoCapabilityService.translate(content);
-      if (!mounted) return;
-      setState(() {
-        _contentController.text = '$content\n\n${result.text}';
-        _lastCapabilityTraces = result.capabilityTraces;
-      });
-      unawaited(
-        widget.controller.activityService
-            .create(
-              type: 'translatedMoment',
-              title: '双语学迹动态已生成',
-              summary: content,
-              sourceType: 'learning_moment_draft',
-              sourceId: 'translation_${DateTime.now().microsecondsSinceEpoch}',
-            )
-            .catchError((_) {}),
-      );
-      _showSnack('已生成双语学习动态');
-    } catch (_) {
-      _showSnack('翻译能力暂不可用，已保留原文');
-    } finally {
-      if (mounted) setState(() => _isTranslating = false);
     }
   }
 
@@ -468,10 +693,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         .toList();
     try {
       final saved = await widget.controller.communityEvidenceService.createPackage(
-        title: '${package.courseName} 学习证据包',
+        title: '${package.courseName} 学习成果包',
         courseName: package.courseName == '未归课程' ? '' : package.courseName,
         description:
-            '${package.eventCount} 条轨迹，${package.aiCount} 次 AI 辅助，${package.shareableCount} 项可分享成果。',
+            '${package.eventCount} 条轨迹，${package.aiCount} 次助手整理，${package.shareableCount} 项可分享成果。',
         sourceRefs: events
             .map((event) => {
                   'type': event.type.name,
@@ -487,10 +712,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       );
       if (!mounted) return;
       setState(() => _cloudPackages.insert(0, saved));
-      _showSnack('证据包已保存，可继续生成封面或分享至小组');
+      _showSnack('成果包已保存，可继续生成封面或分享至小组');
     } catch (_) {
       _useEvidencePackage(package);
-      _showSnack('云端证据包暂不可用，已转为本地动态文案');
+      _showSnack('云端成果包暂不可用，已转为本地动态文案');
     } finally {
       if (mounted) setState(() => _isSavingPackage = false);
     }
@@ -505,7 +730,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         if (!mounted) return;
         setState(() => _lastCapabilityTraces = task.capabilityTraces);
         if (task.imagesUrl.isEmpty) {
-          _showSnack('封面任务仍在处理中：$taskId');
+          _showSnack('封面生成中，稍后刷新查看');
           return;
         }
         final updated = await widget.controller.communityEvidenceService.updatePackage(
@@ -517,7 +742,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         setState(() {
           if (index >= 0) _cloudPackages[index] = updated;
         });
-        _showSnack('成果封面已回填到证据包');
+        _showSnack('成果封面已回填到成果包');
         return;
       }
       final task = await widget.controller.vivoCapabilityService.createCover(
@@ -548,9 +773,9 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
             )
             .catchError((_) {}),
       );
-      _showSnack('成果封面任务已提交：${task.taskId}');
+      _showSnack('成果封面已提交生成，稍后刷新查看');
     } catch (_) {
-      _showSnack('图片生成能力暂不可用，证据包内容不受影响');
+      _showSnack('图片生成能力暂不可用，成果包内容不受影响');
     }
   }
 
@@ -584,9 +809,9 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       setState(() {
         if (index >= 0) _cloudPackages[index] = updated;
       });
-      _showSnack('证据包已分享到 ${group.name}');
+      _showSnack('成果包已分享到 ${group.name}');
     } catch (_) {
-      _showSnack('证据包分享失败，请稍后重试');
+      _showSnack('成果包分享失败，请稍后重试');
     }
   }
 
@@ -610,44 +835,35 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   Future<void> _createLocationCheckIn() async {
     if (_isCheckingLocation) return;
     if (!widget.controller.isLoggedIn) {
-      _showSnack('请先登录，再保存校园地点证据');
+      _showTip('请先登录，再保存校园地点');
       return;
     }
     final draft = await _showLocationCheckInDialog();
     if (draft == null || draft.title.isEmpty) return;
-    final coordinates = _parseCoordinates(draft.coordinates);
     if (!mounted) return;
     setState(() => _isCheckingLocation = true);
     try {
-      final result = coordinates == null
-          ? await widget.controller.vivoCapabilityService.searchPoi(
-              draft.title,
-              city: draft.city,
-            )
-          : await widget.controller.vivoCapabilityService.reverseGeocode(
-              '${coordinates.latitude},${coordinates.longitude}',
-            );
-      final payload = _payloadMap(result['result']);
-      final address = _poiAddress(result['result']);
       final checkIn =
           await widget.controller.communityEvidenceService.createLocationCheckIn(
         title: draft.title,
-        address: _trimAddress(address.isEmpty ? draft.city : address),
-        latitude: coordinates?.latitude,
-        longitude: coordinates?.longitude,
+        address: _trimAddress(draft.city),
         groupId: draft.shareToGroup ? draft.groupId : null,
         visibility: draft.shareToGroup ? 'group' : 'private',
-        poiPayloadJson: payload,
+        poiPayloadJson: {
+          'source': 'manual',
+          'query': draft.title,
+          if (draft.city.isNotEmpty) 'campusOrCity': draft.city,
+        },
       );
       if (!mounted) return;
-      setState(() {
-        _lastCapabilityTraces = parseCapabilityTraces(result['capabilityTraces']);
-        _locationCheckIns.insert(0, checkIn);
-      });
+      setState(() => _locationCheckIns.insert(0, checkIn));
       unawaited(_loadCapabilityBadges());
-      _showSnack(draft.shareToGroup ? '地点已分享到小组证据链' : '地点已保存为私密学习证据');
+      _showTip(draft.shareToGroup ? '地点已分享到小组学习轨迹' : '地点已保存为私密学习记录');
     } catch (_) {
-      await _saveManualLocationCheckIn(draft, coordinates);
+      await _showDialogNotice(
+        title: '地点保存失败',
+        message: '这次没有保存成功，请稍后再试。',
+      );
     } finally {
       if (mounted) setState(() => _isCheckingLocation = false);
     }
@@ -658,7 +874,6 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       text: _selectedCourse.trim().isEmpty ? '' : '${_selectedCourse.trim()} 自习',
     );
     final cityController = TextEditingController();
-    final coordinateController = TextEditingController();
     var shareToGroup = false;
     var selectedGroupId = _selectedGroupId ??
         (_groups.isNotEmpty ? _groups.first.id : null);
@@ -668,7 +883,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         builder: (dialogContext) {
           return StatefulBuilder(
             builder: (context, setDialogState) => AlertDialog(
-              title: const Text('校园学习地图'),
+              title: const Text('手动地点记录'),
               content: SizedBox(
                 width: 460,
                 child: SingleChildScrollView(
@@ -679,14 +894,13 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                         controller: titleController,
                         autofocus: true,
                         decoration: const InputDecoration(
-                          labelText: '地点',
+                          labelText: '学习地点',
                           hintText: '图书馆三楼 / 信息楼自习室',
                         ),
                         onSubmitted: (_) => _popLocationDraft(
                           dialogContext,
                           titleController,
                           cityController,
-                          coordinateController,
                           shareToGroup,
                           selectedGroupId,
                         ),
@@ -695,17 +909,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                       TextField(
                         controller: cityController,
                         decoration: const InputDecoration(
-                          labelText: '城市或校区',
-                          hintText: '可选',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: coordinateController,
-                        keyboardType: TextInputType.text,
-                        decoration: const InputDecoration(
-                          labelText: '坐标',
-                          hintText: '可选，如 39.9,116.3',
+                          labelText: '校区或备注',
+                          hintText: '可选，如主校区 / 靠窗座位',
                         ),
                       ),
                       if (_groups.isNotEmpty) ...[
@@ -749,7 +954,6 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                     dialogContext,
                     titleController,
                     cityController,
-                    coordinateController,
                     shareToGroup,
                     selectedGroupId,
                   ),
@@ -763,7 +967,6 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     } finally {
       titleController.dispose();
       cityController.dispose();
-      coordinateController.dispose();
     }
   }
 
@@ -771,7 +974,6 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     BuildContext dialogContext,
     TextEditingController titleController,
     TextEditingController cityController,
-    TextEditingController coordinateController,
     bool shareToGroup,
     String? selectedGroupId,
   ) {
@@ -781,67 +983,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       _LocationCheckInDraft(
         title: title,
         city: cityController.text.trim(),
-        coordinates: coordinateController.text.trim(),
         shareToGroup: shareToGroup && selectedGroupId != null,
         groupId: selectedGroupId,
       ),
     );
-  }
-
-  Future<void> _saveManualLocationCheckIn(
-    _LocationCheckInDraft draft,
-    _CoordinatePair? coordinates,
-  ) async {
-    try {
-      final checkIn =
-          await widget.controller.communityEvidenceService.createLocationCheckIn(
-        title: draft.title,
-        address: _trimAddress(draft.city),
-        latitude: coordinates?.latitude,
-        longitude: coordinates?.longitude,
-        groupId: draft.shareToGroup ? draft.groupId : null,
-        visibility: draft.shareToGroup ? 'group' : 'private',
-        poiPayloadJson: {
-          'fallback': true,
-          'source': 'manual',
-          'query': draft.title,
-          if (draft.city.isNotEmpty) 'city': draft.city,
-          if (draft.coordinates.isNotEmpty) 'coordinates': draft.coordinates,
-        },
-      );
-      if (!mounted) return;
-      setState(() => _locationCheckIns.insert(0, checkIn));
-      unawaited(_loadCapabilityBadges());
-      _showSnack('POI/地理编码不可用，已按手动地点保存证据');
-    } catch (_) {
-      _showSnack('地点保存失败，请稍后重试');
-    }
-  }
-
-  Map<String, dynamic> _payloadMap(dynamic raw) {
-    if (raw is Map) return raw.cast<String, dynamic>();
-    if (raw is List) return {'items': raw};
-    return {'raw': raw?.toString() ?? ''};
-  }
-
-  String _poiAddress(dynamic raw) {
-    if (raw is List && raw.isNotEmpty) return _poiAddress(raw.first);
-    if (raw is Map) {
-      final result = raw['result'];
-      final candidates = [
-        raw['address'],
-        raw['formatted_address'],
-        raw['formattedAddress'],
-        raw['name'],
-        if (result is Map) result['address'],
-        if (result is Map) result['formatted_address'],
-        if (result is Map) result['name'],
-      ];
-      return candidates
-          .map((item) => item?.toString().trim() ?? '')
-          .firstWhere((item) => item.isNotEmpty, orElse: () => '');
-    }
-    return '';
   }
 
   String _trimAddress(String value) {
@@ -850,53 +995,66 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     return normalized.substring(0, 240);
   }
 
-  _CoordinatePair? _parseCoordinates(String value) {
-    final normalized = value.trim();
-    if (normalized.isEmpty) return null;
-    final parts = normalized.split(RegExp(r'[,，\s]+'));
-    if (parts.length < 2) return null;
-    final latitude = double.tryParse(parts[0]);
-    final longitude = double.tryParse(parts[1]);
-    if (latitude == null || longitude == null) return null;
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      return null;
-    }
-    return _CoordinatePair(latitude, longitude);
-  }
-
-
-  Future<void> _publishMoment() async {
+  Future<bool> _publishMoment() async {
     final content = _contentController.text.trim();
     if (content.isEmpty && _imagePaths.isEmpty) {
-      _showSnack('写点学习收获，或至少添加一张图片');
-      return;
+      _showTip('写点学习收获，或至少添加一张图片');
+      return false;
     }
-    if (_visibility == LearningMomentVisibility.group &&
-        (_selectedGroupId == null || _selectedGroupId!.isEmpty)) {
-      _showSnack('请选择要发布的小组，或切回私密证据链');
-      return;
+    if (_visibility != LearningMomentVisibility.private &&
+        !widget.controller.isLoggedIn) {
+      _showTip('请先登录后发布公开或小组动态');
+      return false;
+    }
+    if (_visibility == LearningMomentVisibility.includeGroups &&
+        _selectedAllowedGroupIds.isEmpty) {
+      _showTip('请选择允许查看的小组，或切回公开/私密');
+      return false;
+    }
+    if (_visibility == LearningMomentVisibility.excludeGroups &&
+        _selectedDeniedGroupIds.isEmpty) {
+      _showTip('请选择不允许查看的小组，或切回公开/私密');
+      return false;
     }
     setState(() => _isPosting = true);
-    final isGroupPost = _visibility == LearningMomentVisibility.group;
+    final publishedVisibility = _visibility;
     try {
-      await widget.controller.publishLearningMoment(
-        content: content.isEmpty ? '分享了一组学习图片' : content,
-        courseName: _selectedCourse,
-        imagePaths: List<String>.from(_imagePaths),
-        visibility: _visibility,
-        groupId: _visibility == LearningMomentVisibility.group
-            ? _selectedGroupId
-            : null,
-      );
-      if (!mounted) return;
+      final text = content.isEmpty ? '分享了一组学习图片' : content;
+      if (widget.controller.isLoggedIn) {
+        final moment = await widget.controller.learningMomentService.create(
+          content: text,
+          courseName: _selectedCourse,
+          imagePaths: List<String>.from(_imagePaths),
+          visibility: _visibility,
+          allowedGroupIds: List<String>.from(_selectedAllowedGroupIds),
+          deniedGroupIds: List<String>.from(_selectedDeniedGroupIds),
+        );
+        _upsertCloudMoment(moment);
+      } else {
+        await widget.controller.publishLearningMoment(
+          content: text,
+          courseName: _selectedCourse,
+          imagePaths: List<String>.from(_imagePaths),
+          visibility: LearningMomentVisibility.private,
+        );
+      }
+      if (!mounted) return false;
       setState(() {
         _contentController.clear();
         _imagePaths.clear();
         _selectedCourse = '';
         _selectedGroupId = null;
+        _selectedAllowedGroupIds.clear();
+        _selectedDeniedGroupIds.clear();
         _visibility = LearningMomentVisibility.private;
       });
-      _showSnack(isGroupPost ? '已发布到小组动态' : '已保存为私密学习证据');
+      _showTip(publishedVisibility == LearningMomentVisibility.private
+          ? '已保存私密动态'
+          : '已发布动态');
+      return true;
+    } catch (error) {
+      _showTip(_friendlyCloudError(error, '动态发布失败，请稍后重试'));
+      return false;
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
@@ -904,7 +1062,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
 
   Future<void> _shareTraceEvent(LearningTraceEvent event) async {
     await widget.controller.shareTraceEvent(event);
-    _showSnack('已转发到私密学迹动态');
+    _showTip('已转发到私密学迹动态');
   }
 
   void _useEvidencePackage(_EvidencePackage package) {
@@ -914,22 +1072,341 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     setState(() {
       _selectedCourse = validCourse;
       _contentController.text =
-          '整理了「${package.courseName}」的学习证据包：${package.eventCount} 条轨迹、'
-          '${package.aiCount} 次 AI 辅助、${package.shareableCount} 条可分享成果。'
+          '整理了「${package.courseName}」的学习成果包：${package.eventCount} 条轨迹、'
+          '${package.aiCount} 次助手整理、${package.shareableCount} 条可分享成果。'
           '这些记录把任务执行、笔记沉淀和复盘材料串成了可追溯的学习过程。';
     });
   }
 
   Future<void> _deleteMoment(String momentId) async {
-    await widget.controller.deleteLearningMoment(momentId);
-    _showSnack('已删除动态');
+    try {
+      if (widget.controller.isLoggedIn) {
+        await widget.controller.learningMomentService.delete(momentId);
+        if (!mounted) return;
+        setState(
+          () => _cloudMoments.removeWhere((moment) => moment.id == momentId),
+        );
+      } else {
+        await widget.controller.deleteLearningMoment(momentId);
+      }
+      _showTip('已删除动态');
+    } catch (error) {
+      _showTip(_friendlyCloudError(error, '动态删除失败，请稍后重试'));
+    }
+  }
+
+  Future<void> _toggleMomentLike(LearningMoment moment) async {
+    if (!widget.controller.isLoggedIn) {
+      _showTip('请先登录后点赞');
+      return;
+    }
+    try {
+      final updated = moment.likedByMe
+          ? await widget.controller.learningMomentService.unlike(moment.id)
+          : await widget.controller.learningMomentService.like(moment.id);
+      _upsertCloudMoment(updated);
+    } catch (error) {
+      _showTip(_friendlyCloudError(error, '点赞失败，请稍后重试'));
+    }
+  }
+
+  Future<void> _commentMoment(LearningMoment moment) async {
+    if (!widget.controller.isLoggedIn) {
+      _showTip('请先登录后评论');
+      return;
+    }
+    final controller = TextEditingController();
+    try {
+      final text = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('写评论'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 500,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(hintText: '说点什么...'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('发送'),
+            ),
+          ],
+        ),
+      );
+      if (text == null || text.isEmpty) return;
+      final updated =
+          await widget.controller.learningMomentService.comment(moment.id, text);
+      _upsertCloudMoment(updated);
+    } catch (error) {
+      _showTip(_friendlyCloudError(error, '评论失败，请稍后重试'));
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _deleteMomentComment(
+    LearningMoment moment,
+    LearningMomentComment comment,
+  ) async {
+    if (!comment.isMine && !moment.isMine) return;
+    try {
+      final updated = await widget.controller.learningMomentService
+          .deleteComment(moment.id, comment.id);
+      _upsertCloudMoment(updated);
+    } catch (error) {
+      _showTip(_friendlyCloudError(error, '评论删除失败，请稍后重试'));
+    }
+  }
+
+  Future<void> _editMomentVisibility(LearningMoment moment) async {
+    if (!widget.controller.isLoggedIn) {
+      _showTip('请先登录，再修改可见范围');
+      return;
+    }
+    final result = await _showVisibilityEditor(
+      initialVisibility: moment.visibility,
+      initialAllowedIds: moment.allowedGroupIds,
+      initialDeniedIds: moment.deniedGroupIds,
+    );
+    if (result == null) return;
+    try {
+      final updated = await widget.controller.learningMomentService.updateVisibility(
+        momentId: moment.id,
+        visibility: result.visibility,
+        allowedGroupIds: result.allowedGroupIds,
+        deniedGroupIds: result.deniedGroupIds,
+      );
+      _upsertCloudMoment(updated);
+      _showTip('可见范围已更新');
+    } catch (error) {
+      _showTip(_friendlyCloudError(error, '可见范围更新失败，请稍后重试'));
+    }
+  }
+
+  void _upsertCloudMoment(LearningMoment moment) {
+    if (!mounted) return;
+    setState(() {
+      final index = _cloudMoments.indexWhere((item) => item.id == moment.id);
+      if (index >= 0) {
+        _cloudMoments[index] = moment;
+      } else {
+        _cloudMoments.insert(0, moment);
+      }
+    });
+  }
+
+  Future<List<String>?> _showGroupMultiSelect({
+    required String title,
+    required List<String> initialIds,
+  }) async {
+    final selected = initialIds.toSet();
+    return showModalBottomSheet<List<String>>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+            decoration: BoxDecoration(
+              color: widget.isDarkMode ? const Color(0xFF1E2533) : Colors.white,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_groups.isEmpty)
+                  Text(
+                    '暂无可选小组',
+                    style: TextStyle(
+                      color: widget.isDarkMode
+                          ? const Color(0xFFC2C8D6)
+                          : AppColors.body,
+                    ),
+                  )
+                else
+                  ..._groups.map(
+                    (group) => CheckboxListTile(
+                      value: selected.contains(group.id),
+                      title: Text(group.name),
+                      subtitle: Text('${group.memberCount} 人'),
+                      onChanged: (checked) {
+                        setSheetState(() {
+                          if (checked == true) {
+                            selected.add(group.id);
+                          } else {
+                            selected.remove(group.id);
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      child: const Text('取消'),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: () =>
+                          Navigator.of(sheetContext).pop(selected.toList()),
+                      child: const Text('确定'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<_VisibilityDraft?> _showVisibilityEditor({
+    required LearningMomentVisibility initialVisibility,
+    required List<String> initialAllowedIds,
+    required List<String> initialDeniedIds,
+  }) async {
+    var visibility = initialVisibility;
+    final allowed = initialAllowedIds.toList();
+    final denied = initialDeniedIds.toList();
+    return showModalBottomSheet<_VisibilityDraft>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+            decoration: BoxDecoration(
+              color: widget.isDarkMode ? const Color(0xFF1E2533) : Colors.white,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _VisibilityPicker(
+                  isDarkMode: widget.isDarkMode,
+                  groups: _groups,
+                  visibility: visibility,
+                  allowedGroupIds: allowed,
+                  deniedGroupIds: denied,
+                  onVisibilityChanged: (value) {
+                    setSheetState(() {
+                      visibility = value;
+                      if (value != LearningMomentVisibility.includeGroups) {
+                        allowed.clear();
+                      }
+                      if (value != LearningMomentVisibility.excludeGroups) {
+                        denied.clear();
+                      }
+                    });
+                  },
+                  onChooseGroups: (mode) async {
+                    final selected = await _showGroupMultiSelect(
+                      title: mode == LearningMomentVisibility.includeGroups
+                          ? '指定小组可以看'
+                          : '指定小组不可看',
+                      initialIds: mode == LearningMomentVisibility.includeGroups
+                          ? allowed
+                          : denied,
+                    );
+                    if (selected == null) return;
+                    setSheetState(() {
+                      if (mode == LearningMomentVisibility.includeGroups) {
+                        allowed
+                          ..clear()
+                          ..addAll(selected);
+                      } else {
+                        denied
+                          ..clear()
+                          ..addAll(selected);
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      child: const Text('取消'),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: () {
+                        if (visibility == LearningMomentVisibility.includeGroups &&
+                            allowed.isEmpty) {
+                          _showTip('请选择允许查看的小组');
+                          return;
+                        }
+                        if (visibility == LearningMomentVisibility.excludeGroups &&
+                            denied.isEmpty) {
+                          _showTip('请选择不允许查看的小组');
+                          return;
+                        }
+                        Navigator.of(sheetContext).pop(_VisibilityDraft(
+                          visibility,
+                          allowed,
+                          denied,
+                        ));
+                      },
+                      child: const Text('保存'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _showSnack(String message) {
+    _showTip(message);
+  }
+
+  String _friendlyCloudError(Object error, String fallback) {
+    if (error is ApiException) {
+      final message = error.displayMessage.trim();
+      if (message.isNotEmpty) return message;
+    }
+    return fallback;
+  }
+
+  void _showTip(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    StudyToast.show(context, message);
+  }
+
+  Future<void> _showDialogNotice({
+    required String title,
+    required String message,
+  }) async {
+    if (!mounted) return;
+    await StudyToast.dialog(context, title: title, message: message);
   }
 }
 
@@ -972,6 +1449,7 @@ class _HeaderPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
                 width: 42,
@@ -980,7 +1458,12 @@ class _HeaderPanel extends StatelessWidget {
                   color: accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(Icons.auto_stories_rounded, color: accent),
+                child: StudyAssetIcon(
+                  asset: AppAssets.sideMomentsIcon,
+                  color: accent,
+                  size: 24,
+                  fallbackIcon: Icons.auto_stories_rounded,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -988,7 +1471,7 @@ class _HeaderPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI 学习证据链社区',
+                      '学习轨迹社区',
                       style: TextStyle(
                         color: titleColor,
                         fontSize: 17,
@@ -997,7 +1480,7 @@ class _HeaderPanel extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '把学习行为、AI 干预和成果沉淀成可追溯证据',
+                      '把学习行为、复盘和成果沉淀成清楚的学习轨迹',
                       style: TextStyle(color: bodyColor, fontSize: 12),
                     ),
                   ],
@@ -1006,7 +1489,10 @@ class _HeaderPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _MetricPill(
                 label: '轨迹事件',
@@ -1014,16 +1500,14 @@ class _HeaderPanel extends StatelessWidget {
                 accent: accent,
                 isDarkMode: isDarkMode,
               ),
-              const SizedBox(width: 10),
               _MetricPill(
                 label: '主动分享',
                 value: '$momentCount',
                 accent: const Color(0xFF19A974),
                 isDarkMode: isDarkMode,
               ),
-              const SizedBox(width: 10),
               _MetricPill(
-                label: '证据包',
+                label: '成果包',
                 value: '$packageCount',
                 accent: const Color(0xFFF59E0B),
                 isDarkMode: isDarkMode,
@@ -1031,6 +1515,59 @@ class _HeaderPanel extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PostEntryCard extends StatelessWidget {
+  const _PostEntryCard({
+    required this.isDarkMode,
+    required this.accent,
+    required this.titleColor,
+    required this.bodyColor,
+    required this.onTap,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final Color titleColor;
+  final Color bodyColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDarkMode ? const Color(0xFF1E2533) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDarkMode
+                ? Colors.white.withValues(alpha: 0.06)
+                : const Color(0xFFE8ECF5),
+          ),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: accent.withValues(alpha: 0.14),
+              child: Icon(Icons.person_rounded, color: accent, size: 19),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '分享今天的学习现场...',
+                style: TextStyle(color: bodyColor, fontSize: 14),
+              ),
+            ),
+            Icon(Icons.photo_camera_rounded, color: bodyColor, size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -1051,7 +1588,8 @@ class _MetricPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 96, maxWidth: 132),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
@@ -1063,13 +1601,20 @@ class _MetricPill extends StatelessWidget {
           children: [
             Text(
               value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: accent,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            Text(label, style: TextStyle(color: accent, fontSize: 11)),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: accent, fontSize: 11),
+            ),
           ],
         ),
       ),
@@ -1096,6 +1641,8 @@ class _CapabilityBadgePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final unlockedCount = badges.where((badge) => badge.unlocked).length;
+    final totalProgress = badges.isEmpty ? 0.0 : unlockedCount / badges.length;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1105,12 +1652,20 @@ class _CapabilityBadgePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Icon(Icons.verified_rounded, color: accent, size: 20),
+              StudyAssetIcon(
+                asset: AppAssets.sideAchievementsIcon,
+                color: accent,
+                size: 22,
+                fallbackIcon: Icons.verified_rounded,
+              ),
               const SizedBox(width: 8),
               Text(
-                'vivo AI 能力徽章',
+                '学习能力徽章',
                 style: TextStyle(
                   color: titleColor,
                   fontWeight: FontWeight.w800,
@@ -1119,43 +1674,44 @@ class _CapabilityBadgePanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            '每次能力使用都会回到学习证据链，而不是停留在生成结果。',
-            style: TextStyle(color: bodyColor, fontSize: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '像成就系统一样记录能力成长，徽章图标已接入学习能力主题资产。',
+                  style: TextStyle(color: bodyColor, fontSize: 12, height: 1.35),
+                ),
+              ),
+              BadgePill(
+                label: '$unlockedCount/${badges.length} 已解锁',
+                background: accent.withValues(alpha: 0.12),
+                foreground: accent,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: totalProgress,
+              minHeight: 6,
+              backgroundColor: bodyColor.withValues(alpha: 0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(accent),
+            ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: badges
-                .map(
-                  (badge) => Chip(
-                    avatar: Icon(
-                      badge.unlocked
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      size: 16,
-                      color: badge.unlocked ? accent : bodyColor,
-                    ),
-                    label: Text(
-                      badge.current > 0
-                          ? '${badge.label} ${badge.current}/${badge.target}'
-                          : badge.label,
-                    ),
-                    labelStyle: TextStyle(
-                      color: badge.unlocked ? titleColor : bodyColor,
-                      fontWeight:
-                          badge.unlocked ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                    backgroundColor: badge.unlocked
-                        ? accent.withValues(alpha: 0.1)
-                        : (isDarkMode
-                            ? Colors.white.withValues(alpha: 0.05)
-                            : const Color(0xFFF2F5FC)),
-                  ),
-                )
-                .toList(),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: badges.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, index) => _CapabilityBadgeTile(
+              badge: badges[index],
+              isDarkMode: isDarkMode,
+              accent: accent,
+              titleColor: titleColor,
+              bodyColor: bodyColor,
+            ),
           ),
           if (traces.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -1167,6 +1723,163 @@ class _CapabilityBadgePanel extends StatelessWidget {
                 ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _CapabilityBadgeTile extends StatelessWidget {
+  const _CapabilityBadgeTile({
+    required this.badge,
+    required this.isDarkMode,
+    required this.accent,
+    required this.titleColor,
+    required this.bodyColor,
+  });
+
+  final _CapabilityBadge badge;
+  final bool isDarkMode;
+  final Color accent;
+  final Color titleColor;
+  final Color bodyColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = badge.target <= 0
+        ? 0.0
+        : (badge.current / badge.target).clamp(0.0, 1.0).toDouble();
+    final statusText = badge.unlocked ? '已解锁' : '未解锁';
+    final levelText = progress >= 1
+        ? 'Lv.3'
+        : progress >= 0.66
+            ? 'Lv.2'
+            : progress > 0
+                ? 'Lv.1'
+                : 'Lv.0';
+    return Opacity(
+      opacity: badge.unlocked ? 1 : 0.58,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: badge.unlocked
+              ? accent.withValues(alpha: isDarkMode ? 0.18 : 0.1)
+              : (isDarkMode
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : const Color(0xFFF2F5FC)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: badge.unlocked
+                ? accent.withValues(alpha: 0.22)
+                : bodyColor.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: isDarkMode ? 0.08 : 0.72),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: StudyAssetIcon(
+                      asset: badge.iconAsset,
+                      size: 46,
+                      color: accent,
+                      fallbackIcon: Icons.auto_awesome_rounded,
+                      preserveColor: true,
+                    ),
+                  ),
+                ),
+                Icon(
+                  badge.unlocked
+                      ? Icons.check_circle_rounded
+                      : Icons.lock_outline_rounded,
+                  color: badge.unlocked ? accent : bodyColor,
+                  size: 18,
+                ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          badge.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: badge.unlocked ? titleColor : bodyColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      BadgePill(
+                        label: '$levelText · $statusText',
+                        background: badge.unlocked
+                            ? accent.withValues(alpha: 0.12)
+                            : bodyColor.withValues(alpha: 0.1),
+                        foreground: badge.unlocked ? accent : bodyColor,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    badge.source.isEmpty ? badge.nextStep : badge.source,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: bodyColor, fontSize: 12, height: 1.3),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 5,
+                            backgroundColor: bodyColor.withValues(alpha: 0.14),
+                            valueColor: AlwaysStoppedAnimation<Color>(accent),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${badge.current.clamp(0, badge.target)}/${badge.target}',
+                        style: TextStyle(
+                          color: bodyColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!badge.unlocked && badge.nextStep.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      '下一步：${badge.nextStep}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: bodyColor, fontSize: 11),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1205,11 +1918,11 @@ class _CampusMapPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.map_rounded, color: accent, size: 20),
+              Icon(Icons.edit_location_alt_rounded, color: accent, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '校园学习地图',
+                  '手动地点记录',
                   style: TextStyle(
                     color: titleColor,
                     fontWeight: FontWeight.w800,
@@ -1217,12 +1930,12 @@ class _CampusMapPanel extends StatelessWidget {
                 ),
               ),
               Text(
-                '${locations.length} 个地点',
+                '${locations.length} 条记录',
                 style: TextStyle(color: bodyColor, fontSize: 12),
               ),
               const SizedBox(width: 8),
               IconButton.filledTonal(
-                tooltip: '地点打卡',
+                tooltip: '手动记录地点',
                 onPressed: isCheckingLocation ? null : () => onCheckIn(),
                 icon: isCheckingLocation
                     ? const SizedBox(
@@ -1230,14 +1943,14 @@ class _CampusMapPanel extends StatelessWidget {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.add_location_alt_rounded, size: 18),
+                    : const Icon(Icons.edit_location_alt_rounded, size: 18),
               ),
             ],
           ),
           const SizedBox(height: 12),
           if (recent.isEmpty)
             Text(
-              '还没有地点证据',
+              '还没有手动地点记录',
               style: TextStyle(color: bodyColor, fontSize: 13),
             )
           else
@@ -1318,9 +2031,6 @@ class _CampusMapPanel extends StatelessWidget {
 
   String _locationMeta(cloud.LocationCheckIn location) {
     if (location.address.trim().isNotEmpty) return location.address.trim();
-    if (location.latitude != null && location.longitude != null) {
-      return '${location.latitude!.toStringAsFixed(4)}, ${location.longitude!.toStringAsFixed(4)}';
-    }
     return '手动地点';
   }
 
@@ -1363,8 +2073,232 @@ class _MiniTag extends StatelessWidget {
   }
 }
 
+class _VisibilityDraft {
+  const _VisibilityDraft(
+    this.visibility,
+    this.allowedGroupIds,
+    this.deniedGroupIds,
+  );
+
+  final LearningMomentVisibility visibility;
+  final List<String> allowedGroupIds;
+  final List<String> deniedGroupIds;
+}
+
+class _VisibilityOption {
+  const _VisibilityOption(
+    this.visibility,
+    this.icon,
+    this.title,
+    this.subtitle,
+  );
+
+  final LearningMomentVisibility visibility;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+}
+
+class _VisibilityOptionTile extends StatelessWidget {
+  const _VisibilityOptionTile({
+    required this.option,
+    required this.selected,
+    required this.isDarkMode,
+    required this.titleColor,
+    required this.bodyColor,
+    required this.onTap,
+  });
+
+  final _VisibilityOption option;
+  final bool selected;
+  final bool isDarkMode;
+  final Color titleColor;
+  final Color bodyColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final fillColor = selected
+        ? StudyUi.primary.withValues(alpha: isDarkMode ? 0.22 : 0.10)
+        : isDarkMode
+            ? Colors.white.withValues(alpha: 0.05)
+            : const Color(0xFFF4F6FB);
+    final borderColor = selected
+        ? StudyUi.primary.withValues(alpha: 0.55)
+        : isDarkMode
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFE8ECF5);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            color: fillColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                option.icon,
+                color: selected ? StudyUi.primary : bodyColor,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      option.title,
+                      style: TextStyle(
+                        color: selected ? StudyUi.primary : titleColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      option.subtitle,
+                      style: TextStyle(color: bodyColor, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: selected ? StudyUi.primary : bodyColor,
+                size: 19,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VisibilityPicker extends StatelessWidget {
+  const _VisibilityPicker({
+    required this.isDarkMode,
+    required this.groups,
+    required this.visibility,
+    required this.allowedGroupIds,
+    required this.deniedGroupIds,
+    required this.onVisibilityChanged,
+    required this.onChooseGroups,
+  });
+
+  final bool isDarkMode;
+  final List<GroupInfo> groups;
+  final LearningMomentVisibility visibility;
+  final List<String> allowedGroupIds;
+  final List<String> deniedGroupIds;
+  final ValueChanged<LearningMomentVisibility> onVisibilityChanged;
+  final FutureOr<void> Function(LearningMomentVisibility visibility)
+      onChooseGroups;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeIds = visibility == LearningMomentVisibility.includeGroups
+        ? allowedGroupIds
+        : visibility == LearningMomentVisibility.excludeGroups
+            ? deniedGroupIds
+            : const <String>[];
+    final showGroups = visibility == LearningMomentVisibility.includeGroups ||
+        visibility == LearningMomentVisibility.excludeGroups;
+    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor =
+        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    const options = [
+      _VisibilityOption(
+        LearningMomentVisibility.public,
+        Icons.groups_rounded,
+        '公开',
+        '我的小组成员可见',
+      ),
+      _VisibilityOption(
+        LearningMomentVisibility.private,
+        Icons.lock_rounded,
+        '私密',
+        '仅自己可见',
+      ),
+      _VisibilityOption(
+        LearningMomentVisibility.includeGroups,
+        Icons.visibility_rounded,
+        '指定小组可见',
+        '只让选中的小组看',
+      ),
+      _VisibilityOption(
+        LearningMomentVisibility.excludeGroups,
+        Icons.visibility_off_rounded,
+        '指定小组不可见',
+        '选中的小组不允许看',
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '可见范围',
+          style: TextStyle(
+            color: titleColor,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...options.map(
+          (option) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _VisibilityOptionTile(
+              option: option,
+              selected: visibility == option.visibility,
+              isDarkMode: isDarkMode,
+              titleColor: titleColor,
+              bodyColor: bodyColor,
+              onTap: () => onVisibilityChanged(option.visibility),
+            ),
+          ),
+        ),
+        if (showGroups) ...[
+          const SizedBox(height: 2),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ...activeIds.map(
+                (id) => Chip(
+                  label: Text(_groupName(groups, id)),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.group_add_rounded, size: 17),
+                label: Text(activeIds.isEmpty ? '选择小组' : '重新选择'),
+                onPressed: () => onChooseGroups(visibility),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _groupName(List<GroupInfo> groups, String id) {
+    for (final group in groups) {
+      if (group.id == id) return group.name;
+    }
+    return '未知小组';
+  }
+}
+
 class _ComposerCard extends StatelessWidget {
   const _ComposerCard({
+    required this.scrollController,
     required this.isDarkMode,
     required this.accent,
     required this.titleColor,
@@ -1373,22 +2307,20 @@ class _ComposerCard extends StatelessWidget {
     required this.courses,
     required this.groups,
     required this.selectedCourse,
-    required this.selectedGroupId,
+    required this.visibility,
+    required this.selectedAllowedGroupIds,
+    required this.selectedDeniedGroupIds,
     required this.imagePaths,
     required this.isPosting,
-    required this.isGeneratingDraft,
-    required this.isTranslating,
-    required this.isCheckingLocation,
     required this.onCourseChanged,
-    required this.onGroupChanged,
+    required this.onVisibilityChanged,
+    required this.onChooseGroups,
     required this.onPickImages,
     required this.onRemoveImage,
-    required this.onGenerateDraft,
-    required this.onTranslate,
-    required this.onLocationCheckIn,
     required this.onPost,
   });
 
+  final ScrollController scrollController;
   final bool isDarkMode;
   final Color accent;
   final Color titleColor;
@@ -1397,19 +2329,17 @@ class _ComposerCard extends StatelessWidget {
   final List<String> courses;
   final List<GroupInfo> groups;
   final String selectedCourse;
-  final String? selectedGroupId;
+  final LearningMomentVisibility visibility;
+  final List<String> selectedAllowedGroupIds;
+  final List<String> selectedDeniedGroupIds;
   final List<String> imagePaths;
   final bool isPosting;
-  final bool isGeneratingDraft;
-  final bool isTranslating;
-  final bool isCheckingLocation;
   final ValueChanged<String?> onCourseChanged;
-  final ValueChanged<String?> onGroupChanged;
+  final ValueChanged<LearningMomentVisibility> onVisibilityChanged;
+  final FutureOr<void> Function(LearningMomentVisibility visibility)
+      onChooseGroups;
   final FutureOr<void> Function() onPickImages;
   final ValueChanged<String> onRemoveImage;
-  final FutureOr<void> Function() onGenerateDraft;
-  final FutureOr<void> Function() onTranslate;
-  final FutureOr<void> Function() onLocationCheckIn;
   final FutureOr<void> Function() onPost;
 
   @override
@@ -1418,10 +2348,6 @@ class _ComposerCard extends StatelessWidget {
         selectedCourse.isNotEmpty && courses.contains(selectedCourse)
             ? selectedCourse
             : '';
-    final groupValue = selectedGroupId != null &&
-            groups.any((group) => group.id == selectedGroupId)
-        ? selectedGroupId!
-        : '';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1433,32 +2359,80 @@ class _ComposerCard extends StatelessWidget {
               : const Color(0xFFE7EBF5),
         ),
       ),
-      child: Column(
-        children: [
-          TextField(
-            controller: controller,
-            minLines: 3,
-            maxLines: 5,
-            style: TextStyle(color: titleColor, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: '今天学了什么？拍到的板书、课件、错题也可以一起发。',
-              hintStyle: TextStyle(color: bodyColor),
-              border: InputBorder.none,
+      child: SingleChildScrollView(
+        controller: scrollController,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: bodyColor.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
             ),
-          ),
-          if (imagePaths.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _ImageGrid(
-              paths: imagePaths,
-              isDarkMode: isDarkMode,
-              onRemove: onRemoveImage,
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.11),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.edit_note_rounded, color: accent, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '发布学迹动态',
+                        style: TextStyle(
+                          color: titleColor,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '记录学习现场、错题、板书或阶段成果。',
+                        style: TextStyle(color: bodyColor, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
+            const SizedBox(height: 18),
+            TextField(
+              controller: controller,
+              minLines: 5,
+              maxLines: 8,
+              style: TextStyle(color: titleColor, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: '今天学了什么？拍到的板书、课件、错题也可以一起发。',
+                hintStyle: TextStyle(color: bodyColor),
+                border: InputBorder.none,
+              ),
+            ),
+            if (imagePaths.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _ImageGrid(
+                paths: imagePaths,
+                isDarkMode: isDarkMode,
+                onRemove: onRemoveImage,
+              ),
+            ],
+            const SizedBox(height: 12),
+            Column(
+              children: [
+                DropdownButtonFormField<String>(
                   value: currentCourse,
                   isExpanded: true,
                   dropdownColor:
@@ -1479,100 +2453,57 @@ class _ComposerCard extends StatelessWidget {
                   ],
                   onChanged: onCourseChanged,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: groupValue,
-                  isExpanded: true,
-                  dropdownColor:
-                      isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-                  decoration: _fieldDecoration(
-                    isDarkMode,
-                    accent,
-                    Icons.lock_rounded,
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('私密证据链')),
-                    ...groups.map(
-                      (group) => DropdownMenuItem(
-                        value: group.id,
-                        child: Text('发到 ${group.name}',
-                            overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 10),
+                _VisibilityPicker(
+                  isDarkMode: isDarkMode,
+                  groups: groups,
+                  visibility: visibility,
+                  allowedGroupIds: selectedAllowedGroupIds,
+                  deniedGroupIds: selectedDeniedGroupIds,
+                  onVisibilityChanged: onVisibilityChanged,
+                  onChooseGroups: onChooseGroups,
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                IconButton.filledTonal(
+                  tooltip: '添加图片',
+                  onPressed:
+                      imagePaths.length >= 9 ? null : () => onPickImages(),
+                  icon: const Icon(Icons.add_photo_alternate_rounded),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: isPosting ? null : () => onPost(),
+                    icon: isPosting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send_rounded),
+                    label: Text(
+                      visibility == LearningMomentVisibility.private
+                          ? '保存私密动态'
+                          : '发布动态',
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                  ],
-                  onChanged: onGroupChanged,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              IconButton.filledTonal(
-                tooltip: '添加图片',
-                onPressed: imagePaths.length >= 3 ? null : () => onPickImages(),
-                icon: const Icon(Icons.add_photo_alternate_rounded),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: isGeneratingDraft ? null : () => onGenerateDraft(),
-                icon: isGeneratingDraft
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.auto_awesome_rounded, size: 18),
-                label: Text(isGeneratingDraft ? '生成中' : 'AI 草稿'),
-              ),
-              const SizedBox(width: 6),
-              IconButton.filledTonal(
-                tooltip: '生成双语动态',
-                onPressed: isTranslating ? null : () => onTranslate(),
-                icon: isTranslating
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.translate_rounded, size: 18),
-              ),
-              const SizedBox(width: 6),
-              IconButton.filledTonal(
-                tooltip: '校园地点打卡',
-                onPressed: isCheckingLocation ? null : () => onLocationCheckIn(),
-                icon: isCheckingLocation
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.location_on_rounded, size: 18),
-              ),
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: isPosting ? null : () => onPost(),
-                icon: isPosting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send_rounded),
-                label: const Text('发布'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1638,10 +2569,15 @@ class _EvidencePackagePanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.inventory_2_rounded, color: accent, size: 20),
+              StudyAssetIcon(
+                asset: AppAssets.featureNotesIcon,
+                color: accent,
+                size: 22,
+                fallbackIcon: Icons.inventory_2_rounded,
+              ),
               const SizedBox(width: 8),
               Text(
-                '作品证据包',
+                '作品成果包',
                 style: TextStyle(
                   color: titleColor,
                   fontWeight: FontWeight.w800,
@@ -1651,7 +2587,7 @@ class _EvidencePackagePanel extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '按课程聚合学习记录、任务、笔记、闪卡和 AI 操作。',
+            '按课程聚合学习记录、任务、笔记、闪卡和AI操作。',
             style: TextStyle(color: bodyColor, fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -1678,14 +2614,14 @@ class _EvidencePackagePanel extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '${package.eventCount} 条轨迹 · ${package.aiCount} 次 AI · ${package.shareableCount} 条成果',
+                              '${package.eventCount} 条轨迹 · ${package.aiCount} 次整理 · ${package.shareableCount} 条成果',
                               style: TextStyle(color: bodyColor, fontSize: 12),
                             ),
                           ],
                         ),
                       ),
                       IconButton(
-                        tooltip: '保存证据包',
+                        tooltip: '保存成果包',
                         onPressed: () => onSavePackage(package),
                         icon: const Icon(Icons.save_outlined, size: 18),
                       ),
@@ -1724,7 +2660,7 @@ class _EvidencePackagePanel extends StatelessWidget {
                       style: TextStyle(color: titleColor, fontWeight: FontWeight.w700),
                     ),
                     subtitle: Text(
-                      package.visibility == 'private' ? '私密证据包' : '已分享到小组',
+                      package.visibility == 'private' ? '私密成果包' : '已分享到小组',
                       style: TextStyle(color: bodyColor, fontSize: 12),
                     ),
                     trailing: Row(
@@ -1795,7 +2731,12 @@ class _FeaturedWallPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.workspace_premium_rounded, color: accent, size: 20),
+              StudyAssetIcon(
+                asset: AppAssets.sideAchievementsIcon,
+                color: accent,
+                size: 22,
+                fallbackIcon: Icons.workspace_premium_rounded,
+              ),
               const SizedBox(width: 8),
               Text(
                 '精选成果墙',
@@ -1820,7 +2761,7 @@ class _FeaturedWallPanel extends StatelessWidget {
                   style: TextStyle(color: titleColor, fontWeight: FontWeight.w700),
                 ),
                 subtitle: Text(
-                  package.description.isEmpty ? '云端精选证据包' : package.description,
+                  package.description.isEmpty ? '云端精选成果包' : package.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: bodyColor, fontSize: 12),
@@ -1873,7 +2814,12 @@ class _TraceToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(Icons.timeline_rounded, color: accent, size: 20),
+        StudyAssetIcon(
+          asset: AppAssets.sideMomentsIcon,
+          color: accent,
+          size: 22,
+          fallbackIcon: Icons.timeline_rounded,
+        ),
         const SizedBox(width: 8),
         Text(
           '学习轨迹',
@@ -1884,9 +2830,8 @@ class _TraceToolbar extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        PopupMenuButton<LearningTraceEventType?>(
+        StudyPopupMenuButton<LearningTraceEventType?>(
           tooltip: '筛选轨迹',
-          initialValue: filter,
           onSelected: onFilterChanged,
           itemBuilder: (context) => [
             const PopupMenuItem(value: null, child: Text('全部轨迹')),
@@ -1914,184 +2859,240 @@ class _TraceToolbar extends StatelessWidget {
       LearningTraceEventType.taskCompleted => '任务完成',
       LearningTraceEventType.noteCreated => '笔记沉淀',
       LearningTraceEventType.flashcardCreated => '闪卡复习',
-      LearningTraceEventType.aiAction => 'AI 操作',
+      LearningTraceEventType.aiAction => 'AI操作',
     };
   }
 }
 
-class _TraceEventCard extends StatelessWidget {
-  const _TraceEventCard({
-    required this.event,
+class _MomentCard extends StatelessWidget {
+  const _MomentCard({
+    required this.moment,
+    required this.groups,
     required this.isDarkMode,
     required this.accent,
     required this.titleColor,
     required this.bodyColor,
-    this.onShare,
+    required this.onLike,
+    required this.onComment,
+    required this.onDeleteComment,
+    this.onEditVisibility,
     this.onDelete,
   });
 
-  final LearningTraceEvent event;
+  final LearningMoment moment;
+  final List<GroupInfo> groups;
   final bool isDarkMode;
   final Color accent;
   final Color titleColor;
   final Color bodyColor;
-  final VoidCallback? onShare;
+  final VoidCallback onLike;
+  final VoidCallback onComment;
+  final ValueChanged<LearningMomentComment> onDeleteComment;
+  final VoidCallback? onEditVisibility;
   final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final eventAccent = _accentFor(event.type, accent);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
       decoration: BoxDecoration(
         color: isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: eventAccent.withValues(alpha: isDarkMode ? 0.22 : 0.14),
+          color: isDarkMode
+              ? Colors.white.withValues(alpha: 0.06)
+              : const Color(0xFFE8ECF5),
         ),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: eventAccent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(_iconFor(event.type), color: eventAccent, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
+          _MomentAvatar(author: moment.author, accent: accent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          event.typeLabel,
-                          style: TextStyle(
-                            color: eventAccent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          _formatTime(event.happenedAt),
-                          style: TextStyle(color: bodyColor, fontSize: 12),
-                        ),
-                        if (event.courseName.isNotEmpty)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            event.courseName,
-                            style: TextStyle(color: bodyColor, fontSize: 12),
-                          ),
-                        if (event.isAiGenerated)
-                          Text(
-                            'AI 参与',
+                            moment.author.nickname,
                             style: TextStyle(
-                              color: eventAccent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
+                              color: accent,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      event.title,
-                      style: TextStyle(
-                        color: titleColor,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        height: 1.35,
+                          const SizedBox(height: 3),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              Text(
+                                _formatTime(moment.createdAt),
+                                style: TextStyle(
+                                  color: bodyColor,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Text(
+                                _visibilityLabel(moment),
+                                style: TextStyle(
+                                  color: bodyColor,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
+                    ),
+                    if (onEditVisibility != null || onDelete != null)
+                      PopupMenuButton<String>(
+                        tooltip: '动态操作',
+                        onSelected: (value) {
+                          if (value == 'visibility') onEditVisibility?.call();
+                          if (value == 'delete') onDelete?.call();
+                        },
+                        itemBuilder: (context) => [
+                          if (onEditVisibility != null)
+                            const PopupMenuItem(
+                              value: 'visibility',
+                              child: Text('修改可见范围'),
+                            ),
+                          if (onDelete != null)
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('删除动态'),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (moment.courseName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '课程：${moment.courseName}',
+                      style: TextStyle(color: bodyColor, fontSize: 12),
+                    ),
+                  ),
+                Text(
+                  moment.content,
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 15,
+                    height: 1.45,
+                  ),
+                ),
+                if (moment.imagePaths.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _ImageGrid(paths: moment.imagePaths, isDarkMode: isDarkMode),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: onLike,
+                      icon: Icon(
+                        moment.likedByMe
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        size: 18,
+                      ),
+                      label: Text(moment.likeCount == 0
+                          ? '点赞'
+                          : '${moment.likeCount}'),
+                    ),
+                    TextButton.icon(
+                      onPressed: onComment,
+                      icon: const Icon(Icons.mode_comment_outlined, size: 18),
+                      label: Text(moment.commentCount == 0
+                          ? '评论'
+                          : '${moment.commentCount}'),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          if (event.summary.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              event.summary,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: bodyColor, fontSize: 13, height: 1.45),
-            ),
-          ],
-          if (event.imagePaths.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _ImageGrid(
-              paths: event.imagePaths,
-              isDarkMode: isDarkMode,
-            ),
-          ],
-          if (onShare != null || onDelete != null) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (onShare != null)
-                  TextButton.icon(
-                    onPressed: onShare,
-                    icon: const Icon(Icons.ios_share_rounded, size: 18),
-                    label: const Text('转为证据动态'),
-                  ),
-                const Spacer(),
-                if (onDelete != null)
-                  IconButton(
-                    tooltip: '删除动态',
-                    onPressed: onDelete,
-                    icon: Icon(Icons.delete_outline_rounded, color: bodyColor),
+                if (moment.comments.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDarkMode
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : const Color(0xFFF4F6FB),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: moment.comments
+                          .map(
+                            (comment) => InkWell(
+                              onLongPress: comment.isMine || moment.isMine
+                                  ? () => onDeleteComment(comment)
+                                  : null,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 3),
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: TextStyle(
+                                      color: titleColor,
+                                      fontSize: 13,
+                                      height: 1.35,
+                                    ),
+                                    children: [
+                                      TextSpan(
+                                        text: '${comment.author.nickname}：',
+                                        style: TextStyle(
+                                          color: accent,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      TextSpan(text: comment.content),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
                   ),
               ],
             ),
-          ],
+          ),
         ],
       ),
     );
   }
 
-  Color _accentFor(LearningTraceEventType type, Color fallback) {
-    switch (type) {
-      case LearningTraceEventType.moment:
-        return fallback;
-      case LearningTraceEventType.studyLog:
-        return const Color(0xFF19A974);
-      case LearningTraceEventType.taskCompleted:
-        return const Color(0xFFF59E0B);
-      case LearningTraceEventType.noteCreated:
-        return const Color(0xFF7C3AED);
-      case LearningTraceEventType.flashcardCreated:
-        return const Color(0xFFE11D48);
-      case LearningTraceEventType.aiAction:
-        return const Color(0xFF0EA5E9);
+  String _visibilityLabel(LearningMoment moment) {
+    switch (moment.visibility) {
+      case LearningMomentVisibility.private:
+        return '仅自己可见';
+      case LearningMomentVisibility.public:
+        return '我的小组成员可见';
+      case LearningMomentVisibility.includeGroups:
+        return '指定可见：${_groupNames(moment.allowedGroupIds)}';
+      case LearningMomentVisibility.excludeGroups:
+        return '不给谁看：${_groupNames(moment.deniedGroupIds)}';
     }
   }
 
-  IconData _iconFor(LearningTraceEventType type) {
-    switch (type) {
-      case LearningTraceEventType.moment:
-        return Icons.dynamic_feed_rounded;
-      case LearningTraceEventType.studyLog:
-        return Icons.edit_note_rounded;
-      case LearningTraceEventType.taskCompleted:
-        return Icons.task_alt_rounded;
-      case LearningTraceEventType.noteCreated:
-        return Icons.menu_book_rounded;
-      case LearningTraceEventType.flashcardCreated:
-        return Icons.style_rounded;
-      case LearningTraceEventType.aiAction:
-        return Icons.auto_awesome_rounded;
-    }
+  String _groupNames(List<String> ids) {
+    final names = ids
+        .map((id) => _VisibilityPicker._groupName(groups, id))
+        .where((name) => name.isNotEmpty)
+        .join('、');
+    return names.isEmpty ? '未选择' : names;
   }
 
   String _formatTime(DateTime time) {
@@ -2102,6 +3103,30 @@ class _TraceEventCard extends StatelessWidget {
     if (diff.inDays < 1) return '${diff.inHours} 小时前';
     if (diff.inDays < 7) return '${diff.inDays} 天前';
     return '${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _MomentAvatar extends StatelessWidget {
+  const _MomentAvatar({required this.author, required this.accent});
+
+  final LearningMomentAuthor author;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = author.avatarImageUrl;
+    return CircleAvatar(
+      radius: 20,
+      backgroundColor: accent.withValues(alpha: 0.14),
+      backgroundImage:
+          imageUrl != null && imageUrl.startsWith('http') ? NetworkImage(imageUrl) : null,
+      child: imageUrl != null && imageUrl.startsWith('http')
+          ? null
+          : Text(
+              author.avatarEmoji.isEmpty ? '🎓' : author.avatarEmoji,
+              style: const TextStyle(fontSize: 18),
+            ),
+    );
   }
 }
 
@@ -2179,11 +3204,13 @@ class _EmptyTimeline extends StatelessWidget {
     required this.isDarkMode,
     required this.accent,
     required this.bodyColor,
+    this.message,
   });
 
   final bool isDarkMode;
   final Color accent;
   final Color bodyColor;
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
@@ -2195,10 +3222,15 @@ class _EmptyTimeline extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(Icons.timeline_rounded, color: accent, size: 42),
+          StudyAssetIcon(
+            asset: AppAssets.sideMomentsIcon,
+            color: accent,
+            size: 48,
+            fallbackIcon: Icons.timeline_rounded,
+          ),
           const SizedBox(height: 12),
           Text(
-            '开始记录后，这里会自动生成学习时间线',
+            message ?? '还没有动态，点上方输入框发布第一条学习现场',
             textAlign: TextAlign.center,
             style: TextStyle(color: bodyColor, fontSize: 13),
           ),
@@ -2233,6 +3265,8 @@ class _CapabilityBadge {
     this.current = 0,
     this.target = 1,
     this.source = '',
+    this.nextStep = '',
+    this.iconAsset = AppAssets.aiBadgeOrganize,
   });
 
   final String label;
@@ -2240,27 +3274,20 @@ class _CapabilityBadge {
   final int current;
   final int target;
   final String source;
+  final String nextStep;
+  final String iconAsset;
 }
 
 class _LocationCheckInDraft {
   const _LocationCheckInDraft({
     required this.title,
     required this.city,
-    required this.coordinates,
     required this.shareToGroup,
     this.groupId,
   });
 
   final String title;
   final String city;
-  final String coordinates;
   final bool shareToGroup;
   final String? groupId;
-}
-
-class _CoordinatePair {
-  const _CoordinatePair(this.latitude, this.longitude);
-
-  final double latitude;
-  final double longitude;
 }

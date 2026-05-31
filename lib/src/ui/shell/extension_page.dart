@@ -50,7 +50,8 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
       child: AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        final accent = widget.controller.primaryColor;
+        final accent = StudyUi.primary;
+        final isDarkMode = widget.isDarkMode;
         final allLogs = widget.controller.studyLogs;
         final logs = _filteredLogs(allLogs);
         final availableCourses = widget.controller.courseNames;
@@ -62,9 +63,9 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
             Text(
               '学习记录',
               style: TextStyle(
-                color: widget.isDarkMode ? Colors.white : Colors.black,
+                color: StudyUi.title(isDarkMode),
                 fontSize: 24,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 14),
@@ -73,42 +74,44 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
               key: const Key('log_search_field'),
               onChanged: (v) => setState(() => _searchQuery = v),
               style: TextStyle(
-                color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                color: StudyUi.title(isDarkMode),
                 fontSize: 14,
               ),
               decoration: InputDecoration(
                 hintText: '搜索课程、内容、问题或思考...',
                 hintStyle: TextStyle(
-                  color: widget.isDarkMode
-                      ? Colors.white.withValues(alpha: 0.4)
-                      : AppColors.muted,
+                  color: StudyUi.muted(isDarkMode),
                 ),
                 prefixIcon: Icon(
                   Icons.search_rounded,
-                  color: widget.isDarkMode ? Colors.white54 : AppColors.muted,
+                  color: StudyUi.muted(isDarkMode),
                   size: 22,
                 ),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
                         icon: Icon(
                           Icons.clear_rounded,
-                          color: widget.isDarkMode
-                              ? Colors.white54
-                              : AppColors.muted,
+                          color: StudyUi.muted(isDarkMode),
                           size: 20,
                         ),
                         onPressed: () => setState(() => _searchQuery = ''),
                       )
                     : null,
                 filled: true,
-                fillColor: widget.isDarkMode
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF2F5FC),
+                fillColor: StudyUi.surfaceAlt(isDarkMode),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(color: StudyUi.border(isDarkMode)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: StudyUi.border(isDarkMode)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: StudyUi.primary),
                 ),
               ),
             ),
@@ -122,25 +125,10 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                       padding: const EdgeInsets.only(right: 8),
                       child: GestureDetector(
                         onTap: () => setState(() => _courseFilter = null),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: _courseFilter == null
-                                ? accent.withValues(alpha: 0.2)
-                                : (widget.isDarkMode
-                                    ? const Color(0xFF2A3040)
-                                    : const Color(0xFFEEF1FA)),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text('全部课程',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: _courseFilter == null
-                                      ? accent
-                                      : (widget.isDarkMode
-                                          ? Colors.white
-                                          : AppColors.ink))),
+                        child: StudyStatusChip(
+                          label: '全部课程',
+                          color: StudyUi.primary,
+                          selected: _courseFilter == null,
                         ),
                       ),
                     ),
@@ -151,26 +139,10 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                         child: GestureDetector(
                           onTap: () => setState(
                               () => _courseFilter = selected ? null : c),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? const Color(0xFF7394F9)
-                                      .withValues(alpha: 0.22)
-                                  : (widget.isDarkMode
-                                      ? const Color(0xFF2A3040)
-                                      : const Color(0xFFEEF1FA)),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(c,
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: selected
-                                        ? const Color(0xFF7394F9)
-                                        : (widget.isDarkMode
-                                            ? Colors.white
-                                            : AppColors.ink))),
+                          child: StudyStatusChip(
+                            label: c,
+                            color: StudyUi.secondary,
+                            selected: selected,
                           ),
                         ),
                       );
@@ -202,36 +174,17 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
             ),
             const SizedBox(height: 18),
             if (allLogs.isEmpty)
-              GlassCard(
+              StudyEmptyState.logs(
                 key: const Key('logs_empty_state'),
-                color: widget.isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                    : null,
-                child: Text(
-                  '还没有学习记录。每天记录学习内容，周报会自动汇总。',
-                  style: TextStyle(
-                    color: widget.isDarkMode
-                        ? const Color(0xFFC2C8D6)
-                        : AppColors.body,
-                    height: 1.55,
-                  ),
-                ),
+                actionLabel: '添加记录',
+                onAction: () => _showLogForm(context),
               )
             else if (logs.isEmpty)
-              GlassCard(
+              const StudyEmptyState.logs(
                 key: const Key('logs_filter_empty_state'),
-                color: widget.isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                    : null,
-                child: Text(
-                  '没有匹配的学习记录。尝试调整筛选条件或搜索关键词。',
-                  style: TextStyle(
-                    color: widget.isDarkMode
-                        ? const Color(0xFFC2C8D6)
-                        : AppColors.body,
-                    height: 1.55,
-                  ),
-                ),
+                title: '没有匹配的记录',
+                message: '试着清空课程筛选，或换一个关键词搜索。',
+                compact: true,
               )
             else
               for (final log in logs) ...[
@@ -321,7 +274,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                         firstDate: DateTime(2024),
                         lastDate: DateTime(2030),
                       );
-                      if (picked != null) {
+                      if (picked != null && ctx.mounted) {
                         setSheetState(() => selectedDate = picked);
                       }
                     },
@@ -404,9 +357,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     ),
                     onPressed: () async {
                       if (courseController.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(content: Text('请至少填写课程名称')),
-                        );
+                        StudyToast.show(ctx, '请至少填写课程名称');
                         return;
                       }
                       await widget.controller.addStudyLog(
@@ -667,11 +618,10 @@ class _LogCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
 
-    return GlassCard(
-      color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+    return StudyCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -680,34 +630,37 @@ class _LogCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0x197394F9),
+                  color: StudyUi.chipBackground(StudyUi.secondary, isDarkMode),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   _fmtDate(log.date),
                   style: const TextStyle(
-                    color: Color(0xFF7394F9),
+                    color: StudyUi.secondary,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                log.courseName,
-                style: TextStyle(
-                  color: titleColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+              Expanded(
+                child: Text(
+                  log.courseName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-              const Spacer(),
               IconButton(
                 key: Key('log_delete_${log.id}'),
                 onPressed: onDelete,
                 icon: Icon(
                   Icons.delete_outline_rounded,
-                  color: isDarkMode ? Colors.white54 : AppColors.muted,
+                  color: StudyUi.muted(isDarkMode),
                   size: 20,
                 ),
                 visualDensity: VisualDensity.compact,
@@ -721,7 +674,7 @@ class _LogCard extends StatelessWidget {
           if (log.problems.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
-              '❓ 遇到的问题',
+              '遇到的问题',
               style: TextStyle(
                 color: titleColor,
                 fontSize: 13,
@@ -735,7 +688,7 @@ class _LogCard extends StatelessWidget {
           if (log.thoughts.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
-              '💡 思考与收获',
+              '思考与收获',
               style: TextStyle(
                 color: titleColor,
                 fontSize: 13,
@@ -749,7 +702,7 @@ class _LogCard extends StatelessWidget {
           if (log.nextPlan.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
-              '📋 下一步计划',
+              '下一步计划',
               style: TextStyle(
                 color: titleColor,
                 fontSize: 13,

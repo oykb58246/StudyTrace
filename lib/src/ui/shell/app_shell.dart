@@ -12,7 +12,7 @@ import '../../models/ai_action_record.dart';
 import '../../models/ai_app_action.dart';
 import '../../models/weekly_report_item.dart';
 import '../../services/ai_action_executor.dart';
-import '../../services/ai_study_service.dart';
+import '../../services/ai_tool_registry.dart';
 import '../../services/report_export_service.dart';
 import '../../theme/app_theme.dart';
 import '../study/about_page.dart';
@@ -35,10 +35,11 @@ import '../study/task_planning_page.dart';
 import '../study/timer_page.dart';
 import '../study/user_profile_page.dart';
 import '../shared/app_assets.dart';
+import '../shared/common_widgets.dart';
+import '../shared/global_route_observer.dart';
 import '../shared/local_image.dart';
 import '../shared/page_wrapper.dart';
 import '../shared/rive_safe_widget.dart';
-import '../shared/snackbar_queue.dart';
 import 'admin_section_page.dart';
 import 'create_page.dart';
 import 'extension_page.dart';
@@ -73,6 +74,9 @@ class _AppShellState extends State<AppShell>
   AdminSection? _activeAdminSection;
   bool _isDarkMode = false;
   bool _allowDrag = false;
+  bool _isAiChatOpen = false;
+  Offset? _assistantOffset;
+  OverlayEntry? _assistantOverlayEntry;
   double _menuWidth = 300;
 
   /// 0 = 未知, 1 = 在线, -1 = 离线
@@ -92,6 +96,11 @@ class _AppShellState extends State<AppShell>
       animationBehavior: AnimationBehavior.preserve,
       value: widget.debugMenuInitiallyOpen ? 1 : 0,
     );
+    _menuController.addListener(_markAssistantOverlayNeedsBuild);
+    _appDataController.addListener(_markAssistantOverlayNeedsBuild);
+    studyTraceRouteTick.addListener(_bringAssistantOverlayToFront);
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _ensureAssistantOverlay());
     unawaited(_loadData());
   }
 
@@ -101,6 +110,7 @@ class _AppShellState extends State<AppShell>
     }
     if (mounted) {
       setState(() => _isDarkMode = _appDataController.darkMode);
+      _markAssistantOverlayNeedsBuild();
     }
     unawaited(_checkBackendReachable());
   }
@@ -111,11 +121,12 @@ class _AppShellState extends State<AppShell>
       return;
     }
     try {
-      final url = _appDataController.apiBaseUrl;
-      final response = await http.get(Uri.parse(url)).timeout(
+      final baseUrl =
+          _appDataController.apiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final response = await http.get(Uri.parse('$baseUrl/health')).timeout(
             const Duration(seconds: 4),
           );
-      final reachable = response.statusCode < 500;
+      final reachable = response.statusCode >= 200 && response.statusCode < 300;
       if (mounted) setState(() => _backendReachable = reachable ? 1 : -1);
     } catch (_) {
       if (mounted) setState(() => _backendReachable = -1);
@@ -124,6 +135,10 @@ class _AppShellState extends State<AppShell>
 
   @override
   void dispose() {
+    _removeAssistantOverlay();
+    studyTraceRouteTick.removeListener(_bringAssistantOverlayToFront);
+    _menuController.removeListener(_markAssistantOverlayNeedsBuild);
+    _appDataController.removeListener(_markAssistantOverlayNeedsBuild);
     _menuController.dispose();
     _appDataController.dispose();
     super.dispose();
@@ -143,24 +158,80 @@ class _AppShellState extends State<AppShell>
     }
   }
 
-  void _openAiChat() {
-    _pushAnimatedPage(
-      AiChatPage(
-        isDarkMode: _isDarkMode,
-        controller: _appDataController,
-        onExecuteActions: _executeAssistantActions,
-        currentLocation: _primaryTab.name,
-      ),
+  Future<void> _openAiChat() async {
+    if (_isAiChatOpen) return;
+    setState(() => _isAiChatOpen = true);
+    _markAssistantOverlayNeedsBuild();
+    try {
+      await _pushAnimatedPage(
+        AiChatPage(
+          isDarkMode: _isDarkMode,
+          controller: _appDataController,
+          onExecuteActions: _executeAssistantActions,
+          currentLocation: _primaryTab.name,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAiChatOpen = false);
+        _markAssistantOverlayNeedsBuild();
+      }
+    }
+  }
+
+  void _ensureAssistantOverlay() {
+    if (!mounted || _assistantOverlayEntry != null) return;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    _assistantOverlayEntry = OverlayEntry(
+      builder: (overlayContext) {
+        if (!mounted || _isAiChatOpen) return const SizedBox.shrink();
+        final media = MediaQuery.of(overlayContext);
+        final menuProgress =
+            Curves.fastOutSlowIn.transform(_menuController.value);
+        return _DraggableAssistantButton(
+          isDarkMode: _isDarkMode,
+          accent: _appDataController.primaryColor,
+          safeBottom: media.padding.bottom,
+          menuProgress: menuProgress,
+          offset: _assistantOffset,
+          onOffsetChanged: _setAssistantOffset,
+          onTap: () => unawaited(_openAiChat()),
+        );
+      },
+    );
+    overlay.insert(_assistantOverlayEntry!);
+  }
+
+  void _markAssistantOverlayNeedsBuild() {
+    _assistantOverlayEntry?.markNeedsBuild();
+  }
+
+  void _removeAssistantOverlay() {
+    _assistantOverlayEntry?.remove();
+    _assistantOverlayEntry = null;
+  }
+
+  void _setAssistantOffset(Offset offset) {
+    _assistantOffset = offset;
+    _markAssistantOverlayNeedsBuild();
+  }
+
+  Widget _withStudyTheme(Widget child) {
+    return Theme(
+      data: _isDarkMode ? buildDarkAppTheme() : buildAppTheme(),
+      child: child,
     );
   }
 
-  void _pushAnimatedPage(Widget page) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
+  Future<T?> _pushAnimatedPage<T>(Widget page) {
+    _bringAssistantOverlayToFront();
+    return Navigator.of(context).push<T>(
+      PageRouteBuilder<T>(
         fullscreenDialog: false,
         transitionDuration: const Duration(milliseconds: 360),
         reverseTransitionDuration: const Duration(milliseconds: 260),
-        pageBuilder: (context, __, ___) => page,
+        pageBuilder: (context, __, ___) => _withStudyTheme(page),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return SharedAxisTransition(
             animation: animation,
@@ -194,8 +265,29 @@ class _AppShellState extends State<AppShell>
   Future<void> _retryAuditRecord(AiActionRecord record) async {
     final type = _actionTypeFromToolId(record.toolId);
     if (type == null) {
-      _showShellSnack('该动作无法重试（未识别 toolId）');
+      _showShellSnack('该AI操作无法重试');
       return;
+    }
+    final definition = AiToolRegistry.instance.lookup(record.toolId);
+    if (definition?.needsConfirmation == true) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('确认重试危险动作'),
+          content: Text('该动作会执行「${definition!.label}」，可能修改或删除数据。确定继续吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('继续重试'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
     }
     final params = record.params ?? <String, dynamic>{};
     final action = AiAppAction(
@@ -290,18 +382,22 @@ class _AppShellState extends State<AppShell>
           return _navigationSuccess(action, '已打开学习笔记');
         case AiAppActionType.openAiSettings:
           _pushAnimatedPage(PageWithBackButton(
-            title: 'AI 设置',
+            title: 'AI设置',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.aiSettings.icon,
+            accent: AdminSection.aiSettings.accent,
             child: AiSettingsPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
             ),
           ));
-          return _navigationSuccess(action, '已打开 AI 设置');
+          return _navigationSuccess(action, '已打开 AI设置');
         case AiAppActionType.openDashboard:
           _pushAnimatedPage(PageWithBackButton(
             title: '数据看板',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.analytics.icon,
+            accent: AdminSection.analytics.accent,
             child: LearningDashboardPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
@@ -312,6 +408,8 @@ class _AppShellState extends State<AppShell>
           _pushAnimatedPage(PageWithBackButton(
             title: '任务编排',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.automations.icon,
+            accent: AdminSection.automations.accent,
             child: TaskPlanningPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
@@ -320,15 +418,19 @@ class _AppShellState extends State<AppShell>
           return _navigationSuccess(action, '已打开任务编排');
         case AiAppActionType.openAiAssistant:
           _pushAnimatedPage(PageWithBackButton(
-            title: 'AI 功能',
+            title: 'AI学习助手',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.aiAssistant.icon,
+            accent: AdminSection.aiAssistant.accent,
             child: AiAssistantPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
               onExecuteActions: _executeAssistantActions,
               onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
-                title: 'AI 设置',
+                title: 'AI设置',
                 isDarkMode: _isDarkMode,
+                titleIcon: AdminSection.aiSettings.icon,
+                accent: AdminSection.aiSettings.accent,
                 child: AiSettingsPage(
                   isDarkMode: _isDarkMode,
                   controller: _appDataController,
@@ -336,21 +438,20 @@ class _AppShellState extends State<AppShell>
               )),
             ),
           ));
-          return _navigationSuccess(action, '已打开 AI 功能');
+          return _navigationSuccess(action, '已打开 AI学习助手');
         case AiAppActionType.openUserProfile:
-          _pushAnimatedPage(PageWithBackButton(
-            title: '个人资料',
+          _pushAnimatedPage(UserProfilePage(
             isDarkMode: _isDarkMode,
-            child: UserProfilePage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-            ),
+            controller: _appDataController,
+            onOpenAchievements: _openAchievementsPage,
           ));
           return _navigationSuccess(action, '已打开个人资料');
         case AiAppActionType.openAbout:
           _pushAnimatedPage(PageWithBackButton(
             title: '应用介绍',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.overview.icon,
+            accent: AdminSection.overview.accent,
             child: AboutPage(isDarkMode: _isDarkMode),
           ));
           return _navigationSuccess(action, '已打开应用介绍');
@@ -358,6 +459,8 @@ class _AppShellState extends State<AppShell>
           _pushAnimatedPage(PageWithBackButton(
             title: '学习小组',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.studyGroup.icon,
+            accent: AdminSection.studyGroup.accent,
             child: StudyGroupPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
@@ -368,6 +471,8 @@ class _AppShellState extends State<AppShell>
           _pushAnimatedPage(PageWithBackButton(
             title: '排行榜',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.leaderboard.icon,
+            accent: AdminSection.leaderboard.accent,
             child: LeaderboardPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
@@ -378,6 +483,8 @@ class _AppShellState extends State<AppShell>
           _pushAnimatedPage(PageWithBackButton(
             title: '学习周报',
             isDarkMode: _isDarkMode,
+            titleIcon: Icons.summarize_rounded,
+            accent: StudyUi.primary,
             child: _WeeklyReportPage(
               controller: _appDataController,
               isDarkMode: _isDarkMode,
@@ -389,6 +496,8 @@ class _AppShellState extends State<AppShell>
           _pushAnimatedPage(PageWithBackButton(
             title: '系统设置',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.settings.icon,
+            accent: AdminSection.settings.accent,
             child: AiSettingsPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
@@ -421,8 +530,20 @@ class _AppShellState extends State<AppShell>
     _pushAnimatedPage(PageWithBackButton(
       title: tab.label,
       isDarkMode: _isDarkMode,
+      titleIcon: tab.icon,
+      accent: _appDataController.primaryColor,
       child: _primaryPageFor(tab),
     ));
+  }
+
+  void _bringAssistantOverlayToFront() {
+    if (!mounted) return;
+    final entry = _assistantOverlayEntry;
+    if (entry == null) return;
+    entry.remove();
+    _assistantOverlayEntry = null;
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _ensureAssistantOverlay());
   }
 
   PrimaryTab? _tabFromAssistantAction(AiAppAction action) {
@@ -435,11 +556,15 @@ class _AppShellState extends State<AppShell>
         .toLowerCase();
     return switch (value) {
       'assistant' || 'home' || '首页' || '主页' => PrimaryTab.assistant,
-      'scenarios' || 'logs' || 'log' || '记录' || '日志' || '学习记录' =>
+      'scenarios' ||
+      'logs' ||
+      'log' ||
+      '记录' ||
+      '日志' ||
+      '学习记录' =>
         PrimaryTab.scenarios,
       'calendar' || '日历' => PrimaryTab.calendar,
-      'create' || 'tasks' || 'task' || '任务' || '任务页' =>
-        PrimaryTab.create,
+      'create' || 'tasks' || 'task' || '任务' || '任务页' => PrimaryTab.create,
       'profile' || 'archive' || '归档' || '课程归档' => PrimaryTab.profile,
       _ => null,
     };
@@ -463,7 +588,7 @@ class _AppShellState extends State<AppShell>
     _pushAnimatedPage(AiLearningCockpitPage(
       isDarkMode: _isDarkMode,
       controller: _appDataController,
-      onOpenAiChat: _openAiChat,
+      onOpenAiChat: () => unawaited(_openAiChat()),
     ));
   }
 
@@ -478,11 +603,7 @@ class _AppShellState extends State<AppShell>
 
   void _showShellSnack(String message) {
     if (!mounted) return;
-    SnackBarQueue.instance.enqueue(
-      message,
-      duration: const Duration(seconds: 2),
-      messenger: ScaffoldMessenger.of(context),
-    );
+    StudyToast.show(context, message);
   }
 
   void _handleDragStart(DragStartDetails details) {
@@ -527,6 +648,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '应用介绍',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.overview.icon,
+          accent: AdminSection.overview.accent,
           child: AboutPage(isDarkMode: _isDarkMode),
         ));
         return;
@@ -558,6 +681,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '学习小组',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.studyGroup.icon,
+          accent: AdminSection.studyGroup.accent,
           child: StudyGroupPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -568,6 +693,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '排行榜',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.leaderboard.icon,
+          accent: AdminSection.leaderboard.accent,
           child: LeaderboardPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -578,6 +705,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '成就殿堂',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.achievements.icon,
+          accent: AdminSection.achievements.accent,
           child: AchievementsPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -588,6 +717,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '知识图谱',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.knowledgeGraph.icon,
+          accent: AdminSection.knowledgeGraph.accent,
           child: KnowledgeGraphPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -596,15 +727,19 @@ class _AppShellState extends State<AppShell>
         return;
       case AdminSection.aiAssistant:
         _pushAnimatedPage(PageWithBackButton(
-          title: 'AI 学习助手',
+          title: 'AI学习助手',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.aiAssistant.icon,
+          accent: AdminSection.aiAssistant.accent,
           child: AiAssistantPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
             onExecuteActions: _executeAssistantActions,
             onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
-              title: 'AI 设置',
+              title: 'AI设置',
               isDarkMode: _isDarkMode,
+              titleIcon: AdminSection.aiSettings.icon,
+              accent: AdminSection.aiSettings.accent,
               child: AiSettingsPage(
                 isDarkMode: _isDarkMode,
                 controller: _appDataController,
@@ -615,8 +750,10 @@ class _AppShellState extends State<AppShell>
         return;
       case AdminSection.aiSettings:
         _pushAnimatedPage(PageWithBackButton(
-          title: 'AI 设置',
+          title: 'AI设置',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.aiSettings.icon,
+          accent: AdminSection.aiSettings.accent,
           child: AiSettingsPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -627,6 +764,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '系统设置',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.settings.icon,
+          accent: AdminSection.settings.accent,
           child: AiSettingsPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -638,6 +777,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '任务编排',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.automations.icon,
+          accent: AdminSection.automations.accent,
           child: TaskPlanningPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -649,6 +790,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '数据看板',
           isDarkMode: _isDarkMode,
+          titleIcon: section.icon,
+          accent: section.accent,
           child: LearningDashboardPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -657,8 +800,10 @@ class _AppShellState extends State<AppShell>
         return;
       case AdminSection.auditLog:
         _pushAnimatedPage(PageWithBackButton(
-          title: 'AI 操作记录',
+          title: 'AI操作记录',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.auditLog.icon,
+          accent: AdminSection.auditLog.accent,
           child: AuditLogPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -670,6 +815,8 @@ class _AppShellState extends State<AppShell>
         _pushAnimatedPage(PageWithBackButton(
           title: '回收站',
           isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.trash.icon,
+          accent: AdminSection.trash.accent,
           child: TrashPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -685,37 +832,60 @@ class _AppShellState extends State<AppShell>
   }
 
   void _openWeeklyReport() {
+    _bringAssistantOverlayToFront();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _WeeklyReportPage(
-          controller: _appDataController,
-          isDarkMode: _isDarkMode,
+        builder: (_) => _withStudyTheme(
+          _WeeklyReportPage(
+            controller: _appDataController,
+            isDarkMode: _isDarkMode,
+          ),
         ),
       ),
     );
   }
 
   void _openCourseDetail(String courseName) {
+    _bringAssistantOverlayToFront();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => CourseDetailPage(
-          courseName: courseName,
-          isDarkMode: _isDarkMode,
-          controller: _appDataController,
+        builder: (_) => _withStudyTheme(
+          CourseDetailPage(
+            courseName: courseName,
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
         ),
       ),
     );
   }
 
   void _openUserProfile(BuildContext context) {
+    _bringAssistantOverlayToFront();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => UserProfilePage(
-          isDarkMode: _isDarkMode,
-          controller: _appDataController,
+        builder: (_) => _withStudyTheme(
+          UserProfilePage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            onOpenAchievements: _openAchievementsPage,
+          ),
         ),
       ),
     );
+  }
+
+  void _openAchievementsPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '成就殿堂',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.achievements.icon,
+      accent: AdminSection.achievements.accent,
+      child: AchievementsPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+      ),
+    ));
   }
 
   Widget _primaryPageFor(PrimaryTab tab) {
@@ -748,17 +918,11 @@ class _AppShellState extends State<AppShell>
             isDarkMode: _isDarkMode,
             controller: _appDataController,
           )),
-          onOpenDashboard: () => _pushAnimatedPage(PageWithBackButton(
-            title: '数据看板',
-            isDarkMode: _isDarkMode,
-            child: LearningDashboardPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-            ),
-          )),
           onOpenStudyGroup: () => _pushAnimatedPage(PageWithBackButton(
             title: '学习小组',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.studyGroup.icon,
+            accent: AdminSection.studyGroup.accent,
             child: StudyGroupPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
@@ -767,19 +931,29 @@ class _AppShellState extends State<AppShell>
           onOpenLeaderboard: () => _pushAnimatedPage(PageWithBackButton(
             title: '排行榜',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.leaderboard.icon,
+            accent: AdminSection.leaderboard.accent,
             child: LeaderboardPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
             ),
           )),
-          onOpenSyncSettings: () => _pushAnimatedPage(AiSettingsPage(
+          onOpenSyncSettings: () => _pushAnimatedPage(PageWithBackButton(
+            title: '系统设置',
             isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            mode: AiSettingsMode.system,
+            titleIcon: AdminSection.settings.icon,
+            accent: AdminSection.settings.accent,
+            child: AiSettingsPage(
+              isDarkMode: _isDarkMode,
+              controller: _appDataController,
+              mode: AiSettingsMode.system,
+            ),
           )),
           onOpenTaskPlanning: () => _pushAnimatedPage(PageWithBackButton(
             title: '任务编排',
             isDarkMode: _isDarkMode,
+            titleIcon: AdminSection.automations.icon,
+            accent: AdminSection.automations.accent,
             child: TaskPlanningPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
@@ -839,14 +1013,16 @@ class _AppShellState extends State<AppShell>
           final progress =
               Curves.fastOutSlowIn.transform(_menuController.value);
           final page = _activeAdminSection != null
-              ? AdminSectionPage(
-                  section: _activeAdminSection!,
-                  isDarkMode: _isDarkMode,
-                  controller: _appDataController,
-                  onOpenSettings: () =>
-                      _selectAdminSection(AdminSection.aiSettings),
-                  onExecuteActions: _executeAssistantActions,
-                  onBack: () => setState(() => _activeAdminSection = null),
+              ? _withStudyTheme(
+                  AdminSectionPage(
+                    section: _activeAdminSection!,
+                    isDarkMode: _isDarkMode,
+                    controller: _appDataController,
+                    onOpenSettings: () =>
+                        _selectAdminSection(AdminSection.aiSettings),
+                    onExecuteActions: _executeAssistantActions,
+                    onBack: () => setState(() => _activeAdminSection = null),
+                  ),
                 )
               : _primaryPageFor(_primaryTab);
 
@@ -908,8 +1084,8 @@ class _AppShellState extends State<AppShell>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFEF6850)
-                                .withValues(alpha: 0.92),
+                            color:
+                                const Color(0xFFEF6850).withValues(alpha: 0.92),
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
@@ -944,22 +1120,6 @@ class _AppShellState extends State<AppShell>
                     ),
                   ),
                 ),
-              Positioned(
-                right: 18,
-                bottom: safeBottom + 96,
-                child: IgnorePointer(
-                  ignoring: progress > 0.55,
-                  child: AnimatedOpacity(
-                    opacity: progress > 0.55 ? 0 : 1,
-                    duration: const Duration(milliseconds: 160),
-                    child: _GlobalAssistantButton(
-                      isDarkMode: _isDarkMode,
-                      accent: _appDataController.primaryColor,
-                      onTap: _openAiChat,
-                    ),
-                  ),
-                ),
-              ),
             ],
           );
         },
@@ -979,64 +1139,175 @@ class _PrimaryTabSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: isDarkMode ? const Color(0xFF101625) : const Color(0xFFF5F7FF),
-      child: child,
+    return Theme(
+      data: isDarkMode ? buildDarkAppTheme() : buildAppTheme(),
+      child: ColoredBox(
+        color: isDarkMode ? const Color(0xFF101625) : const Color(0xFFF5F7FF),
+        child: child,
+      ),
     );
   }
 }
 
-class _GlobalAssistantButton extends StatelessWidget {
-  const _GlobalAssistantButton({
+class _DraggableAssistantButton extends StatelessWidget {
+  const _DraggableAssistantButton({
     required this.isDarkMode,
     required this.accent,
+    required this.safeBottom,
+    required this.menuProgress,
+    required this.offset,
+    required this.onOffsetChanged,
     required this.onTap,
   });
 
   final bool isDarkMode;
   final Color accent;
+  final double safeBottom;
+  final double menuProgress;
+  final Offset? offset;
+  final ValueChanged<Offset> onOffsetChanged;
   final VoidCallback onTap;
+
+  static const _size = 86.0;
+  static const _margin = 10.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final bounds = media.size;
+    final defaultOffset = Offset(
+      bounds.width - _size - 12,
+      bounds.height - safeBottom - media.viewInsets.bottom - 168,
+    );
+    final current = _clampOffset(offset ?? defaultOffset, bounds, media);
+
+    return Positioned(
+      left: current.dx,
+      top: current.dy,
+      child: IgnorePointer(
+        ignoring: menuProgress > 0.55,
+        child: AnimatedOpacity(
+          opacity: menuProgress > 0.55 ? 0 : 1,
+          duration: const Duration(milliseconds: 160),
+          child: _GlobalAssistantButton(
+            isDarkMode: isDarkMode,
+            accent: accent,
+            onTap: onTap,
+            onPanUpdate: (details) {
+              onOffsetChanged(
+                _clampOffset(current + details.delta, bounds, media),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Offset _clampOffset(Offset value, Size bounds, MediaQueryData media) {
+    final minX = _margin;
+    final maxX = math.max(_margin, bounds.width - _size - _margin);
+    final minY = media.padding.top + _margin;
+    final maxY = math.max(
+      minY,
+      bounds.height - _size - safeBottom - media.viewInsets.bottom - 88,
+    );
+    return Offset(
+      value.dx.clamp(minX, maxX).toDouble(),
+      value.dy.clamp(minY, maxY).toDouble(),
+    );
+  }
+}
+
+class _GlobalAssistantButton extends StatefulWidget {
+  const _GlobalAssistantButton({
+    required this.isDarkMode,
+    required this.accent,
+    required this.onTap,
+    required this.onPanUpdate,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final VoidCallback onTap;
+  final GestureDragUpdateCallback onPanUpdate;
+
+  @override
+  State<_GlobalAssistantButton> createState() => _GlobalAssistantButtonState();
+}
+
+class _GlobalAssistantButtonState extends State<_GlobalAssistantButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _motionController;
+
+  @override
+  void initState() {
+    super.initState();
+    _motionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _motionController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'AI 全局助手',
+      label: '全局AI学习助手',
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: Container(
-            width: 54,
-            height: 54,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  accent,
-                  const Color(0xFF4BC4A1),
+          onTap: widget.onTap,
+          onPanUpdate: widget.onPanUpdate,
+          child: AnimatedBuilder(
+            animation: _motionController,
+            builder: (context, child) {
+              final t = Curves.easeInOut.transform(_motionController.value);
+              final lift = math.sin(t * math.pi) * 5;
+              final turn = math.sin(t * math.pi * 2) * 0.04;
+              final scale = 1 + math.sin(t * math.pi) * 0.035;
+              return Transform.translate(
+                offset: Offset(0, -lift),
+                child: Transform.rotate(
+                  angle: turn,
+                  child: Transform.scale(scale: scale, child: child),
+                ),
+              );
+            },
+            child: Container(
+              width: 86,
+              height: 86,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.accent.withValues(alpha: 0.22),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                      alpha: widget.isDarkMode ? 0.28 : 0.10,
+                    ),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
                 ],
               ),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: isDarkMode ? 0.18 : 0.7),
-                width: 1.2,
+              child: const StudyAssetIcon(
+                asset: AppAssets.aiFloatingAssistantIcon,
+                preserveColor: true,
+                fallbackIcon: Icons.smart_toy_rounded,
+                size: 78,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.24),
-                  blurRadius: 18,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Colors.white,
-              size: 24,
             ),
           ),
         ),
@@ -1117,9 +1388,7 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
               tooltip: '复制到剪贴板',
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: _reportContent!));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板')),
-                );
+                StudyToast.show(context, '已复制到剪贴板');
               },
             ),
           if (_reportContent != null)
@@ -1146,9 +1415,7 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
                   endDate: _endDate,
                 );
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('周报已保存')),
-                  );
+                  StudyToast.show(context, '周报已保存');
                 }
               },
             ),
@@ -1272,17 +1539,13 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
           : await _exportService.exportWeeklyReportMarkdown(report);
       await Clipboard.setData(ClipboardData(text: file.path));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '已导出${asPdf ? ' PDF' : ' Markdown'}，文件路径已复制：${file.path}',
-          ),
-        ),
-      );
+      StudyToast.show(context, '已导出${asPdf ? ' PDF' : ' Markdown'}，文件路径已复制');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$error')),
+      StudyToast.dialog(
+        context,
+        title: '导出失败',
+        message: '$error',
       );
     } finally {
       if (mounted) setState(() => _isExporting = false);
@@ -1459,8 +1722,7 @@ class _ForegroundSurface extends StatelessWidget {
                   child: PageTransitionSwitcher(
                     duration: const Duration(milliseconds: 280),
                     reverse: false,
-                    transitionBuilder:
-                        (child, animation, secondaryAnimation) {
+                    transitionBuilder: (child, animation, secondaryAnimation) {
                       return FadeThroughTransition(
                         animation: animation,
                         secondaryAnimation: secondaryAnimation,
@@ -1880,201 +2142,182 @@ class _SideMenuState extends State<_SideMenu> {
             child: SingleChildScrollView(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: Image.asset(
-                          'logo/logo白透明.png',
-                          height: 32,
-                          fit: BoxFit.fitHeight,
-                        ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Image.asset(
+                        'logo/logo白透明.png',
+                        height: 32,
+                        fit: BoxFit.fitHeight,
                       ),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: widget.onOpenProfile,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 4, horizontal: 4),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  gradient: widget.controller.userProfile
-                                              .avatarImagePath ==
-                                          null
-                                      ? LinearGradient(
-                                          colors: [
-                                            accent,
-                                            const Color(0xFF8D5EFF)
-                                          ],
-                                        )
-                                      : null,
-                                  shape: BoxShape.circle,
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: widget.controller.userProfile
-                                            .avatarImagePath !=
+                    ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: widget.onOpenProfile,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 4, horizontal: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: widget.controller.userProfile
+                                            .avatarImagePath ==
                                         null
-                                    ? localImageFromPath(
-                                        widget.controller.userProfile
-                                            .avatarImagePath!,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Center(
-                                          child: Text(
-                                              widget.controller.userProfile
-                                                  .avatarEmoji,
-                                              style: const TextStyle(
-                                                  fontSize: 22)),
-                                        ),
-                                      )
-                                    : Center(
-                                        child: Text(
-                                          widget.controller.userProfile
-                                              .avatarEmoji,
-                                          style: const TextStyle(fontSize: 22),
-                                        ),
-                                      ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.controller.userProfile.nickname,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      widget.controller.userProfile.bio,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xB3FFFFFF),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
+                                    ? accent.withValues(alpha: 0.18)
+                                    : null,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.16),
                                 ),
                               ),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                color: Colors.white.withValues(alpha: 0.4),
-                                size: 18,
+                              clipBehavior: Clip.antiAlias,
+                              child: widget.controller.userProfile
+                                          .avatarImagePath !=
+                                      null
+                                  ? localImageFromPath(
+                                      widget.controller.userProfile
+                                          .avatarImagePath!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Center(
+                                        child: Text(
+                                            widget.controller.userProfile
+                                                .avatarEmoji,
+                                            style:
+                                                const TextStyle(fontSize: 22)),
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Text(
+                                        widget
+                                            .controller.userProfile.avatarEmoji,
+                                        style: const TextStyle(fontSize: 22),
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.controller.userProfile.nickname,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    widget.controller.userProfile.bio,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xB3FFFFFF),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: Colors.white.withValues(alpha: 0.4),
+                              size: 18,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 22),
-                      _SideMenuActionItem(
-                        label: '个人资料',
-                        icon: Icons.account_circle_outlined,
-                        onTap: widget.onOpenProfile,
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        '更多',
-                        style: TextStyle(
-                          color: Color(0x99FFFFFF),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _SideMenuActionItem(
-                        label: 'AI 功能',
-                        icon: Icons.smart_toy_outlined,
-                        selected:
-                            widget.currentSection == AdminSection.aiAssistant,
-                        onTap: () =>
-                            widget.onSelected(AdminSection.aiAssistant),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: 'AI 设置',
-                        icon: Icons.tune_rounded,
-                        selected:
-                            widget.currentSection == AdminSection.aiSettings,
-                        onTap: () =>
-                            widget.onSelected(AdminSection.aiSettings),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: '学迹动态',
-                        icon: Icons.dynamic_feed_outlined,
-                        selected: widget.currentSection ==
-                            AdminSection.learningMoments,
-                        onTap: () =>
-                            widget.onSelected(AdminSection.learningMoments),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: '系统设置',
-                        icon: Icons.settings_outlined,
-                        selected:
-                            widget.currentSection == AdminSection.settings,
-                        onTap: () => widget.onSelected(AdminSection.settings),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: '成就殿堂',
-                        icon: Icons.emoji_events_outlined,
-                        selected:
-                            widget.currentSection == AdminSection.achievements,
-                        onTap: () =>
-                            widget.onSelected(AdminSection.achievements),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: '知识图谱',
-                        icon: Icons.account_tree_outlined,
-                        selected:
-                            widget.currentSection ==
-                                AdminSection.knowledgeGraph,
-                        onTap: () =>
-                            widget.onSelected(AdminSection.knowledgeGraph),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: 'AI 操作记录',
-                        icon: Icons.history_rounded,
-                        selected:
-                            widget.currentSection == AdminSection.auditLog,
-                        onTap: () => widget.onSelected(AdminSection.auditLog),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: '回收站',
-                        icon: Icons.delete_outline_rounded,
-                        selected:
-                            widget.currentSection == AdminSection.trash,
-                        onTap: () => widget.onSelected(AdminSection.trash),
-                      ),
-                      const SizedBox(height: 10),
-                      _SideMenuActionItem(
-                        label: '应用介绍',
-                        icon: Icons.info_outline_rounded,
-                        selected:
-                            widget.currentSection == AdminSection.overview,
-                        onTap: () => widget.onSelected(AdminSection.overview),
-                      ),
-                      const SizedBox(height: 16),
-                      _ThemeModeButton(
-                        value: widget.isDarkMode,
-                        onChanged: widget.onDarkModeChanged,
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 22),
+                    _SideMenuActionItem(
+                      label: 'AI学习助手',
+                      fallbackIcon: Icons.smart_toy_rounded,
+                      selected:
+                          widget.currentSection == AdminSection.aiAssistant,
+                      onTap: () => widget.onSelected(AdminSection.aiAssistant),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: 'AI设置',
+                      fallbackIcon: Icons.tune_rounded,
+                      selected:
+                          widget.currentSection == AdminSection.aiSettings,
+                      onTap: () => widget.onSelected(AdminSection.aiSettings),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '学迹动态',
+                      fallbackIcon: Icons.dynamic_feed_rounded,
+                      selected:
+                          widget.currentSection == AdminSection.learningMoments,
+                      onTap: () =>
+                          widget.onSelected(AdminSection.learningMoments),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '数据看板',
+                      fallbackIcon: Icons.insights_rounded,
+                      selected: widget.currentSection == AdminSection.analytics,
+                      onTap: () => widget.onSelected(AdminSection.analytics),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '系统设置',
+                      fallbackIcon: Icons.settings_rounded,
+                      selected: widget.currentSection == AdminSection.settings,
+                      onTap: () => widget.onSelected(AdminSection.settings),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '成就殿堂',
+                      fallbackIcon: Icons.emoji_events_rounded,
+                      selected:
+                          widget.currentSection == AdminSection.achievements,
+                      onTap: () => widget.onSelected(AdminSection.achievements),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '知识图谱',
+                      fallbackIcon: Icons.account_tree_rounded,
+                      selected:
+                          widget.currentSection == AdminSection.knowledgeGraph,
+                      onTap: () =>
+                          widget.onSelected(AdminSection.knowledgeGraph),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: 'AI操作记录',
+                      fallbackIcon: Icons.history_rounded,
+                      selected: widget.currentSection == AdminSection.auditLog,
+                      onTap: () => widget.onSelected(AdminSection.auditLog),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '回收站',
+                      fallbackIcon: Icons.delete_outline_rounded,
+                      selected: widget.currentSection == AdminSection.trash,
+                      onTap: () => widget.onSelected(AdminSection.trash),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '应用介绍',
+                      fallbackIcon: Icons.info_rounded,
+                      selected: widget.currentSection == AdminSection.overview,
+                      onTap: () => widget.onSelected(AdminSection.overview),
+                    ),
+                    const SizedBox(height: 16),
+                    _ThemeModeButton(
+                      value: widget.isDarkMode,
+                      onChanged: widget.onDarkModeChanged,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2087,13 +2330,13 @@ class _SideMenuState extends State<_SideMenu> {
 class _SideMenuActionItem extends StatelessWidget {
   const _SideMenuActionItem({
     required this.label,
-    required this.icon,
+    required this.fallbackIcon,
     required this.onTap,
     this.selected = false,
   });
 
   final String label;
-  final IconData icon;
+  final IconData fallbackIcon;
   final VoidCallback onTap;
   final bool selected;
 
@@ -2134,11 +2377,15 @@ class _SideMenuActionItem extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         child: Row(
                           children: [
-                            Icon(
-                              icon,
-                              color: Colors.white
-                                  .withValues(alpha: selected ? 1 : 0.88),
-                              size: 20,
+                            SizedBox.square(
+                              dimension: 28,
+                              child: Icon(
+                                fallbackIcon,
+                                color: Colors.white.withValues(
+                                  alpha: selected ? 1 : 0.9,
+                                ),
+                                size: 23,
+                              ),
                             ),
                             const SizedBox(width: 14),
                             Text(

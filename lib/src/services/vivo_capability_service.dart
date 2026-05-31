@@ -51,6 +51,30 @@ class VivoCapabilityService {
     return GeneratedImageTask.fromJson(data);
   }
 
+  Future<GeneratedVideoTask> createVideo({
+    required String prompt,
+    String? imageBase64,
+    String? imageUrl,
+    String purpose = 'chat_video',
+  }) async {
+    final data = await api.postJson('/ai/videos/tasks', body: {
+      'prompt': prompt,
+      'purpose': purpose,
+      if (imageBase64 != null && imageBase64.isNotEmpty)
+        'imageBase64': imageBase64,
+      if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+    });
+    return GeneratedVideoTask.fromJson(data);
+  }
+
+  Future<GeneratedVideoTask> refreshVideoTask(String taskId) async {
+    final data = await api.postJson(
+      '/ai/videos/tasks/status',
+      body: {'taskId': taskId},
+    );
+    return GeneratedVideoTask.fromJson(data);
+  }
+
   Future<Map<String, dynamic>> searchPoi(
     String query, {
     String city = '',

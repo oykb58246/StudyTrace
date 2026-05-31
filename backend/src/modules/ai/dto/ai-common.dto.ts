@@ -10,7 +10,13 @@ import {
   Min,
 } from 'class-validator';
 
-export class TextInputDto {
+class ThinkingEnabledDto {
+  @IsOptional()
+  @IsBoolean()
+  thinkingEnabled?: boolean;
+}
+
+export class TextInputDto extends ThinkingEnabledDto {
   @IsString()
   input: string;
 }
@@ -34,7 +40,7 @@ export class RerankDto {
   sentences: string[];
 }
 
-export class WeeklyAnalysisDto {
+export class WeeklyAnalysisDto extends ThinkingEnabledDto {
   @IsArray()
   logs: Record<string, unknown>[];
 
@@ -48,7 +54,7 @@ export class WeeklyAnalysisDto {
   endDate: string;
 }
 
-export class RiskWarningsDto {
+export class RiskWarningsDto extends ThinkingEnabledDto {
   @IsArray()
   logs: Record<string, unknown>[];
 
@@ -56,7 +62,7 @@ export class RiskWarningsDto {
   tasks: Record<string, unknown>[];
 }
 
-export class FlashCardsDto {
+export class FlashCardsDto extends ThinkingEnabledDto {
   @IsArray()
   logs: Record<string, unknown>[];
 
@@ -67,7 +73,7 @@ export class FlashCardsDto {
   count?: number;
 }
 
-export class WeeklyPlanDto {
+export class WeeklyPlanDto extends ThinkingEnabledDto {
   @IsArray()
   tasks: Record<string, unknown>[];
 
@@ -85,7 +91,7 @@ export class WeeklyPlanDto {
   days?: number;
 }
 
-export class LearningLoopDto {
+export class LearningLoopDto extends ThinkingEnabledDto {
   @IsString()
   sourceText: string;
 
@@ -107,7 +113,7 @@ export class LearningLoopDto {
   context?: string[];
 }
 
-export class RewriteDto {
+export class RewriteDto extends ThinkingEnabledDto {
   @IsString()
   text: string;
 
@@ -115,7 +121,7 @@ export class RewriteDto {
   intent: string;
 }
 
-export class FlashCardGradeDto {
+export class FlashCardGradeDto extends ThinkingEnabledDto {
   @IsString()
   question: string;
 
@@ -136,6 +142,7 @@ export class ChatDto {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
   context?: string[];
 
   @IsOptional()
@@ -202,6 +209,44 @@ export class ImageTaskSubmitDto {
 }
 
 export class ImageTaskQueryDto {
+  @IsString()
+  taskId: string;
+}
+
+export class VideoTaskSubmitDto {
+  @IsString()
+  prompt: string;
+
+  @IsOptional()
+  @IsString()
+  imageBase64?: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @IsOptional()
+  @IsString()
+  ratio?: string;
+
+  @IsOptional()
+  @IsString()
+  resolution?: string;
+
+  @IsOptional()
+  @IsString()
+  duration?: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+}
+
+export class VideoTaskQueryDto {
   @IsString()
   taskId: string;
 }

@@ -31,15 +31,19 @@ class TrashPage extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
-                    '回收站',
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: Text(
+                      '回收站',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 12),
                   if (items.isNotEmpty)
                     TextButton.icon(
                       onPressed: () => _emptyAll(context),
@@ -58,7 +62,7 @@ class TrashPage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               if (items.isEmpty)
-                GlassCard(
+                StudyCard(
                   color: isDarkMode
                       ? const Color(0xFF242B37).withValues(alpha: 0.9)
                       : null,
@@ -126,7 +130,7 @@ class _TrashCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
+      child: StudyCard(
         color: isDarkMode
             ? const Color(0xFF242B37).withValues(alpha: 0.9)
             : null,

@@ -16,7 +16,7 @@ import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_study_service.dart';
 import '../../services/ai_exceptions.dart';
-import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 import 'ai_chat_page.dart';
 
@@ -55,15 +55,15 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   AiTaskPlan? _taskPlan;
   bool _isGeneratingTask = false;
 
-  // AI 分析周报
+  // 分析周报
   AiStudyAnalysis? _analysis;
   bool _isGeneratingAnalysis = false;
 
-  // AI 风险提醒
+  // 风险提醒
   List<AiRiskWarning>? _warnings;
   bool _isGeneratingWarnings = false;
 
-  // AI 生成今日闪卡
+  // 生成今日闪卡
   bool _isGeneratingFlashcards = false;
   String? _flashcardsMessage;
   bool _flashcardsSuccess = false;
@@ -87,10 +87,9 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.controller.primaryColor;
-    final titleColor = widget.isDarkMode ? Colors.white : Colors.black;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    const accent = StudyUi.primary;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return ListView(
       key: const Key('page_ai_assistant'),
@@ -99,17 +98,24 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         // Header
         Row(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                color: accent.withValues(alpha: 0.15),
-              ),
-              child: Icon(
-                Icons.auto_awesome_rounded,
-                color: accent,
-                size: 24,
+            Image.asset(
+              AppAssets.uiRefreshFeatureAssistant,
+              width: 58,
+              height: 58,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: StudyUi.chipBackground(accent, widget.isDarkMode),
+                ),
+                child: const StudyAssetIcon(
+                  asset: AppAssets.sideAiAssistantIcon,
+                  color: accent,
+                  size: 26,
+                  fallbackIcon: Icons.smart_toy_rounded,
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -118,16 +124,16 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'AI 学习助手',
+                    'AI学习助手',
                     style: TextStyle(
                       color: titleColor,
                       fontSize: 24,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '输入自然语言，AI 自动完成学习记录与分析',
+                    '把学习记录、任务拆解、复盘和提醒放在一起处理',
                     style: TextStyle(color: bodyColor, fontSize: 13),
                   ),
                 ],
@@ -165,12 +171,12 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 );
               },
               icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-              label: const Text('AI 对话'),
+              label: const Text('学习对话'),
             ),
             if (widget.onOpenSettings != null) ...[
               const SizedBox(width: 4),
               IconButton(
-                tooltip: 'AI 设置',
+                tooltip: 'AI设置',
                 onPressed: widget.onOpenSettings,
                 icon: const Icon(Icons.tune_rounded, size: 20),
               ),
@@ -181,11 +187,11 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         _buildAiModeBanner(),
         const SizedBox(height: 14),
 
-        // 1. AI 生成学习日志
+        // 1. 整理学习日志
         _buildSectionCard(
-          icon: Icons.edit_note_rounded,
-          iconColor: const Color(0xFF7394F9),
-          title: 'AI 生成学习日志',
+          iconAsset: AppAssets.featureLogIcon,
+          iconColor: StudyUi.secondary,
+          title: '整理学习日志',
           subtitle: '输入一句话学习情况，自动整理为结构化学习记录',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,7 +200,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 controller: _logInputController,
                 maxLines: 3,
                 style: TextStyle(
-                  color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                  color: StudyUi.title(widget.isDarkMode),
                   fontSize: 14,
                 ),
                 decoration: _inputDeco(
@@ -212,7 +218,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 height: 44,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7394F9),
+                    backgroundColor: StudyUi.secondary,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
@@ -229,9 +235,9 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.auto_awesome_rounded, size: 18),
+                      : const Icon(Icons.edit_note_rounded, size: 18),
                   label: Text(
-                    _isGeneratingLog ? '生成中...' : 'AI 生成学习日志',
+                    _isGeneratingLog ? '整理中...' : '整理学习日志',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -240,12 +246,12 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
           ),
         ),
 
-        // 显示 AI 日志生成结果
+        // 显示日志整理结果
         if (_generatedLog != null && !_generatedLog!.isEmpty) ...[
           const SizedBox(height: 14),
           _AiResultCard(
             isDarkMode: widget.isDarkMode,
-            title: 'AI 生成结果',
+            title: '整理结果',
             onEdit: (updated) {
               setState(() => _generatedLog = updated);
             },
@@ -256,11 +262,11 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
         const SizedBox(height: 22),
 
-        // 2. AI 拆解学习任务
+        // 2. 拆解学习任务
         _buildSectionCard(
-          icon: Icons.account_tree_rounded,
+          iconAsset: AppAssets.featureTaskPlanIcon,
           iconColor: accent,
-          title: 'AI 拆解学习任务',
+          title: '拆解学习任务',
           subtitle: '输入复杂任务描述，自动生成子任务和安排建议',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,7 +275,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 controller: _taskInputController,
                 maxLines: 3,
                 style: TextStyle(
-                  color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                  color: StudyUi.title(widget.isDarkMode),
                   fontSize: 14,
                 ),
                 decoration: _inputDeco(
@@ -304,9 +310,9 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.auto_awesome_rounded, size: 18),
+                      : const Icon(Icons.account_tree_rounded, size: 18),
                   label: Text(
-                    _isGeneratingTask ? '拆解中...' : 'AI 拆解任务',
+                    _isGeneratingTask ? '拆解中...' : '拆解任务',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -315,7 +321,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
           ),
         ),
 
-        // 显示 AI 任务拆解结果
+        // 显示任务拆解结果
         if (_taskPlan != null && _taskPlan!.mainTitle.isNotEmpty) ...[
           const SizedBox(height: 14),
           _TaskPlanResultCard(
@@ -328,18 +334,18 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
         const SizedBox(height: 22),
 
-        // 3. AI 分析本周学习
+        // 3. 生成本周复盘
         _buildSectionCard(
-          icon: Icons.analytics_rounded,
-          iconColor: const Color(0xFF4BC4A1),
-          title: 'AI 分析本周学习',
+          iconAsset: AppAssets.sideDashboardIcon,
+          iconColor: StudyUi.success,
+          title: '生成本周复盘',
           subtitle: '根据日志和任务数据生成带分析结论的学习周报',
           child: SizedBox(
             width: double.infinity,
             height: 44,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4BC4A1),
+                backgroundColor: StudyUi.success,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -356,16 +362,16 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.auto_awesome_rounded, size: 18),
+                  : const Icon(Icons.analytics_rounded, size: 18),
               label: Text(
-                _isGeneratingAnalysis ? '分析中...' : 'AI 分析本周学习',
+                _isGeneratingAnalysis ? '分析中...' : '生成本周复盘',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
           ),
         ),
 
-        // 显示 AI 分析结果
+        // 显示本周复盘结果
         if (_analysis != null) ...[
           const SizedBox(height: 14),
           _AnalysisResultCard(
@@ -378,18 +384,18 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
         const SizedBox(height: 22),
 
-        // 4. AI 风险提醒
+        // 4. 进度提醒
         _buildSectionCard(
-          icon: Icons.warning_amber_rounded,
-          iconColor: const Color(0xFFF8AA5B),
-          title: 'AI 风险提醒',
+          iconAsset: AppAssets.featureWarningIcon,
+          iconColor: StudyUi.warning,
+          title: '进度提醒',
           subtitle: '检查任务截止、学习断档和完成率等风险',
           child: SizedBox(
             width: double.infinity,
             height: 44,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF8AA5B),
+                backgroundColor: StudyUi.warning,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -406,9 +412,9 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.auto_awesome_rounded, size: 18),
+                  : const Icon(Icons.warning_amber_rounded, size: 18),
               label: Text(
-                _isGeneratingWarnings ? '检查中...' : 'AI 检查风险',
+                _isGeneratingWarnings ? '检查中...' : '检查进度风险',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
@@ -429,14 +435,11 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         ],
         if (_warnings != null && _warnings!.isEmpty) ...[
           const SizedBox(height: 14),
-          GlassCard(
-            color: widget.isDarkMode
-                ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                : null,
+          StudyCard(
             child: Row(
               children: [
                 const Icon(Icons.check_circle_rounded,
-                    color: Color(0xFF4BC4A1), size: 24),
+                    color: StudyUi.success, size: 24),
                 const SizedBox(width: 12),
                 Text(
                   '当前没有发现学习风险，继续保持！',
@@ -452,18 +455,18 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
         const SizedBox(height: 22),
 
-        // 5. AI 生成今日闪卡
+        // 5. 生成今日闪卡
         _buildSectionCard(
-          icon: Icons.style_rounded,
-          iconColor: const Color(0xFF4BC4A1),
-          title: 'AI 生成今日闪卡',
+          iconAsset: AppAssets.featureFlashcardIcon,
+          iconColor: StudyUi.success,
+          title: '生成今日闪卡',
           subtitle: '从今日学习日志生成问答闪卡，强化复习',
           child: SizedBox(
             width: double.infinity,
             height: 44,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4BC4A1),
+                backgroundColor: StudyUi.success,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -482,7 +485,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.auto_awesome_rounded, size: 18),
+                  : const Icon(Icons.style_rounded, size: 18),
               label: Text(
                 _isGeneratingFlashcards ? '生成中...' : '根据今日日志生成闪卡',
                 style: const TextStyle(fontWeight: FontWeight.w700),
@@ -492,10 +495,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         ),
         if (_flashcardsMessage != null) ...[
           const SizedBox(height: 10),
-          GlassCard(
-            color: widget.isDarkMode
-                ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                : null,
+          StudyCard(
             child: Row(
               children: [
                 Icon(
@@ -503,8 +503,8 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                       ? Icons.check_circle_rounded
                       : Icons.info_outline_rounded,
                   color: _flashcardsSuccess
-                      ? const Color(0xFF4BC4A1)
-                      : const Color(0xFFF8AA5B),
+                      ? StudyUi.success
+                      : StudyUi.warning,
                   size: 22,
                 ),
                 const SizedBox(width: 12),
@@ -525,20 +525,16 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   // ============ Build Helpers ============
 
   Widget _buildSectionCard({
-    required IconData icon,
+    required String iconAsset,
     required Color iconColor,
     required String title,
     required String subtitle,
     required Widget child,
   }) {
-    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
-    return GlassCard(
-      color: widget.isDarkMode
-          ? const Color(0xFF242B37).withValues(alpha: 0.9)
-          : null,
+    return StudyCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -549,9 +545,14 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 height: 36,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  color: iconColor.withValues(alpha: 0.15),
+                  color: StudyUi.chipBackground(iconColor, widget.isDarkMode),
                 ),
-                child: Icon(icon, color: iconColor, size: 20),
+                child: StudyAssetIcon(
+                  asset: iconAsset,
+                  color: iconColor,
+                  size: 22,
+                  fallbackIcon: Icons.auto_awesome_rounded,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -580,17 +581,16 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
   Widget _buildAiModeBanner() {
     final usingRealAi = widget.controller.isUsingRealAi;
-    const aiDetail = '云端 AI 服务已连接';
+    const aiDetail = '学习整理服务已连接';
     final isLoggedIn = widget.controller.isLoggedIn;
     final color =
-        isLoggedIn ? const Color(0xFF4BC4A1) : const Color(0xFFF8AA5B);
-    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        isLoggedIn ? StudyUi.success : StudyUi.warning;
+    final textColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     final (String label, String detail) = isLoggedIn
-        ? ('学迹 AI', aiDetail)
-        : ('AI 服务未就绪', '请登录后使用云端 AI');
+        ? ('AI学习助手', aiDetail)
+        : ('AI学习助手未就绪', '请登录后使用云端学习整理');
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -612,7 +612,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isLoggedIn ? '学迹 AI' : label,
+                  isLoggedIn ? 'AI学习助手' : label,
                   style: TextStyle(
                     color: textColor,
                     fontWeight: FontWeight.w800,
@@ -748,7 +748,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       String text;
       try {
         if (widget.controller.isLoggedIn) {
-          // 云端 AI 分析图片内容
+          // 云端服务分析图片内容
           text = await _aiService.generateAssistantReply(
             input: target == _SmartInputTarget.log
                 ? '请详细描述这张图片的内容，提取关键信息用于学习记录'
@@ -804,10 +804,10 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     final result = await showDialog<String>(
       context: context,
       builder: (context) {
-        final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+        final textColor = StudyUi.title(widget.isDarkMode);
         return AlertDialog(
           backgroundColor:
-              widget.isDarkMode ? const Color(0xFF242B37) : Colors.white,
+              widget.isDarkMode ? StudyUi.surface(true) : Colors.white,
           title: Text(title, style: TextStyle(color: textColor)),
           content: TextField(
             controller: controller,
@@ -836,65 +836,74 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     _SmartInputTarget target,
     TextEditingController controller,
   ) async {
-    if (_isListening && identical(_speechTarget, controller)) {
-      await _speech.stop();
-      if (mounted) {
-        setState(() {
-          _isListening = false;
-          _speechTarget = null;
-        });
+    try {
+      if (_isListening && identical(_speechTarget, controller)) {
+        await _speech.stop();
+        if (mounted) {
+          setState(() {
+            _isListening = false;
+            _speechTarget = null;
+          });
+        }
+        return;
       }
-      return;
-    }
 
-    if (_isListening) {
-      await _speech.stop();
-    }
+      if (_isListening) {
+        await _speech.stop();
+      }
 
-    final available = await _speech.initialize(
-      onStatus: (status) {
-        if (!mounted) return;
-        if (status == 'done' || status == 'notListening') {
+      final available = await _speech.initialize(
+        onStatus: (status) {
+          if (!mounted) return;
+          if (status == 'done' || status == 'notListening') {
+            setState(() {
+              _isListening = false;
+              _speechTarget = null;
+            });
+          }
+        },
+        onError: (error) {
+          if (!mounted) return;
           setState(() {
             _isListening = false;
             _speechTarget = null;
           });
-        }
-      },
-      onError: (error) {
-        if (!mounted) return;
-        setState(() {
-          _isListening = false;
-          _speechTarget = null;
-        });
-        _showSnack('语音识别失败：${error.errorMsg}');
-      },
-    );
-    if (!available) {
-      _showSnack('当前设备不可用语音识别');
-      return;
-    }
+          _showSnack('语音识别失败：${error.errorMsg}');
+        },
+      );
+      if (!available) {
+        _showSnack('当前设备不可用语音识别');
+        return;
+      }
 
-    setState(() {
-      _isListening = true;
-      _speechTarget = controller;
-    });
-    await _speech.listen(
-      localeId: 'zh_CN',
-      listenFor: const Duration(minutes: 1),
-      pauseFor: const Duration(seconds: 4),
-      listenOptions: stt.SpeechListenOptions(partialResults: true),
-      onResult: (result) {
-        controller.text = result.recognizedWords;
-        _moveCursorToEnd(controller);
-        if (result.finalResult && mounted) {
-          setState(() {
-            _isListening = false;
-            _speechTarget = null;
-          });
-        }
-      },
-    );
+      setState(() {
+        _isListening = true;
+        _speechTarget = controller;
+      });
+      await _speech.listen(
+        localeId: 'zh_CN',
+        listenFor: const Duration(minutes: 1),
+        pauseFor: const Duration(seconds: 4),
+        listenOptions: stt.SpeechListenOptions(partialResults: true),
+        onResult: (result) {
+          controller.text = result.recognizedWords;
+          _moveCursorToEnd(controller);
+          if (result.finalResult && mounted) {
+            setState(() {
+              _isListening = false;
+              _speechTarget = null;
+            });
+          }
+        },
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isListening = false;
+        _speechTarget = null;
+      });
+      _showSnack('语音识别不可用，可手动输入：$error');
+    }
   }
 
   TextEditingController _controllerFor(_SmartInputTarget target) {
@@ -911,17 +920,13 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    StudyToast.show(context, message);
   }
 
   Future<void> _handleGenerateLog() async {
     final input = _logInputController.text.trim();
     if (input.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先输入学习情况描述')),
-      );
+      StudyToast.show(context, '请先输入学习情况描述');
       return;
     }
     setState(() => _isGeneratingLog = true);
@@ -931,7 +936,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     } on AiServiceException catch (error) {
       _showSnack(error.message);
     } catch (error) {
-      _showSnack('AI 生成失败：$error');
+      _showSnack('学习记录整理失败：$error');
     } finally {
       if (mounted) setState(() => _isGeneratingLog = false);
     }
@@ -940,33 +945,30 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   Future<void> _handleSaveLog() async {
     if (_generatedLog == null) return;
     final log = _generatedLog!;
-    await widget.controller.addStudyLog(
-      date: DateTime.now(),
-      courseName: log.courseName,
-      content: log.content,
-      problems: log.problems,
-      thoughts: log.thoughts,
-      nextPlan: log.nextPlan,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('AI 学习日志已保存'),
-        backgroundColor: Color(0xFF4BC4A1),
-      ),
-    );
-    setState(() {
-      _generatedLog = null;
-      _logInputController.clear();
-    });
+    try {
+      await widget.controller.addStudyLog(
+        date: DateTime.now(),
+        courseName: log.courseName,
+        content: log.content,
+        problems: log.problems,
+        thoughts: log.thoughts,
+        nextPlan: log.nextPlan,
+      );
+      if (!mounted) return;
+      StudyToast.show(context, '学习记录已保存');
+      setState(() {
+        _generatedLog = null;
+        _logInputController.clear();
+      });
+    } catch (error) {
+      _showSnack('学习记录保存失败：$error');
+    }
   }
 
   Future<void> _handleGenerateTask() async {
     final input = _taskInputController.text.trim();
     if (input.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先输入任务描述')),
-      );
+      StudyToast.show(context, '请先输入任务描述');
       return;
     }
     setState(() => _isGeneratingTask = true);
@@ -976,14 +978,13 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     } on AiServiceException catch (error) {
       _showSnack(error.message);
     } catch (error) {
-      _showSnack('AI 拆解失败：$error');
+      _showSnack('任务拆解失败：$error');
     } finally {
       if (mounted) setState(() => _isGeneratingTask = false);
     }
   }
 
   Future<void> _handleAddTask() async {
-    final accent = widget.controller.primaryColor;
     if (_taskPlan == null) return;
     final plan = _taskPlan!;
 
@@ -1014,27 +1015,26 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
               updatedAt: now,
             )).toList();
 
-    await widget.controller.addStudyTask(
-      title: plan.mainTitle,
-      type: plan.taskType,
-      courseName: plan.courseName,
-      deadline: plan.deadline,
-      status: StudyTaskStatus.notStarted,
-      note: noteBuffer.toString().trim(),
-      subTasks: subTasks,
-    );
+    try {
+      await widget.controller.addStudyTask(
+        title: plan.mainTitle,
+        type: plan.taskType,
+        courseName: plan.courseName,
+        deadline: plan.deadline,
+        status: StudyTaskStatus.notStarted,
+        note: noteBuffer.toString().trim(),
+        subTasks: subTasks,
+      );
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('AI 任务已添加到任务列表'),
-        backgroundColor: accent,
-      ),
-    );
-    setState(() {
-      _taskPlan = null;
-      _taskInputController.clear();
-    });
+      if (!mounted) return;
+      StudyToast.show(context, '任务已添加到任务列表');
+      setState(() {
+        _taskPlan = null;
+        _taskInputController.clear();
+      });
+    } catch (error) {
+      _showSnack('任务添加失败：$error');
+    }
   }
 
   Future<void> _handleGenerateAnalysis() async {
@@ -1052,7 +1052,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     } on AiServiceException catch (error) {
       _showSnack(error.message);
     } catch (error) {
-      _showSnack('AI 分析失败：$error');
+      _showSnack('本周复盘生成失败：$error');
     } finally {
       if (mounted) setState(() => _isGeneratingAnalysis = false);
     }
@@ -1062,26 +1062,23 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     if (_analysis == null) return;
     final content = _analysis!.toFormattedText();
     final now = DateTime.now();
-    await widget.controller.saveWeeklyReport(
-      content,
-      startDate: now.subtract(const Duration(days: 7)),
-      endDate: now,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('AI 分析周报已保存'),
-        backgroundColor: Color(0xFF4BC4A1),
-      ),
-    );
+    try {
+      await widget.controller.saveWeeklyReport(
+        content,
+        startDate: now.subtract(const Duration(days: 7)),
+        endDate: now,
+      );
+      if (!mounted) return;
+      StudyToast.show(context, '本周复盘已保存');
+    } catch (error) {
+      _showSnack('本周复盘保存失败：$error');
+    }
   }
 
   void _handleCopyAnalysis() {
     if (_analysis == null) return;
     Clipboard.setData(ClipboardData(text: _analysis!.toFormattedText()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已复制到剪贴板')),
-    );
+    StudyToast.show(context, '已复制到剪贴板');
   }
 
   Future<void> _handleGenerateWarnings() async {
@@ -1095,7 +1092,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     } on AiServiceException catch (error) {
       _showSnack(error.message);
     } catch (error) {
-      _showSnack('AI 检查失败：$error');
+      _showSnack('进度检查失败：$error');
     } finally {
       if (mounted) setState(() => _isGeneratingWarnings = false);
     }
@@ -1126,7 +1123,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       );
       if (cards.isEmpty) {
         setState(() {
-          _flashcardsMessage = 'AI 没有生成有效闪卡，请稍后再试';
+          _flashcardsMessage = '这次没有整理出有效闪卡，请稍后再试';
           _flashcardsSuccess = false;
         });
         return;
@@ -1143,7 +1140,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       });
     } catch (error) {
       setState(() {
-        _flashcardsMessage = 'AI 生成闪卡失败：$error';
+        _flashcardsMessage = '今日闪卡生成失败：$error';
         _flashcardsSuccess = false;
       });
     } finally {
@@ -1171,18 +1168,21 @@ class _AiResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
+    final titleColor = StudyUi.title(isDarkMode);
 
-    return GlassCard(
-      color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+    return StudyCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome_rounded,
-                  color: Color(0xFF7394F9), size: 18),
+              const StudyAssetIcon(
+                asset: AppAssets.featureLogIcon,
+                color: StudyUi.secondary,
+                size: 20,
+                fallbackIcon: Icons.fact_check_rounded,
+              ),
               const SizedBox(width: 8),
               Text(title,
                   style: TextStyle(
@@ -1193,12 +1193,12 @@ class _AiResultCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4BC4A1).withValues(alpha: 0.15),
+                  color: StudyUi.chipBackground(StudyUi.success, isDarkMode),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text('AI 生成',
+                child: const Text('已整理',
                     style: TextStyle(
-                        color: Color(0xFF4BC4A1),
+                        color: StudyUi.success,
                         fontSize: 11,
                         fontWeight: FontWeight.w700)),
               ),
@@ -1279,7 +1279,7 @@ class _AiResultCard extends StatelessWidget {
             height: 44,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7394F9),
+                backgroundColor: StudyUi.secondary,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -1348,7 +1348,7 @@ class _EditableFieldState extends State<_EditableField> {
       children: [
         Text(widget.label,
             style: TextStyle(
-                color: widget.isDarkMode ? Colors.white70 : AppColors.muted,
+                color: StudyUi.muted(widget.isDarkMode),
                 fontSize: 12,
                 fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
@@ -1356,19 +1356,19 @@ class _EditableFieldState extends State<_EditableField> {
           controller: _controller,
           maxLines: widget.maxLines,
           style: TextStyle(
-            color: widget.isDarkMode ? Colors.white : AppColors.ink,
+            color: StudyUi.title(widget.isDarkMode),
             fontSize: 13,
           ),
           decoration: InputDecoration(
             filled: true,
             fillColor: widget.isDarkMode
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF2F5FC),
+                ? StudyUi.surfaceAlt(true)
+                : StudyUi.surfaceAlt(false),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none,
+              borderSide: BorderSide(color: StudyUi.border(widget.isDarkMode)),
             ),
             isDense: true,
           ),
@@ -1400,21 +1400,24 @@ class _TaskPlanResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
 
-    return GlassCard(
-      color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+    return StudyCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.account_tree_rounded,
-                  color: accentColor, size: 18),
+              StudyAssetIcon(
+                asset: AppAssets.featureTaskPlanIcon,
+                color: accentColor,
+                size: 20,
+                fallbackIcon: Icons.account_tree_rounded,
+              ),
               const SizedBox(width: 8),
-              Text('AI 拆解结果',
+              Text('任务拆解结果',
                   style: TextStyle(
                       color: titleColor,
                       fontSize: 15,
@@ -1441,13 +1444,13 @@ class _TaskPlanResultCard extends StatelessWidget {
                   fontSize: 16,
                   fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
-          Text('📖 ${plan.courseName}',
+          Text('课程：${plan.courseName}',
               style: TextStyle(color: bodyColor, fontSize: 13)),
           const SizedBox(height: 4),
           Text(
               '截止：${_fmtPlanDate(plan.deadline)}',
               style: TextStyle(
-                  color: isDarkMode ? Colors.white54 : AppColors.muted,
+                  color: StudyUi.muted(isDarkMode),
                   fontSize: 12)),
           if (plan.plannedSubTasks.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -1480,16 +1483,12 @@ class _TaskPlanResultCard extends StatelessWidget {
                           Text(
                               '截止：${_fmtPlanDate(plan.plannedSubTasks[i].deadline)}',
                               style: TextStyle(
-                                  color: isDarkMode
-                                      ? Colors.white54
-                                      : AppColors.muted,
+                                  color: StudyUi.muted(isDarkMode),
                                   fontSize: 11)),
                           if (plan.plannedSubTasks[i].note.isNotEmpty)
                             Text(plan.plannedSubTasks[i].note,
                                 style: TextStyle(
-                                    color: isDarkMode
-                                        ? Colors.white38
-                                        : Colors.black38,
+                                    color: StudyUi.muted(isDarkMode),
                                     fontSize: 11)),
                         ],
                       ),
@@ -1579,20 +1578,23 @@ class _AnalysisResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
+    final titleColor = StudyUi.title(isDarkMode);
 
-    return GlassCard(
-      color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+    return StudyCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.analytics_rounded,
-                  color: Color(0xFF4BC4A1), size: 18),
+              const StudyAssetIcon(
+                asset: AppAssets.sideDashboardIcon,
+                color: StudyUi.success,
+                size: 20,
+                fallbackIcon: Icons.analytics_rounded,
+              ),
               const SizedBox(width: 8),
-              Text('AI 分析结果',
+              Text('本周复盘结果',
                   style: TextStyle(
                       color: titleColor,
                       fontSize: 15,
@@ -1601,12 +1603,12 @@ class _AnalysisResultCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4BC4A1).withValues(alpha: 0.15),
+                  color: StudyUi.chipBackground(StudyUi.success, isDarkMode),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text('AI 分析',
+                child: const Text('已生成',
                     style: TextStyle(
-                        color: Color(0xFF4BC4A1),
+                        color: StudyUi.success,
                         fontSize: 11,
                         fontWeight: FontWeight.w700)),
               ),
@@ -1653,7 +1655,7 @@ class _AnalysisResultCard extends StatelessWidget {
                   height: 44,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4BC4A1),
+                      backgroundColor: StudyUi.success,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -1673,8 +1675,8 @@ class _AnalysisResultCard extends StatelessWidget {
                   height: 44,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF4BC4A1),
-                      side: const BorderSide(color: Color(0xFF4BC4A1)),
+                      foregroundColor: StudyUi.success,
+                      side: const BorderSide(color: StudyUi.success),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -1708,14 +1710,14 @@ class _SectionText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (text.isEmpty) return const SizedBox.shrink();
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final bodyColor = StudyUi.body(isDarkMode);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
             style: TextStyle(
-                color: isDarkMode ? Colors.white70 : AppColors.muted,
+                color: StudyUi.muted(isDarkMode),
                 fontSize: 12,
                 fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
@@ -1740,23 +1742,23 @@ class _WarningCard extends StatelessWidget {
     final (Color bgColor, Color iconColor, Color borderColor) =
         switch (warning.level) {
       RiskLevel.high => (
-          const Color(0xFFF77D8E).withValues(alpha: 0.12),
-          const Color(0xFFF77D8E),
-          const Color(0xFFF77D8E).withValues(alpha: 0.3),
+          StudyUi.danger.withValues(alpha: 0.12),
+          StudyUi.danger,
+          StudyUi.danger.withValues(alpha: 0.3),
         ),
       RiskLevel.medium => (
-          const Color(0xFFF8AA5B).withValues(alpha: 0.12),
-          const Color(0xFFF8AA5B),
-          const Color(0xFFF8AA5B).withValues(alpha: 0.3),
+          StudyUi.warning.withValues(alpha: 0.12),
+          StudyUi.warning,
+          StudyUi.warning.withValues(alpha: 0.3),
         ),
       RiskLevel.low => (
-          const Color(0xFF7394F9).withValues(alpha: 0.12),
-          const Color(0xFF7394F9),
-          const Color(0xFF7394F9).withValues(alpha: 0.3),
+          StudyUi.secondary.withValues(alpha: 0.12),
+          StudyUi.secondary,
+          StudyUi.secondary.withValues(alpha: 0.3),
         ),
     };
 
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final bodyColor = StudyUi.body(isDarkMode);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1787,7 +1789,7 @@ class _WarningCard extends StatelessWidget {
                     Expanded(
                       child: Text(warning.title,
                           style: TextStyle(
-                              color: isDarkMode ? Colors.white : AppColors.ink,
+                              color: StudyUi.title(isDarkMode),
                               fontSize: 14,
                               fontWeight: FontWeight.w700)),
                     ),

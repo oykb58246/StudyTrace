@@ -6,6 +6,8 @@ import '../../controllers/app_data_controller.dart';
 import '../../models/knowledge_node.dart';
 import '../../services/knowledge_graph_service.dart';
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
+import '../shared/common_widgets.dart';
 
 class KnowledgeGraphPage extends StatefulWidget {
   const KnowledgeGraphPage({
@@ -46,29 +48,15 @@ class _KnowledgeGraphPageState extends State<KnowledgeGraphPage> {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
-
     if (_graphData == null || _graphData!.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.account_tree_outlined,
-                size: 64, color: bodyColor.withValues(alpha: 0.4)),
-            const SizedBox(height: 16),
-            Text(
-              '暂无知识图谱数据',
-              style: TextStyle(color: bodyColor, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '添加课程、笔记和闪卡后自动生成',
-              style: TextStyle(
-                  color: bodyColor.withValues(alpha: 0.6), fontSize: 13),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: StudyEmptyState(
+            asset: AppAssets.uiRefreshFeatureKnowledge,
+            title: '还没有知识图谱数据',
+            message: '添加课程、笔记和闪卡后，会自动整理出知识点之间的关系。',
+          ),
         ),
       );
     }
@@ -195,8 +183,8 @@ class _GraphPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     for (final edge in graph.edges) {
-      final from = graph.nodes.where((n) => n.id == edge.fromId).firstOrNull;
-      final to = graph.nodes.where((n) => n.id == edge.toId).firstOrNull;
+      final from = _nodeById(edge.fromId);
+      final to = _nodeById(edge.toId);
       if (from != null && to != null) {
         canvas.drawLine(
           Offset(from.x, from.y),
@@ -277,6 +265,13 @@ class _GraphPainter extends CustomPainter {
       case KnowledgeNodeType.task:
         return const Color(0xFF4BC4A1);
     }
+  }
+
+  KnowledgeNode? _nodeById(String id) {
+    for (final node in graph.nodes) {
+      if (node.id == id) return node;
+    }
+    return null;
   }
 
   String _iconForType(KnowledgeNodeType type) {
@@ -405,6 +400,8 @@ class _NodeDetailCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   node.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: textColor,
                     fontSize: 15,

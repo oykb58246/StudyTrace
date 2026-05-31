@@ -2,6 +2,8 @@ enum NoteBlockType {
   text,
   heading,
   bullet,
+  markdown,
+  image,
   code,
   divider,
   todo;
@@ -14,6 +16,10 @@ enum NoteBlockType {
         return '标题';
       case NoteBlockType.bullet:
         return '列表';
+      case NoteBlockType.markdown:
+        return 'Markdown';
+      case NoteBlockType.image:
+        return '图片';
       case NoteBlockType.code:
         return '代码';
       case NoteBlockType.divider:

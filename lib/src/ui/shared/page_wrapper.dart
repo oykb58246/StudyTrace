@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'common_widgets.dart';
+
 /// 给页面自动加上 Scaffold + AppBar（含返回箭头）
 /// 用于原本没有 AppBar 的页面作为独立界面 push 时使用
 class PageWithBackButton extends StatelessWidget {
@@ -9,19 +11,22 @@ class PageWithBackButton extends StatelessWidget {
     required this.child,
     required this.isDarkMode,
     this.onBack,
+    this.titleIcon,
+    this.accent,
   });
 
   final String title;
   final Widget child;
   final bool isDarkMode;
   final VoidCallback? onBack;
+  final IconData? titleIcon;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : Colors.black;
+    final titleColor = StudyUi.title(isDarkMode);
     return Scaffold(
-      backgroundColor:
-          isDarkMode ? const Color(0xFF05070D) : const Color(0xFFF6F7FB),
+      backgroundColor: StudyUi.background(isDarkMode),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -35,9 +40,47 @@ class PageWithBackButton extends StatelessWidget {
             }
           },
         ),
-        title: Text(
-          title,
-          style: TextStyle(color: titleColor, fontWeight: FontWeight.w700),
+        title: LayoutBuilder(
+          builder: (context, constraints) {
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (titleIcon != null) ...[
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: StudyUi.chipBackground(
+                          accent ?? StudyUi.primary,
+                          isDarkMode,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        titleIcon,
+                        color: accent ?? StudyUi.primary,
+                        size: 17,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Flexible(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
       body: child,

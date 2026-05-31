@@ -30,6 +30,39 @@ class GeneratedImageTask {
   }
 }
 
+class GeneratedVideoTask {
+  const GeneratedVideoTask({
+    required this.taskId,
+    required this.status,
+    this.videosUrl = const [],
+    this.coverUrl,
+    this.auditStatus,
+    this.capabilityTraces = const [],
+  });
+
+  final String taskId;
+  final String status;
+  final List<String> videosUrl;
+  final String? coverUrl;
+  final String? auditStatus;
+  final List<AiCapabilityTrace> capabilityTraces;
+
+  factory GeneratedVideoTask.fromJson(Map<String, dynamic> json) {
+    return GeneratedVideoTask(
+      taskId: json['taskId'] as String? ?? '',
+      status: json['status']?.toString() ?? 'submitted',
+      videosUrl: (json['videosUrl'] as List?)
+              ?.map((item) => item.toString())
+              .where((item) => item.isNotEmpty)
+              .toList() ??
+          const [],
+      coverUrl: json['coverUrl']?.toString(),
+      auditStatus: json['auditStatus']?.toString(),
+      capabilityTraces: parseCapabilityTraces(json['capabilityTraces']),
+    );
+  }
+}
+
 class TranslatedTextResult {
   const TranslatedTextResult({
     required this.text,

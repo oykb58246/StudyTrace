@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/analysis_item.dart';
-import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
 class AnalysisResultPage extends StatefulWidget {
@@ -72,29 +71,25 @@ class _AnalysisResultPageState extends State<AnalysisResultPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    StudyToast.show(context, message);
   }
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.controller.primaryColor;
-    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    const accent = StudyUi.primary;
+    final textColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return Scaffold(
       key: const Key('analysis_result_page'),
-      backgroundColor:
-          widget.isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
+      backgroundColor: StudyUi.background(widget.isDarkMode),
       appBar: AppBar(
         elevation: 0,
         centerTitle: false,
         backgroundColor: Colors.transparent,
         foregroundColor: textColor,
         title: const Text(
-          'AI 分析结果',
+          '分析结果',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
@@ -104,26 +99,23 @@ class _AnalysisResultPageState extends State<AnalysisResultPage> {
           Container(
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(30),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [accent, Color(0xFF8D5EFF)],
-              ),
+              borderRadius: BorderRadius.circular(18),
+              color: StudyUi.surface(widget.isDarkMode),
+              border: Border.all(color: StudyUi.border(widget.isDarkMode)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 BadgePill(
                   label: widget.analysis.contentType,
-                  background: const Color(0x33FFFFFF),
-                  foreground: Colors.white,
+                  background: StudyUi.chipBackground(accent, widget.isDarkMode),
+                  foreground: accent,
                 ),
                 const SizedBox(height: 16),
                 Text(
                   widget.analysis.summary,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: textColor,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     height: 1.28,
@@ -174,15 +166,15 @@ class _AnalysisResultPageState extends State<AnalysisResultPage> {
             key: const Key('add_todo_button'),
             label: _isAddingTodo ? '加入中...' : '加入待办',
             icon: Icons.check_circle_outline_rounded,
-            color: const Color(0xFF7394F9),
+            color: StudyUi.secondary,
             onTap: _addTodo,
           ),
           const SizedBox(height: 12),
           _ActionButton(
             key: const Key('generate_plan_button'),
             label: _isGeneratingPlan ? '生成中...' : '生成计划',
-            icon: Icons.auto_awesome_motion_rounded,
-            color: const Color(0xFFF77D8E),
+            icon: Icons.insights_rounded,
+            color: StudyUi.danger,
             onTap: _generatePlan,
           ),
         ],
@@ -204,16 +196,14 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      color:
-          isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.92) : null,
+    return StudyCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
             style: TextStyle(
-              color: isDarkMode ? Colors.white : AppColors.ink,
+              color: StudyUi.title(isDarkMode),
               fontSize: 18,
               fontWeight: FontWeight.w800,
             ),

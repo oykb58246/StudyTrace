@@ -23,6 +23,8 @@ import {
   SpeechTranscribeDto,
   TextInputDto,
   TranslateDto,
+  VideoTaskQueryDto,
+  VideoTaskSubmitDto,
   WeeklyAnalysisDto,
   WeeklyPlanDto,
 } from './dto/ai-common.dto';
@@ -105,6 +107,16 @@ export class AiController {
   @Post('images/tasks/status')
   queryImageTask(@CurrentUser() user: CurrentUserPayload, @Body() dto: ImageTaskQueryDto) {
     return this.ai.queryImageTask(user.userId, dto);
+  }
+
+  @Post('videos/tasks')
+  submitVideoTask(@CurrentUser() user: CurrentUserPayload, @Body() dto: VideoTaskSubmitDto) {
+    return this.ai.submitVideoTask(user.userId, dto);
+  }
+
+  @Post('videos/tasks/status')
+  queryVideoTask(@CurrentUser() user: CurrentUserPayload, @Body() dto: VideoTaskQueryDto) {
+    return this.ai.queryVideoTask(user.userId, dto);
   }
 
   @Post('speech/transcribe')

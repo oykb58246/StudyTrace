@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
+import '../shared/common_widgets.dart';
 
 class AboutPage extends StatelessWidget {
   const AboutPage({
@@ -25,27 +27,27 @@ class AboutPage extends StatelessWidget {
         Center(
           child: Column(
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF4470E8), Color(0xFF8D5EFF)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF4470E8).withValues(alpha: 0.28),
-                      blurRadius: 28,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 40),
+              const Image(
+                image: AssetImage('logo/app_icon_v2.png'),
+                width: 112,
+                height: 112,
+                fit: BoxFit.contain,
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
+              Image.asset(
+                isDarkMode ? 'logo/logo白透明.png' : 'logo/logo黑透明.png',
+                height: 34,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Text(
+                  'StudyTrace 学迹',
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               Text(
                 'StudyTrace 学迹',
                 style: TextStyle(
@@ -74,7 +76,9 @@ class AboutPage extends StatelessWidget {
           decoration: BoxDecoration(
             color: cardBg,
             borderRadius: BorderRadius.circular(24),
-            border: isDarkMode ? Border.all(color: Colors.white.withValues(alpha: 0.06)) : null,
+            border: isDarkMode
+                ? Border.all(color: Colors.white.withValues(alpha: 0.06))
+                : null,
             boxShadow: isDarkMode
                 ? null
                 : const [
@@ -96,12 +100,17 @@ class AboutPage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                       color: const Color(0xFF4470E8).withValues(alpha: 0.12),
                     ),
-                    child: const Icon(Icons.lightbulb_rounded, color: Color(0xFF4470E8), size: 20),
+                    child: const StudyAssetIcon(
+                      asset: AppAssets.aiSuggestionIcon,
+                      preserveColor: true,
+                      size: 22,
+                      fallbackIcon: Icons.lightbulb_rounded,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Text(
-                      '你的 AI 驱动学习成长伴侣',
+                      '你的学习成长管理工具',
                       style: TextStyle(
                         color: titleColor,
                         fontSize: 16,
@@ -114,7 +123,7 @@ class AboutPage extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                'StudyTrace 帮助大学生建立高效的学习习惯：AI 自动生成学习日志、智能拆解复杂任务、\\n定时生成复盘周报、通过知识闪卡巩固记忆。让每一分钟的学习都有迹可循。',
+                'StudyTrace 帮助大学生建立高效的学习习惯：整理学习日志、拆解复杂任务、定时生成复盘周报、通过知识闪卡巩固记忆。让每一分钟的学习都有迹可循。',
                 style: TextStyle(
                   color: bodyColor,
                   fontSize: 14,
@@ -130,45 +139,51 @@ class AboutPage extends StatelessWidget {
         _sectionTitle('核心亮点', titleColor),
         const SizedBox(height: 12),
         _FeatureItem(
-          icon: Icons.auto_awesome_rounded,
+          iconAsset: AppAssets.sideAiAssistantIcon,
+          fallbackIcon: Icons.auto_awesome_rounded,
           color: const Color(0xFF4470E8),
-          title: 'AI 学习助手',
-          subtitle: '自然语言生成学习日志、拆解任务、\\n分析周报与风险提醒',
+          title: 'AI学习助手',
+          subtitle: '自然语言生成学习日志、拆解任务、分析周报与风险提醒',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
-          icon: Icons.style_rounded,
+          iconAsset: AppAssets.featureFlashcardIcon,
+          fallbackIcon: Icons.style_rounded,
           color: const Color(0xFFF8AA5B),
           title: '知识闪卡',
-          subtitle: 'AI 从学习记录自动生成问答卡片，\\n翻转互动巩固记忆',
+          subtitle: '从学习记录整理问答卡片，翻转互动巩固记忆',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
-          icon: Icons.timer_rounded,
+          iconAsset: AppAssets.featureTimerIcon,
+          fallbackIcon: Icons.timer_rounded,
           color: const Color(0xFF4BC4A1),
           title: '专注计时',
-          subtitle: '番茄工作法 + 学习记录关联，\\n让专注看得见',
+          subtitle: '番茄工作法 + 学习记录关联，让专注看得见',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
-          icon: Icons.menu_book_rounded,
+          iconAsset: AppAssets.featureNotesIcon,
+          fallbackIcon: Icons.menu_book_rounded,
           color: const Color(0xFF4CB9FF),
           title: 'Notion 风格笔记',
-          subtitle: '图文混排、代码块、文件夹管理，\\n自由书写随心整理',
+          subtitle: '图文混排、代码块、文件夹管理，自由书写随心整理',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
-          icon: Icons.calendar_month_rounded,
+          iconAsset: AppAssets.featureCalendarReportIcon,
+          fallbackIcon: Icons.calendar_month_rounded,
           color: const Color(0xFFFF7C7C),
           title: '日历 + 周报',
-          subtitle: '学习记录映射日历视图，\\nAI 自动生成每周复盘报告',
+          subtitle: '学习记录映射日历视图，生成每周复盘报告',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
-          icon: Icons.groups_rounded,
+          iconAsset: AppAssets.featureGroupRankIcon,
+          fallbackIcon: Icons.groups_rounded,
           color: const Color(0xFFFFC043),
           title: '学习小组 + 排行榜',
-          subtitle: '和同伴交流讨论，\\n排行榜激发良性竞争',
+          subtitle: '和同伴交流讨论，排行榜激发良性竞争',
           isDarkMode: isDarkMode,
         ),
         const SizedBox(height: 18),
@@ -185,7 +200,9 @@ class AboutPage extends StatelessWidget {
           decoration: BoxDecoration(
             color: cardBg,
             borderRadius: BorderRadius.circular(24),
-            border: isDarkMode ? Border.all(color: Colors.white.withValues(alpha: 0.06)) : null,
+            border: isDarkMode
+                ? Border.all(color: Colors.white.withValues(alpha: 0.06))
+                : null,
           ),
           child: Column(
             children: [
@@ -201,13 +218,14 @@ class AboutPage extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                'Made with Flutter & AI',
+                'Made with Flutter',
                 style: TextStyle(color: bodyColor, fontSize: 12),
               ),
               const SizedBox(height: 4),
               Text(
                 '2025 StudyTrace Team. All rights reserved.',
-                style: TextStyle(color: bodyColor.withValues(alpha: 0.5), fontSize: 11),
+                style: TextStyle(
+                    color: bodyColor.withValues(alpha: 0.5), fontSize: 11),
               ),
             ],
           ),
@@ -216,10 +234,9 @@ class AboutPage extends StatelessWidget {
         Center(
           child: TextButton(
             onPressed: () {
-              Clipboard.setData(const ClipboardData(text: 'StudyTrace - 你的 AI 学习成长伴侣'));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('分享文案已复制到剪贴板')),
-              );
+              Clipboard.setData(
+                  const ClipboardData(text: 'StudyTrace - 你的学习成长管理工具'));
+              StudyToast.show(context, '分享文案已复制到剪贴板');
             },
             child: Text(
               '分享 StudyTrace 给朋友',
@@ -257,8 +274,8 @@ class AboutPage extends StatelessWidget {
       children: [
         _TechChip('Flutter', const Color(0xFF02569B), cardBg, isDarkMode),
         _TechChip('Dart', const Color(0xFF0175C2), cardBg, isDarkMode),
-        _TechChip('蓝心大模型', const Color(0xFF4470E8), cardBg, isDarkMode),
-        _TechChip('vivo AIGC', const Color(0xFF4D6BFE), cardBg, isDarkMode),
+        _TechChip('云端服务', const Color(0xFF4470E8), cardBg, isDarkMode),
+        _TechChip('云端能力', const Color(0xFF4D6BFE), cardBg, isDarkMode),
         _TechChip('Lottie', const Color(0xFF00DDB3), cardBg, isDarkMode),
         _TechChip('Rive', const Color(0xFFFF4D6A), cardBg, isDarkMode),
         _TechChip('ML Kit', const Color(0xFF34A853), cardBg, isDarkMode),
@@ -270,14 +287,16 @@ class AboutPage extends StatelessWidget {
 
 class _FeatureItem extends StatelessWidget {
   const _FeatureItem({
-    required this.icon,
+    required this.iconAsset,
+    required this.fallbackIcon,
     required this.color,
     required this.title,
     required this.subtitle,
     required this.isDarkMode,
   });
 
-  final IconData icon;
+  final String iconAsset;
+  final IconData fallbackIcon;
   final Color color;
   final String title;
   final String subtitle;
@@ -293,7 +312,9 @@ class _FeatureItem extends StatelessWidget {
         decoration: BoxDecoration(
           color: cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: isDarkMode ? Border.all(color: Colors.white.withValues(alpha: 0.06)) : null,
+          border: isDarkMode
+              ? Border.all(color: Colors.white.withValues(alpha: 0.06))
+              : null,
           boxShadow: isDarkMode
               ? null
               : const [
@@ -313,7 +334,14 @@ class _FeatureItem extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 color: color.withValues(alpha: 0.12),
               ),
-              child: Icon(icon, color: color, size: 22),
+              child: Center(
+                child: StudyAssetIcon(
+                  asset: iconAsset,
+                  color: color,
+                  size: 24,
+                  fallbackIcon: fallbackIcon,
+                ),
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -332,7 +360,8 @@ class _FeatureItem extends StatelessWidget {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
+                      color:
+                          isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
                       fontSize: 13,
                       height: 1.45,
                     ),
@@ -386,7 +415,8 @@ class _SocialIcon extends StatelessWidget {
       children: [
         Icon(icon, color: const Color(0xFF8B93A7), size: 20),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Color(0xFF8B93A7), fontSize: 10)),
+        Text(label,
+            style: const TextStyle(color: Color(0xFF8B93A7), fontSize: 10)),
       ],
     );
   }

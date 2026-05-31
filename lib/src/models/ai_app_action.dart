@@ -44,13 +44,20 @@ enum AiAppActionType {
   // Phase 2
   generateWeeklyPlan,
   noteFromLog,
-  // 比赛演示：AI 学习操作层
+  // 学习工具扩展
   createLoopFromSource,
   generateTodayMission,
   searchMemory,
   noteFromOcr,
   createFlashcardBatch,
   startFocusWithTask,
+  generateImage,
+  refreshImage,
+  generateVideo,
+  refreshVideo,
+  translateText,
+  searchPoi,
+  reverseGeocode,
 }
 
 typedef AiActionHandler = Future<List<AiActionResult>> Function({
@@ -86,7 +93,7 @@ class AiAssistantTurn {
       reply: _stringValue(json['reply'] ?? json['message']),
       actions: actions,
       schemaVersion:
-          (json['schemaVersion'] ?? json['schema_version'] ?? 1) as int,
+          _intValue(json['schemaVersion'] ?? json['schema_version']) ?? 1,
     );
   }
 }
@@ -261,6 +268,13 @@ AiAppActionType? aiAppActionTypeFromWire(String value) {
     'note.create_from_ocr' => AiAppActionType.noteFromOcr,
     'flashcard.create_batch' => AiAppActionType.createFlashcardBatch,
     'timer.start_focus_with_task' => AiAppActionType.startFocusWithTask,
+    'media.generate_image' => AiAppActionType.generateImage,
+    'media.refresh_image' => AiAppActionType.refreshImage,
+    'media.generate_video' => AiAppActionType.generateVideo,
+    'media.refresh_video' => AiAppActionType.refreshVideo,
+    'api.translate_text' => AiAppActionType.translateText,
+    'api.search_poi' => AiAppActionType.searchPoi,
+    'api.reverse_geocode' => AiAppActionType.reverseGeocode,
     _ => null,
   };
   if (nsExact != null) return nsExact;
@@ -280,7 +294,9 @@ AiAppActionType? aiAppActionTypeFromWire(String value) {
       .replaceAll('plan.', '')
       .replaceAll('loop.', '')
       .replaceAll('mission.', '')
-      .replaceAll('memory.', '');
+      .replaceAll('memory.', '')
+      .replaceAll('media.', '')
+      .replaceAll('api.', '');
   // 同时提供带命名空间的几条常见别名，覆盖 normalize 之后拼写
   final aliased = switch (normalized) {
     'mark_status' => 'mark_task_status',
@@ -304,7 +320,11 @@ AiAppActionType? aiAppActionTypeFromWire(String value) {
       AiAppActionType.openDashboard,
     'open_task_planning' || 'open_task_plannings' || '任务编排' || '编排' =>
       AiAppActionType.openTaskPlanning,
-    'open_ai_assistant' || 'open_ai_assistants' || 'ai助手' || '学习助手' =>
+    'open_ai_assistant' ||
+    'open_ai_assistants' ||
+    'ai助手' ||
+    '学习助手' ||
+    'AI学习助手' =>
       AiAppActionType.openAiAssistant,
     'open_user_profile' || 'open_users_profile' || '个人资料' || 'profile' =>
       AiAppActionType.openUserProfile,
@@ -362,19 +382,19 @@ AiAppActionType? aiAppActionTypeFromWire(String value) {
     // ── 回收站 ──
     'empty_trash' || 'clear_trash' || '清空回收站' =>
       AiAppActionType.emptyTrash,
-    // ── Phase 2 扩展 ──
+    // ── 学习规划扩展 ──
     'generate_weekly_plan' || 'generate_weekly' || 'plan_weekly' ||
           'weekly_plan' || '生成周计划' || '生成学习计划' =>
       AiAppActionType.generateWeeklyPlan,
     'from_log' || 'expand_log' || 'note_from_log' || '扩写日志' ||
           '日志扩写' =>
       AiAppActionType.noteFromLog,
-    // ── 比赛演示：AI 学习操作层 ──
+    // ── 学习操作层 ──
     'create_from_source' || 'create_loop_from_source' ||
-          'learning_loop' || '学习闭环' =>
+          'learning_loop' || '学习安排' || '学习闭环' =>
       AiAppActionType.createLoopFromSource,
     'generate_today_mission' || 'generate_today_path' ||
-          'today_mission' || '今日路径' =>
+          'today_mission' || '今日安排' || '今日路径' =>
       AiAppActionType.generateTodayMission,
     'search' || 'search_memory' || 'memory_search' || '学习记忆' =>
       AiAppActionType.searchMemory,
@@ -384,6 +404,21 @@ AiAppActionType? aiAppActionTypeFromWire(String value) {
       AiAppActionType.createFlashcardBatch,
     'start_focus_with_task' || 'focus_with_task' =>
       AiAppActionType.startFocusWithTask,
+    'generate_image' || 'create_image' || 'image_generation' ||
+          'text_to_image' || 'draw_image' || '生成图片' || '画图' =>
+      AiAppActionType.generateImage,
+    'refresh_image' || 'query_image' || 'image_status' =>
+      AiAppActionType.refreshImage,
+    'generate_video' || 'create_video' || 'video_generation' ||
+          'text_to_video' || '生成视频' || '文生视频' =>
+      AiAppActionType.generateVideo,
+    'refresh_video' || 'query_video' || 'video_status' =>
+      AiAppActionType.refreshVideo,
+    'translate_text' || 'translate' => AiAppActionType.translateText,
+    'search_poi' || 'poi_search' || 'search_place' || 'search_location' =>
+      AiAppActionType.searchPoi,
+    'reverse_geocode' || 'geocode_reverse' || 'address_from_location' =>
+      AiAppActionType.reverseGeocode,
     _ => null,
   };
 }
@@ -437,6 +472,13 @@ String aiAppActionTypeToWire(AiAppActionType type) {
     AiAppActionType.noteFromOcr => 'note_from_ocr',
     AiAppActionType.createFlashcardBatch => 'create_flashcard_batch',
     AiAppActionType.startFocusWithTask => 'start_focus_with_task',
+    AiAppActionType.generateImage => 'generate_image',
+    AiAppActionType.refreshImage => 'refresh_image',
+    AiAppActionType.generateVideo => 'generate_video',
+    AiAppActionType.refreshVideo => 'refresh_video',
+    AiAppActionType.translateText => 'translate_text',
+    AiAppActionType.searchPoi => 'search_poi',
+    AiAppActionType.reverseGeocode => 'reverse_geocode',
   };
 }
 
@@ -448,4 +490,10 @@ String _stringValue(Object? value) {
 String? _nullableString(Object? value) {
   final text = _stringValue(value);
   return text.isEmpty ? null : text;
+}
+
+int? _intValue(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(_stringValue(value));
 }

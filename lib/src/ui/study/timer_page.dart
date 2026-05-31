@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/ai_generated_log.dart';
-import '../../services/ai_study_service.dart';
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 
 class _FocusSession {
@@ -86,18 +86,41 @@ class _TimerPageState extends State<TimerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.controller.primaryColor;
-    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    const accent = StudyUi.primary;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return Scaffold(
-      backgroundColor:
-          widget.isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
+      backgroundColor: StudyUi.background(widget.isDarkMode),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text('学习计时器', style: TextStyle(color: titleColor, fontWeight: FontWeight.w700)),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: StudyUi.chipBackground(accent, widget.isDarkMode),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.timer_rounded, color: accent, size: 17),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                '学习计时器',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       body: ListView(
         key: const Key('page_timer'),
@@ -106,6 +129,46 @@ class _TimerPageState extends State<TimerPage> {
         const SizedBox(height: 6),
         Text('番茄工作法 · 已完成 $_sessionCount 个番茄钟',
             style: TextStyle(color: bodyColor, fontSize: 14)),
+        const SizedBox(height: 14),
+        StudyCard(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Image.asset(
+                AppAssets.uiRefreshFeatureTimer,
+                width: 86,
+                height: 86,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.timer_rounded,
+                  size: 48,
+                  color: StudyUi.muted(widget.isDarkMode),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '把一段时间留给一件事',
+                      style: TextStyle(
+                        color: titleColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '结束后可以把本次专注整理为学习记录。',
+                      style: TextStyle(color: bodyColor, height: 1.45),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 24),
         // Time display
         Center(
@@ -120,8 +183,8 @@ class _TimerPageState extends State<TimerPage> {
                     color: accent.withValues(alpha: 0.3),
                     width: 3),
                 color: widget.isDarkMode
-                    ? Colors.white.withValues(alpha: 0.04)
-                    : const Color(0xFFF2F5FC),
+                    ? StudyUi.surfaceAlt(true)
+                    : const Color(0xFFEAF3F2),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -161,28 +224,10 @@ class _TimerPageState extends State<TimerPage> {
                 });
               },
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  color: isSelected
-                      ? accent
-                      : widget.isDarkMode
-                          ? const Color(0xFF2A3040)
-                          : const Color(0xFFEEF1FA),
-                ),
-                child: Text(
-                  '$minutes 分钟',
-                  style: TextStyle(
-                    color: isSelected
-                        ? Colors.white
-                        : widget.isDarkMode
-                            ? Colors.white70
-                            : AppColors.body,
-                    fontWeight:
-                        isSelected ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 14,
-                  ),
+                child: StudyStatusChip(
+                  label: '$minutes 分钟',
+                  color: accent,
+                  selected: isSelected,
                 ),
               ),
             );
@@ -194,7 +239,7 @@ class _TimerPageState extends State<TimerPage> {
           height: 56,
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4BC4A1),
+              backgroundColor: accent,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18)),
@@ -228,7 +273,6 @@ class _TimerPageState extends State<TimerPage> {
                       isDarkMode: widget.isDarkMode,
                       sessions: _sessionHistory,
                       totalCount: _sessionCount,
-                      accentColor: accent,
                     ),
                   ),
                 );
@@ -240,10 +284,7 @@ class _TimerPageState extends State<TimerPage> {
           ),
         ],
         if (_sessionCount > 0)
-          GlassCard(
-            color: widget.isDarkMode
-                ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                : null,
+          StudyCard(
             child: Row(
               children: [
                 Container(
@@ -251,10 +292,14 @@ class _TimerPageState extends State<TimerPage> {
                   height: 44,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    color: const Color(0x197394F9),
+                    color: StudyUi.chipBackground(StudyUi.secondary, widget.isDarkMode),
                   ),
-                  child: const Icon(Icons.timer_rounded,
-                      color: Color(0xFF7394F9), size: 22),
+                  child: const StudyAssetIcon(
+                    asset: AppAssets.featureTimerIcon,
+                    color: StudyUi.secondary,
+                    size: 24,
+                    fallbackIcon: Icons.timer_rounded,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -280,40 +325,35 @@ class _TimerPageState extends State<TimerPage> {
   }
 
   void _showCustomTimePicker() {
-    final accent = widget.controller.primaryColor;
+    const accent = StudyUi.primary;
     final controller = TextEditingController(text: '$_customMinutes');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: widget.isDarkMode
-            ? const Color(0xFF242B37)
+            ? StudyUi.surface(true)
             : Colors.white,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24)),
         title: Text('自定义时长',
             style: TextStyle(
-                color:
-                    widget.isDarkMode ? Colors.white : AppColors.ink)),
+                color: StudyUi.title(widget.isDarkMode))),
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
           autofocus: true,
           style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : AppColors.ink,
+              color: StudyUi.title(widget.isDarkMode),
               fontSize: 24,
               fontWeight: FontWeight.w800),
           textAlign: TextAlign.center,
           decoration: InputDecoration(
             suffixText: '分钟',
             suffixStyle: TextStyle(
-                color: widget.isDarkMode
-                    ? Colors.white54
-                    : AppColors.muted,
+                color: StudyUi.muted(widget.isDarkMode),
                 fontSize: 16),
             filled: true,
-            fillColor: widget.isDarkMode
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF2F5FC),
+            fillColor: StudyUi.surfaceAlt(widget.isDarkMode),
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide.none),
@@ -453,26 +493,26 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
   }
 
   void _showCompleteDialog() {
-    final accent = widget.controller.primaryColor;
+    const accent = StudyUi.primary;
     HapticFeedback.heavyImpact();
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: widget.isDarkMode
-            ? const Color(0xFF242B37)
+            ? StudyUi.surface(true)
             : Colors.white,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24)),
         title: Row(
           children: [
             const Icon(Icons.check_circle_rounded,
-                color: Color(0xFF4BC4A1), size: 28),
+                color: StudyUi.success, size: 28),
             const SizedBox(width: 10),
             Text('专注完成！',
                 style: TextStyle(
                     color:
-                        widget.isDarkMode ? Colors.white : AppColors.ink,
+                        StudyUi.title(widget.isDarkMode),
                     fontWeight: FontWeight.w800)),
           ],
         ),
@@ -483,17 +523,13 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
             Text(
               '恭喜完成 ${widget.minutes} 分钟番茄钟！',
               style: TextStyle(
-                  color: widget.isDarkMode
-                      ? const Color(0xFFC2C8D6)
-                      : AppColors.body,
+                  color: StudyUi.body(widget.isDarkMode),
                   height: 1.5),
             ),
             const SizedBox(height: 6),
             Text('需要记录这次学习了什么吗？',
                 style: TextStyle(
-                    color: widget.isDarkMode
-                        ? const Color(0xFFC2C8D6)
-                        : AppColors.body,
+                    color: StudyUi.body(widget.isDarkMode),
                     fontSize: 13)),
           ],
         ),
@@ -518,8 +554,8 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
               Navigator.of(ctx).pop();
               _showAiLogSheet();
             },
-            icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-            label: const Text('AI 记录学习',
+            icon: const Icon(Icons.edit_note_rounded, size: 16),
+            label: const Text('整理记录',
                 style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
@@ -528,7 +564,7 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
   }
 
   Future<void> _showAiLogSheet() async {
-    final accent = widget.controller.primaryColor;
+    const accent = StudyUi.primary;
     final descriptionController = TextEditingController();
     AiGeneratedLog? generatedLog;
     var isGenerating = false;
@@ -539,18 +575,15 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          final titleColor =
-              widget.isDarkMode ? Colors.white : AppColors.ink;
-          final bodyColor = widget.isDarkMode
-              ? const Color(0xFFC2C8D6)
-              : AppColors.body;
+          final titleColor = StudyUi.title(widget.isDarkMode);
+          final bodyColor = StudyUi.body(widget.isDarkMode);
 
           return Container(
             height: MediaQuery.of(ctx).size.height * 0.85,
             decoration: BoxDecoration(
               color: widget.isDarkMode
-                  ? const Color(0xFF1A1F2E)
-                  : const Color(0xFFF5F7FF),
+                  ? StudyUi.background(true)
+                  : StudyUi.background(false),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(30)),
             ),
@@ -576,7 +609,7 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                         fontSize: 20,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                Text('描述刚才学了什么，AI 将自动整理为结构化日志',
+                Text('描述刚才学了什么，系统会整理为结构化日志',
                     style: TextStyle(color: bodyColor, fontSize: 13)),
                 const SizedBox(height: 16),
                 TextField(
@@ -587,20 +620,16 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                     hintText:
                         '例：今天学习了数据库索引和B+树...',
                     hintStyle: TextStyle(
-                      color: widget.isDarkMode
-                          ? Colors.white.withValues(alpha: 0.4)
-                          : Colors.black.withValues(alpha: 0.35),
+                      color: StudyUi.muted(widget.isDarkMode),
                       fontSize: 13,
                     ),
                     filled: true,
-                    fillColor: widget.isDarkMode
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : const Color(0xFFF2F5FC),
+                    fillColor: StudyUi.surfaceAlt(widget.isDarkMode),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 14),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
+                      borderSide: BorderSide(color: StudyUi.border(widget.isDarkMode)),
                     ),
                   ),
                 ),
@@ -626,18 +655,22 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                             try {
                               final result = await widget.controller.aiStudyService
                                   .generateStudyLog(input);
+                              if (!ctx.mounted) return;
                               setSheetState(
                                   () => generatedLog = result);
                             } catch (e) {
                               if (ctx.mounted) {
-                                ScaffoldMessenger.of(ctx)
-                                    .showSnackBar(SnackBar(
-                                        content:
-                                            Text('AI 生成失败：$e')));
+                                await StudyToast.dialog(
+                                  ctx,
+                                  title: '整理失败',
+                                  message: '$e',
+                                );
                               }
                             } finally {
-                              setSheetState(
-                                  () => isGenerating = false);
+                              if (ctx.mounted) {
+                                setSheetState(
+                                    () => isGenerating = false);
+                              }
                             }
                           },
                     icon: isGenerating
@@ -648,11 +681,9 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                                 strokeWidth: 2,
                                 color: Colors.white),
                           )
-                        : const Icon(
-                            Icons.auto_awesome_rounded,
-                            size: 18),
+                        : const Icon(Icons.edit_note_rounded, size: 18),
                     label: Text(
-                      isGenerating ? '生成中...' : 'AI 生成学习日志',
+                      isGenerating ? '整理中...' : '整理学习日志',
                       style: const TextStyle(
                           fontWeight: FontWeight.w700),
                     ),
@@ -661,23 +692,19 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                 if (generatedLog != null &&
                     generatedLog!.courseName.isNotEmpty) ...[
                   const SizedBox(height: 18),
-                  GlassCard(
-                    color: widget.isDarkMode
-                        ? const Color(0xFF242B37)
-                            .withValues(alpha: 0.9)
-                        : null,
+                  StudyCard(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Row(
                           children: [
-                            Icon(Icons.auto_awesome_rounded,
-                                color: Color(0xFF7394F9), size: 18),
+                            Icon(Icons.fact_check_rounded,
+                                color: StudyUi.secondary, size: 18),
                             SizedBox(width: 8),
-                            Text('AI 生成结果',
+                            Text('整理结果',
                                 style: TextStyle(
-                                    color: Color(0xFF7394F9),
+                                    color: StudyUi.secondary,
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700)),
                           ],
@@ -718,21 +745,30 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                               elevation: 0,
                             ),
                             onPressed: () async {
-                              await widget.controller.addStudyLog(
-                                date: DateTime.now(),
-                                courseName:
-                                    generatedLog!.courseName,
-                                content: generatedLog!.content,
-                                problems:
-                                    generatedLog!.problems,
-                                thoughts:
-                                    generatedLog!.thoughts,
-                                nextPlan:
-                                    generatedLog!.nextPlan,
-                              );
-                              if (!ctx.mounted) return;
-                              Navigator.of(ctx).pop();
-                              _quit();
+                              try {
+                                await widget.controller.addStudyLog(
+                                  date: DateTime.now(),
+                                  courseName:
+                                      generatedLog!.courseName,
+                                  content: generatedLog!.content,
+                                  problems:
+                                      generatedLog!.problems,
+                                  thoughts:
+                                      generatedLog!.thoughts,
+                                  nextPlan:
+                                      generatedLog!.nextPlan,
+                                );
+                                if (!ctx.mounted) return;
+                                Navigator.of(ctx).pop();
+                                _quit();
+                              } catch (error) {
+                                if (!ctx.mounted) return;
+                                await StudyToast.dialog(
+                                  ctx,
+                                  title: '保存学习记录失败',
+                                  message: '$error',
+                                );
+                              }
                             },
                             icon: const Icon(Icons.save_rounded,
                                 size: 18),
@@ -757,24 +793,19 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return PopScope(
       canPop: !_isRunning,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _isRunning) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('请先退出专注再返回')),
-          );
+          StudyToast.show(context, '请先退出专注再返回');
         }
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        backgroundColor: widget.isDarkMode
-            ? const Color(0xFF05070D)
-            : const Color(0xFFF5F7FF),
+        backgroundColor: StudyUi.background(widget.isDarkMode),
         body: SafeArea(
           child: Column(
             children: [
@@ -796,10 +827,10 @@ class _FocusTimerPageState extends State<_FocusTimerPage> {
                             strokeWidth: 10,
                             backgroundColor: widget.isDarkMode
                                 ? Colors.white.withValues(alpha: 0.06)
-                                : const Color(0xFFE8EBF5),
+                                : const Color(0xFFE1E9EA),
                             color: _isRunning
-                                ? const Color(0xFF4BC4A1)
-                                : const Color(0xFFF8AA5B),
+                                ? StudyUi.success
+                                : StudyUi.warning,
                           ),
                         ),
                         Column(
@@ -936,6 +967,8 @@ class _TimerBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDarkMode ? Colors.white : color;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -943,7 +976,12 @@ class _TimerBtn extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          color: color.withValues(alpha: 0.15),
+          color: isDarkMode
+              ? color.withValues(alpha: 0.18)
+              : color.withValues(alpha: 0.12),
+          border: Border.all(
+            color: color.withValues(alpha: isDarkMode ? 0.22 : 0.28),
+          ),
         ),
         child: Column(
           children: [
@@ -951,7 +989,9 @@ class _TimerBtn extends StatelessWidget {
             const SizedBox(height: 4),
             Text(label,
                 style: TextStyle(
-                    color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                    color: textColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -999,17 +1039,15 @@ class _FocusHistoryPage extends StatelessWidget {
     required this.isDarkMode,
     required this.sessions,
     required this.totalCount,
-    required this.accentColor,
   });
   final bool isDarkMode;
   final List<_FocusSession> sessions;
   final int totalCount;
-  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
-    final textColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final textColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
 
     final grouped = <String, List<_FocusSession>>{};
     for (final s in sessions) {
@@ -1019,37 +1057,43 @@ class _FocusHistoryPage extends StatelessWidget {
     final totalMinutes = sessions.fold<int>(0, (sum, s) => sum + s.minutes);
 
     return Scaffold(
-      backgroundColor: isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
+      backgroundColor: StudyUi.background(isDarkMode),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: textColor,
         title: const Text('专注记录', style: TextStyle(fontWeight: FontWeight.w800)),
       ),
       body: sessions.isEmpty
-          ? Center(child: Text('暂无专注记录', style: TextStyle(color: bodyColor)))
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 22),
+                child: StudyEmptyState(
+                  asset: AppAssets.uiRefreshFeatureTimer,
+                  title: '暂无专注记录',
+                  message: '完成一次专注后，这里会显示时长和历史记录。',
+                  compact: true,
+                ),
+              ),
+            )
           : ListView(
               padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
               children: [
-                Container(
-                  padding: const EdgeInsets.all(22),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    gradient: LinearGradient(colors: [accentColor, const Color(0xFF8D5EFF)]),
-                  ),
+                StudyCard(
+                  padding: const EdgeInsets.all(18),
                   child: Row(
                     children: [
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Text('累计专注', style: TextStyle(color: Color(0xD9FFFFFF), fontSize: 13)),
+                          Text('累计专注', style: TextStyle(color: bodyColor, fontSize: 13)),
                           const SizedBox(height: 4),
-                          Text('$totalCount 次', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
+                          Text('$totalCount 次', style: TextStyle(color: textColor, fontSize: 28, fontWeight: FontWeight.w800)),
                         ]),
                       ),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Text('总时长', style: TextStyle(color: Color(0xD9FFFFFF), fontSize: 13)),
+                          Text('总时长', style: TextStyle(color: bodyColor, fontSize: 13)),
                           const SizedBox(height: 4),
-                          Text('${(totalMinutes / 60).toStringAsFixed(1)}h', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
+                          Text('${(totalMinutes / 60).toStringAsFixed(1)}h', style: TextStyle(color: textColor, fontSize: 28, fontWeight: FontWeight.w800)),
                         ]),
                       ),
                     ],
@@ -1061,17 +1105,32 @@ class _FocusHistoryPage extends StatelessWidget {
                   const SizedBox(height: 8),
                   ...entry.value.map((s) => Padding(
                         padding: const EdgeInsets.only(bottom: 6),
-                        child: GlassCard(
-                          color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+                        child: StudyCard(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           child: Row(children: [
                             Container(
                               width: 36, height: 36,
-                              decoration: BoxDecoration(color: const Color(0xFF4BC4A1).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
-                              child: const Icon(Icons.timer_rounded, color: Color(0xFF4BC4A1), size: 18),
+                              decoration: BoxDecoration(color: StudyUi.chipBackground(StudyUi.success, isDarkMode), borderRadius: BorderRadius.circular(10)),
+                              child: const StudyAssetIcon(
+                                asset: AppAssets.featureTimerIcon,
+                                color: StudyUi.success,
+                                size: 20,
+                                fallbackIcon: Icons.timer_rounded,
+                              ),
                             ),
                             const SizedBox(width: 12),
-                            Expanded(child: Text('${s.minutes} 分钟专注', style: TextStyle(color: textColor, fontSize: 15, fontWeight: FontWeight.w600))),
+                            Expanded(
+                              child: Text(
+                                '${s.minutes} 分钟专注',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: textColor,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                             Text('${s.time.hour.toString().padLeft(2, '0')}:${s.time.minute.toString().padLeft(2, '0')}', style: TextStyle(color: bodyColor, fontSize: 13)),
                           ]),
                         ),

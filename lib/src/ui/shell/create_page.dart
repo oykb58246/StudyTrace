@@ -73,7 +73,8 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
       child: AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        final accent = widget.controller.primaryColor;
+        final accent = StudyUi.primary;
+        final isDarkMode = widget.isDarkMode;
         final allTasks = widget.controller.studyTasks;
         final tasks = _filteredTasks(allTasks);
 
@@ -84,9 +85,9 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
             Text(
               '学习任务',
               style: TextStyle(
-                color: widget.isDarkMode ? Colors.white : Colors.black,
+                color: StudyUi.title(isDarkMode),
                 fontSize: 24,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 14),
@@ -95,42 +96,44 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
               key: const Key('task_search_field'),
               onChanged: (v) => setState(() => _searchQuery = v),
               style: TextStyle(
-                color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                color: StudyUi.title(isDarkMode),
                 fontSize: 14,
               ),
               decoration: InputDecoration(
                 hintText: '搜索任务标题或课程...',
                 hintStyle: TextStyle(
-                  color: widget.isDarkMode
-                      ? Colors.white.withValues(alpha: 0.4)
-                      : AppColors.muted,
+                  color: StudyUi.muted(isDarkMode),
                 ),
                 prefixIcon: Icon(
                   Icons.search_rounded,
-                  color: widget.isDarkMode ? Colors.white54 : AppColors.muted,
+                  color: StudyUi.muted(isDarkMode),
                   size: 22,
                 ),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
                         icon: Icon(
                           Icons.clear_rounded,
-                          color: widget.isDarkMode
-                              ? Colors.white54
-                              : AppColors.muted,
+                          color: StudyUi.muted(isDarkMode),
                           size: 20,
                         ),
                         onPressed: () => setState(() => _searchQuery = ''),
                       )
                     : null,
                 filled: true,
-                fillColor: widget.isDarkMode
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF2F5FC),
+                fillColor: StudyUi.surfaceAlt(isDarkMode),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(color: StudyUi.border(isDarkMode)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: StudyUi.border(isDarkMode)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: StudyUi.primary),
                 ),
               ),
             ),
@@ -148,25 +151,10 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                       child: GestureDetector(
                         onTap: () =>
                             setState(() => _statusFilter = selected ? null : s),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? accent.withValues(alpha: 0.2)
-                                : (widget.isDarkMode
-                                    ? const Color(0xFF2A3040)
-                                    : const Color(0xFFEEF1FA)),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(s.label,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: selected
-                                      ? accent
-                                      : (widget.isDarkMode
-                                          ? Colors.white
-                                          : AppColors.ink))),
+                        child: StudyStatusChip(
+                          label: s.label,
+                          color: _taskStatusColor(s),
+                          selected: selected,
                         ),
                       ),
                     );
@@ -180,25 +168,10 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                       child: GestureDetector(
                         onTap: () =>
                             setState(() => _typeFilter = selected ? null : t),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? const Color(0xFF7394F9).withValues(alpha: 0.22)
-                                : (widget.isDarkMode
-                                    ? const Color(0xFF2A3040)
-                                    : const Color(0xFFEEF1FA)),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(t.label,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: selected
-                                      ? const Color(0xFF7394F9)
-                                      : (widget.isDarkMode
-                                          ? Colors.white
-                                          : AppColors.ink))),
+                        child: StudyStatusChip(
+                          label: t.label,
+                          color: StudyUi.secondary,
+                          selected: selected,
                         ),
                       ),
                     );
@@ -229,36 +202,17 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
             ),
             const SizedBox(height: 18),
             if (allTasks.isEmpty)
-              GlassCard(
+              StudyEmptyState.tasks(
                 key: const Key('tasks_empty_state'),
-                color: widget.isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                    : null,
-                child: Text(
-                  '还没有学习任务。点击上方按钮添加你的第一个任务。',
-                  style: TextStyle(
-                    color: widget.isDarkMode
-                        ? const Color(0xFFC2C8D6)
-                        : AppColors.body,
-                    height: 1.55,
-                  ),
-                ),
+                actionLabel: '添加任务',
+                onAction: () => _showTaskForm(context),
               )
             else if (tasks.isEmpty)
-              GlassCard(
+              const StudyEmptyState.tasks(
                 key: const Key('tasks_filter_empty_state'),
-                color: widget.isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                    : null,
-                child: Text(
-                  '没有匹配的任务。尝试调整筛选条件或搜索关键词。',
-                  style: TextStyle(
-                    color: widget.isDarkMode
-                        ? const Color(0xFFC2C8D6)
-                        : AppColors.body,
-                    height: 1.55,
-                  ),
-                ),
+                title: '没有匹配的任务',
+                message: '尝试调整筛选条件，或换一个课程、关键词再搜索。',
+                compact: true,
               )
             else
               for (final task in tasks) ...[
@@ -317,6 +271,14 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
       },
     ),
     );
+  }
+
+  Color _taskStatusColor(StudyTaskStatus status) {
+    return switch (status) {
+      StudyTaskStatus.completed => StudyUi.success,
+      StudyTaskStatus.inProgress => StudyUi.warning,
+      StudyTaskStatus.notStarted => StudyUi.secondary,
+    };
   }
 
   void _showTaskForm(BuildContext context, [StudyTaskItem? existing]) {
@@ -418,7 +380,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                 _FormField(
                   label: '任务类型',
                   child: DropdownButtonFormField<StudyTaskType>(
-                    initialValue: selectedType,
+                    value: selectedType,
                     dropdownColor: widget.isDarkMode
                         ? const Color(0xFF242B37)
                         : Colors.white,
@@ -496,6 +458,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                         initialTime: TimeOfDay.fromDateTime(deadline),
                       );
                       if (pickedTime == null) return;
+                      if (!ctx.mounted) return;
                       setSheetState(() {
                         deadline = DateTime(
                           pickedDate.year,
@@ -547,6 +510,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                             TimeOfDay.fromDateTime(reminderTime ?? deadline),
                         helpText: '选择提醒时间',
                       );
+                      if (!ctx.mounted) return;
                       if (time != null) {
                         setSheetState(() {
                           reminderTime = DateTime(
@@ -645,6 +609,9 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                                 initialTime: TimeOfDay.fromDateTime(
                                     subTaskDeadlines[i]),
                               );
+                              if (!ctx.mounted || i >= subTaskDeadlines.length) {
+                                return;
+                              }
                               if (time != null) {
                                 setSheetState(() {
                                   subTaskDeadlines[i] = DateTime(
@@ -729,9 +696,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                     onPressed: () async {
                       final title = titleController.text.trim();
                       if (title.isEmpty) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(content: Text('请输入任务标题')),
-                        );
+                        StudyToast.show(ctx, '请输入任务标题');
                         return;
                       }
                       // 构建子任务列表
@@ -1068,14 +1033,19 @@ class _TaskCardState extends State<_TaskCard> {
     switch (action) {
       case 'edit':
         widget.onEdit();
+        return;
       case 'delete':
         widget.onDelete();
+        return;
       case 'status_completed':
         widget.onStatusChanged(StudyTaskStatus.completed);
+        return;
       case 'status_inProgress':
         widget.onStatusChanged(StudyTaskStatus.inProgress);
+        return;
       case 'status_notStarted':
         widget.onStatusChanged(StudyTaskStatus.notStarted);
+        return;
     }
   }
 
@@ -1083,19 +1053,17 @@ class _TaskCardState extends State<_TaskCard> {
   Widget build(BuildContext context) {
     final isDark = widget.isDarkMode;
     final task = _task;
-    final titleColor = isDark ? Colors.white : AppColors.ink;
-    final bodyColor = isDark ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(isDark);
+    final bodyColor = StudyUi.body(isDark);
     final effStatus = task.effectiveStatus;
 
     final statusColor = switch (effStatus) {
-      StudyTaskStatus.completed => const Color(0xFF4BC4A1),
-      StudyTaskStatus.inProgress => const Color(0xFFF8AA5B),
-      StudyTaskStatus.notStarted =>
-        isDark ? const Color(0xFFB0B8CC) : const Color(0xFF8B93A7),
+      StudyTaskStatus.completed => StudyUi.success,
+      StudyTaskStatus.inProgress => StudyUi.warning,
+      StudyTaskStatus.notStarted => StudyUi.secondary,
     };
 
-    return GlassCard(
-      color: isDark ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+    return StudyCard(
       padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1124,8 +1092,9 @@ class _TaskCardState extends State<_TaskCard> {
                         const SizedBox(width: 8),
                         BadgePill(
                             label: task.type.label,
-                            background: const Color(0x197394F9),
-                            foreground: const Color(0xFF7394F9)),
+                            background: StudyUi.chipBackground(
+                                StudyUi.secondary, isDark),
+                            foreground: StudyUi.secondary),
                         if (task.isTaskSet) ...[
                           const SizedBox(width: 8),
                           Text('${task.completedCount}/${task.totalCount}',
@@ -1144,13 +1113,13 @@ class _TaskCardState extends State<_TaskCard> {
                             fontWeight: FontWeight.w800)),
                     if (task.courseName.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text('📖 ${task.courseName}',
+                      Text('课程：${task.courseName}',
                           style: TextStyle(color: bodyColor, fontSize: 13)),
                     ],
                     const SizedBox(height: 4),
                     Text('截止：${_fmtDate(task.deadline)}',
                         style: TextStyle(
-                            color: isDark ? Colors.white54 : AppColors.muted,
+                            color: StudyUi.muted(isDark),
                             fontSize: 12,
                             fontWeight: FontWeight.w600)),
                     if (task.note.isNotEmpty) ...[
@@ -1164,10 +1133,9 @@ class _TaskCardState extends State<_TaskCard> {
                   ],
                 ),
               ),
-              PopupMenuButton<String>(
+              StudyPopupMenuButton<String>(
                 icon: Icon(Icons.more_vert_rounded,
-                    color: isDark ? Colors.white54 : AppColors.muted),
-                color: isDark ? const Color(0xFF242B37) : Colors.white,
+                    color: StudyUi.muted(isDark)),
                 onSelected: _handleMenu,
                 itemBuilder: (_) => [
                   PopupMenuItem(

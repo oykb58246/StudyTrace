@@ -40,14 +40,13 @@ class AdminSectionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget body;
 
-    // For timer, render the Pomodoro timer page
     if (section == AdminSection.timer && controller != null) {
-      body = TimerPage(
+      return TimerPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
     } else if (section == AdminSection.flashCard && controller != null) {
-      body = FlashCardPage(
+      return FlashCardPage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
@@ -132,32 +131,22 @@ class AdminSectionPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(30),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  config.accent.withValues(alpha: 0.95),
-                  Color.lerp(config.accent, AppColors.shell, 0.45)!,
-                ],
-              ),
-            ),
+          StudyCard(
+            padding: const EdgeInsets.all(20),
+            borderColor: config.accent.withValues(alpha: isDarkMode ? 0.24 : 0.18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 BadgePill(
-                  label: section == AdminSection.statistics ? '学习' : 'Admin',
-                  background: Colors.white.withValues(alpha: 0.18),
-                  foreground: Colors.white,
+                  label: '学习模块',
+                  background: StudyUi.chipBackground(config.accent, isDarkMode),
+                  foreground: config.accent,
                 ),
                 const SizedBox(height: 16),
                 Text(
                   config.heroTitle,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: StudyUi.title(isDarkMode),
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
                     height: 1.2,
@@ -166,8 +155,8 @@ class AdminSectionPage extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(
                   config.heroSubtitle,
-                  style: const TextStyle(
-                    color: Color(0xE6FFFFFF),
+                  style: TextStyle(
+                    color: StudyUi.body(isDarkMode),
                     height: 1.55,
                   ),
                 ),
@@ -182,6 +171,8 @@ class AdminSectionPage extends StatelessWidget {
       title: section.label,
       isDarkMode: isDarkMode,
       onBack: onBack,
+      titleIcon: section.icon,
+      accent: section.accent,
       child: body,
     );
   }
@@ -205,25 +196,25 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
   switch (section) {
     case AdminSection.overview:
       return const _AdminConfig(
-        accent: Color(0xFF7D9BFF),
+        accent: Color(0xFF4F7EE8),
         subtitle: '查看学习核心数据、任务进展与场景热度。',
         heroTitle: '学习总览',
-        heroSubtitle: '欢迎页、底部导航到侧边管理菜单，快速了解学习状态与各功能入口。',
+        heroSubtitle: '集中查看今天的任务、记录、日程和课程归档，快速回到正在进行的学习。',
       );
     case AdminSection.aiAssistant:
       return _AdminConfig(
         accent: controller?.primaryColor ?? const Color(0xFF4470E8),
-        subtitle: 'AI 学习助手、聊天、日志生成、任务拆解与周报分析。',
-        heroTitle: 'AI 功能',
+        subtitle: 'AI学习助手、聊天、日志生成、任务拆解与周报分析。',
+        heroTitle: 'AI学习助手',
         heroSubtitle:
-            'AI 聊天助手、结构化日志生成、复杂任务拆解、学习分析周报和风险提醒，形成"记录—执行—分析—复盘"的智能学习闭环。',
+            '学习对话、结构化日志整理、复杂任务拆解、学习周报和风险提醒，形成日常学习复盘。',
       );
     case AdminSection.aiSettings:
       return const _AdminConfig(
-        accent: Color(0xFF8C7CFF),
-        subtitle: 'AI 模型状态、参数调节与云服务配置。',
-        heroTitle: 'AI 设置',
-        heroSubtitle: '管理学迹 AI 配置、模型参数、云服务连接和系统偏好。',
+        accent: Color(0xFF4F7EE8),
+        subtitle: '助手状态、语音偏好与服务连通性。',
+        heroTitle: 'AI设置',
+        heroSubtitle: '管理AI学习助手开关、语音对话、使用次数和云端连通性。',
       );
     case AdminSection.notes:
       return const _AdminConfig(
@@ -249,23 +240,23 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.flashCard:
       return const _AdminConfig(
         accent: Color(0xFFF8AA5B),
-        subtitle: 'AI 从学习记录生成知识闪卡，巩固复习。',
-        heroTitle: 'AI 知识闪卡',
+        subtitle: '从学习记录生成知识闪卡，巩固复习。',
+        heroTitle: '知识闪卡',
         heroSubtitle: '基于学习日志自动生成问答闪卡，点击翻转查看答案，帮助巩固和复习知识点。',
       );
     case AdminSection.learningMoments:
       return const _AdminConfig(
         accent: Color(0xFF19A974),
-        subtitle: '发布学习图文，自动汇聚任务、日志、笔记、闪卡和 AI 操作轨迹。',
+        subtitle: '发布学习图文，自动汇聚任务、日志、笔记、闪卡和AI操作轨迹。',
         heroTitle: '学迹动态',
-        heroSubtitle: '像朋友圈一样分享学习现场，同时把每次学习行为沉淀成可追溯的证据链。',
+        heroSubtitle: '像朋友圈一样分享学习现场，同时把每次学习行为沉淀成可追溯的学习轨迹。',
       );
     case AdminSection.automations:
       return const _AdminConfig(
         accent: Color(0xFF4BC4A1),
-        subtitle: '编排自动任务流、触发条件与执行记录。',
-        heroTitle: '自动任务编排',
-        heroSubtitle: '把手机 AI 助手从一次性问答升级为持续工作的个人流转系统。',
+        subtitle: '整理可重复的学习提醒、复盘和资料整理动作。',
+        heroTitle: '学习流程',
+        heroSubtitle: '把常见学习动作做成清楚的步骤，减少反复设置和遗漏。',
       );
     case AdminSection.studyGroup:
       return const _AdminConfig(
@@ -298,9 +289,9 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.auditLog:
       return const _AdminConfig(
         accent: Color(0xFF7394F9),
-        subtitle: '查看 AI 操作历史与执行结果。',
-        heroTitle: 'AI 操作记录',
-        heroSubtitle: '记录每次 AI 操作的输入输出和执行时间。',
+        subtitle: '查看AI操作历史与执行结果。',
+        heroTitle: 'AI操作记录',
+        heroSubtitle: '记录每次AI操作的输入输出和执行时间。',
       );
     case AdminSection.trash:
       return const _AdminConfig(

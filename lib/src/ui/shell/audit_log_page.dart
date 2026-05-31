@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/ai_action_record.dart';
-import '../../theme/app_theme.dart';
+import '../../services/ai_tool_registry.dart';
+import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 
 /// 失败记录的重试回调。由 AppShell 注入实现：将 `AiActionRecord` 重建成
@@ -27,8 +28,8 @@ class AuditLogPage extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         final records = controller.recentActionRecords.reversed.toList();
-        final textColor = isDarkMode ? Colors.white : AppColors.ink;
-        final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        final textColor = StudyUi.title(isDarkMode);
+        final bodyColor = StudyUi.body(isDarkMode);
 
         return RefreshIndicator(
           onRefresh: () async => controller.notifyListeners(),
@@ -37,15 +38,19 @@ class AuditLogPage extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
-                    'AI 操作记录',
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: Text(
+                      'AI操作记录',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 12),
                   if (records.isNotEmpty)
                     TextButton.icon(
                       onPressed: () => _clearRecords(context),
@@ -59,14 +64,11 @@ class AuditLogPage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               if (records.isEmpty)
-                GlassCard(
-                  color: isDarkMode
-                      ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                      : null,
-                  child: Text(
-                    '暂无 AI 操作记录。',
-                    style: TextStyle(color: bodyColor, height: 1.55),
-                  ),
+                const StudyEmptyState(
+                  asset: AppAssets.uiRefreshFeatureAssistant,
+                  title: '暂无AI操作记录',
+                  message: '通过学习对话让AI执行操作后，记录会显示在这里。',
+                  compact: true,
                 )
               else
                 ...records.map((record) => _RecordCard(
@@ -88,7 +90,7 @@ class AuditLogPage extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空操作记录'),
-        content: const Text('这将清空所有 AI 操作记录，不可恢复。'),
+        content: const Text('这将清空所有AI操作记录，不可恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -149,21 +151,19 @@ class _RecordCardState extends State<_RecordCard> {
   @override
   Widget build(BuildContext context) {
     final statusColor = switch (record.status) {
-      AiActionStatus.executed => const Color(0xFF4BC4A1),
-      AiActionStatus.failed => const Color(0xFFEF6850),
+      AiActionStatus.executed => StudyUi.success,
+      AiActionStatus.failed => StudyUi.danger,
       AiActionStatus.cancelled => const Color(0xFFB0B8CC),
-      AiActionStatus.pending => const Color(0xFFF8AA5B),
-      AiActionStatus.confirmed => const Color(0xFF7394F9),
+      AiActionStatus.pending => StudyUi.warning,
+      AiActionStatus.confirmed => StudyUi.secondary,
     };
     final canRetry = record.status == AiActionStatus.failed &&
         widget.onRetry != null;
+    final actionTitle = AiToolRegistry.instance.userFacingLabel(record.toolId);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
-        color: isDarkMode
-            ? const Color(0xFF242B37).withValues(alpha: 0.9)
-            : null,
+      child: StudyCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -171,7 +171,9 @@ class _RecordCardState extends State<_RecordCard> {
               children: [
                 Expanded(
                   child: Text(
-                    record.toolId,
+                    actionTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: textColor,
                       fontSize: 14,

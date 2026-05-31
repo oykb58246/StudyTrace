@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'api_endpoint_config.dart';
 import 'ai_credential_service.dart';
 
 class ApiException implements Exception {
@@ -40,12 +41,15 @@ class ApiClient {
     required String baseUrl,
     AiCredentialService? credentials,
     http.Client? httpClient,
+    Future<void> Function()? onUnauthorized,
   })  : _baseUrl = baseUrl,
         _credentials = credentials ?? AiCredentialService(),
-        _httpClient = httpClient ?? http.Client();
+        _httpClient = httpClient ?? http.Client(),
+        _onUnauthorized = onUnauthorized;
 
   final AiCredentialService _credentials;
   final http.Client _httpClient;
+  final Future<void> Function()? _onUnauthorized;
   final Duration _timeout = const Duration(seconds: 12);
 
   String _baseUrl;
@@ -68,12 +72,13 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String>? query,
+    Duration? timeout,
   }) {
     return _send(() async {
       final uri = _buildUri(path, query);
       final headers = await _buildHeaders();
       return _httpClient.post(uri, headers: headers, body: _encodeBody(body));
-    }, allowRefresh: !_isAuthPath(path));
+    }, allowRefresh: !_isAuthPath(path), timeout: timeout);
   }
 
   Future<http.Response> patch(
@@ -112,8 +117,9 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String>? query,
+    Duration? timeout,
   }) async {
-    final response = await post(path, body: body, query: query);
+    final response = await post(path, body: body, query: query, timeout: timeout);
     return _decodeJson(response);
   }
 
@@ -131,7 +137,17 @@ class ApiClient {
     Object? body,
     Map<String, String>? query,
   }) async {
-    await delete(path, body: body, query: query);
+    final response = await delete(path, body: body, query: query);
+    _throwIfNotSuccess(response);
+  }
+
+  Future<Map<String, dynamic>> deleteJson(
+    String path, {
+    Object? body,
+    Map<String, String>? query,
+  }) async {
+    final response = await delete(path, body: body, query: query);
+    return _decodeJson(response);
   }
 
   Future<List<dynamic>> getList(
@@ -143,14 +159,7 @@ class ApiClient {
   }
 
   List<dynamic> _decodeList(http.Response response) {
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(
-        _messageForStatusCode(response.statusCode),
-        statusCode: response.statusCode,
-        detail: _extractErrorMessage(response.body),
-        isUnauthorized: response.statusCode == 401,
-      );
-    }
+    _throwIfNotSuccess(response);
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is List) return decoded;
@@ -163,16 +172,32 @@ class ApiClient {
   Future<http.Response> _send(
     Future<http.Response> Function() request, {
     bool allowRefresh = true,
+    Duration? timeout,
   }) async {
+    final effectiveTimeout = timeout ?? _timeout;
     try {
-      final response = await request().timeout(_timeout);
+      final response = await request().timeout(effectiveTimeout);
 
       if (response.statusCode == 401) {
         if (!allowRefresh) {
           return response;
         }
-        final retried = await _retryWithRefresh(request);
-        if (retried != null) return retried;
+        final retried = await _retryWithRefresh(
+          request,
+          timeout: effectiveTimeout,
+        );
+        if (retried != null) {
+          if (retried.statusCode == 401) {
+            await _notifyUnauthorized();
+            throw const ApiException(
+              '登录已过期，请重新登录',
+              statusCode: 401,
+              isUnauthorized: true,
+            );
+          }
+          return retried;
+        }
+        await _notifyUnauthorized();
         throw const ApiException(
           '登录已过期，请重新登录',
           statusCode: 401,
@@ -202,10 +227,12 @@ class ApiClient {
   }
 
   Future<http.Response?> _retryWithRefresh(
-    Future<http.Response> Function() request,
-  ) async {
+    Future<http.Response> Function() request, {
+    Duration? timeout,
+  }) async {
     final refreshToken = await _credentials.getRefreshToken();
     if (refreshToken == null || refreshToken.isEmpty) return null;
+    final effectiveTimeout = timeout ?? _timeout;
 
     final refreshUri = _buildUri('/auth/refresh', null);
     try {
@@ -228,13 +255,23 @@ class ApiClient {
         if (newRefreshToken != null && newRefreshToken.isNotEmpty) {
           await _credentials.saveRefreshToken(newRefreshToken);
         }
-        return await request().timeout(_timeout);
+        return await request().timeout(effectiveTimeout);
       }
     } catch (_) {
       // refresh 失败，交给上层按 401 处理
     }
 
     return null;
+  }
+
+  Future<void> _notifyUnauthorized() async {
+    final callback = _onUnauthorized;
+    if (callback == null) return;
+    try {
+      await callback();
+    } catch (_) {
+      // Auth-state cleanup must not mask the original 401 error.
+    }
   }
 
   Future<Map<String, String>> _buildHeaders() async {
@@ -250,7 +287,7 @@ class ApiClient {
   }
 
   Uri _buildUri(String path, Map<String, String>? query) {
-    final base = _normalizeBaseUrl(_baseUrl);
+    final base = ApiEndpointConfig.normalizeBaseUrl(_baseUrl);
     final normalizedPath = path.startsWith('/') ? path : '/$path';
     final uri = Uri.parse('$base$normalizedPath');
     if (query == null || query.isEmpty) return uri;
@@ -258,40 +295,6 @@ class ApiClient {
       ...uri.queryParameters,
       ...query,
     });
-  }
-
-  static String _normalizeBaseUrl(String value) {
-    final trimmed = value.trim().replaceAll(RegExp(r'/+$'), '');
-    if (trimmed.isEmpty) return _defaultCloudBaseUrl();
-    final hostOnly = trimmed
-        .replaceFirst(RegExp(r'^https?://'), '')
-        .replaceAll(RegExp(r'/.*$'), '');
-    if (hostOnly == 'api.studytrace.oykb.cn') {
-      final uri = Uri.tryParse(trimmed);
-      final scheme =
-          uri != null && (uri.scheme == 'http' || uri.scheme == 'https')
-              ? uri.scheme
-              : Uri.base.scheme == 'http'
-                  ? 'http'
-                  : 'https';
-      return '$scheme://studytrace.oykb.cn';
-    }
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return trimmed;
-    }
-    if (hostOnly == 'studytrace.oykb.cn') {
-      return _defaultCloudBaseUrl();
-    }
-    return 'http://$trimmed';
-  }
-
-  static String _defaultCloudBaseUrl() {
-    final current = Uri.base;
-    if ((current.scheme == 'http' || current.scheme == 'https') &&
-        current.host == 'studytrace.oykb.cn') {
-      return '${current.scheme}://${current.authority}';
-    }
-    return 'https://studytrace.oykb.cn';
   }
 
   String? _encodeBody(Object? body) {
@@ -306,6 +309,11 @@ class ApiClient {
   }
 
   Map<String, dynamic> _decodeJson(http.Response response) {
+    _throwIfNotSuccess(response);
+    return _decodeRawJson(response.body);
+  }
+
+  void _throwIfNotSuccess(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(
         _messageForStatusCode(response.statusCode),
@@ -314,7 +322,6 @@ class ApiClient {
         isUnauthorized: response.statusCode == 401,
       );
     }
-    return _decodeRawJson(response.body);
   }
 
   Map<String, dynamic> _decodeRawJson(String body) {

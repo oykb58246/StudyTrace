@@ -4,6 +4,7 @@ import '../../controllers/app_data_controller.dart';
 import '../../models/ai_flash_card.dart';
 import '../../services/ai_study_service.dart';
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 
 class FlashCardPage extends StatefulWidget {
@@ -51,24 +52,23 @@ class _FlashCardPageState extends State<FlashCardPage> {
         .toList();
     if (yLogs.isEmpty) return;
 
-    final existing = widget.controller.flashCards.where(
-      (c) =>
-          c.createdAt.year == yesterday.year &&
-          c.createdAt.month == yesterday.month &&
-          c.createdAt.day == yesterday.day,
-    );
-    if (existing.isNotEmpty) return;
+    final existingKeys = _flashCardKeys(widget.controller.flashCards);
+    final generatedForYesterday = widget.controller.flashCards.any((card) =>
+        card.id.startsWith('fc_auto_${_dateKey(yesterday)}_'));
+    if (generatedForYesterday) return;
 
     try {
       final cards = await widget.controller.aiStudyService
           .generateFlashCards(logs: yLogs, count: 5);
       final now = DateTime.now();
       final newCards = cards
+          .where((card) => !existingKeys.contains(_flashCardKey(card)))
+          .toList()
           .asMap()
           .entries
           .map(
             (e) => AiFlashCard(
-              id: 'fc_${now.microsecondsSinceEpoch}_${e.key}',
+              id: 'fc_auto_${_dateKey(yesterday)}_${now.microsecondsSinceEpoch}_${e.key}',
               question: e.value.question,
               answer: e.value.answer,
               courseName: e.value.courseName,
@@ -77,7 +77,8 @@ class _FlashCardPageState extends State<FlashCardPage> {
             ),
           )
           .toList();
-      if (mounted) widget.controller.addFlashCards(newCards);
+      if (newCards.isEmpty) return;
+      if (mounted) await widget.controller.addFlashCards(newCards);
     } catch (_) {}
   }
 
@@ -88,24 +89,40 @@ class _FlashCardPageState extends State<FlashCardPage> {
       child: AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        final accent = widget.controller.primaryColor;
+        const accent = StudyUi.primary;
         final all = widget.controller.flashCards;
         final list = _filteredCards(all);
         final browseList = _browseCardsFrom(list);
-        final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-        final bodyColor =
-            widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        final textColor = StudyUi.title(widget.isDarkMode);
+        final bodyColor = StudyUi.body(widget.isDarkMode);
 
         return Scaffold(
-          backgroundColor: widget.isDarkMode
-              ? const Color(0xFF141923)
-              : const Color(0xFFF5F7FF),
+          backgroundColor: StudyUi.background(widget.isDarkMode),
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             foregroundColor: textColor,
-            title: Text(
-              _showBrowse ? '闪卡浏览' : '知识闪卡',
-              style: const TextStyle(fontWeight: FontWeight.w800),
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: StudyUi.chipBackground(accent, widget.isDarkMode),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.style_rounded, color: accent, size: 17),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    _showBrowse ? '闪卡浏览' : '知识闪卡',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
             ),
             actions: [
               if (!_showBrowse)
@@ -154,9 +171,9 @@ class _FlashCardPageState extends State<FlashCardPage> {
     return list;
   }
 
-  PopupMenuButton<String> _filterMenu() {
+  Widget _filterMenu() {
     final groups = widget.controller.flashCardGroups;
-    return PopupMenuButton<String>(
+    return StudyPopupMenuButton<String>(
       icon: const Icon(Icons.filter_list_rounded),
       tooltip: '筛选分组',
       onSelected: (v) => setState(() {
@@ -187,26 +204,30 @@ class _FlashCardPageState extends State<FlashCardPage> {
           ]),
         ),
         if (groups.isNotEmpty) const PopupMenuDivider(),
-        ...groups.map((g) => PopupMenuItem(value: g, child: Text(g))),
+        ...groups.map(
+          (g) => PopupMenuItem(
+            value: g,
+            child: Text(
+              g,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
       ],
     );
   }
 
   Widget _listView(List<AiFlashCard> list, Color textColor, Color bodyColor) {
     if (list.isEmpty) {
-      return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(
-            Icons.style_rounded,
-            size: 56,
-            color: widget.isDarkMode ? Colors.white24 : const Color(0xFFC2C8D6),
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 22),
+          child: StudyEmptyState.flashcards(
+            title: '还没有知识闪卡',
+            message: '记录学习日志后，可以整理成问答卡片，集中复习关键知识点。',
           ),
-          const SizedBox(height: 12),
-          Text('还没有知识闪卡', style: TextStyle(color: bodyColor, fontSize: 16)),
-          const SizedBox(height: 4),
-          Text('记录学习日志后，AI 会自动生成',
-              style: TextStyle(color: bodyColor, fontSize: 13)),
-        ]),
+        ),
       );
     }
 
@@ -341,7 +362,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
     required Color textColor,
     required Color bodyColor,
   }) {
-    final accent = widget.controller.primaryColor;
+    const accent = StudyUi.primary;
     final isOdd = stackIndex.isOdd;
     final cardColor = widget.isDarkMode
         ? (isOdd
@@ -377,7 +398,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
             child: InkWell(
               borderRadius: BorderRadius.circular(22),
               onTap: () => _openBrowse(scopeCards, scopeIndex),
-              child: GlassCard(
+              child: StudyCard(
                 color: cardColor,
                 padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
                 child: Stack(fit: StackFit.expand, children: [
@@ -445,15 +466,18 @@ class _FlashCardPageState extends State<FlashCardPage> {
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 124),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -475,7 +499,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
 
   Widget _groupButton(AiFlashCard card, Color bodyColor) {
     final groups = widget.controller.flashCardGroups;
-    return PopupMenuButton<String>(
+    return StudyPopupMenuButton<String>(
       key: Key('flash_card_group_menu_${card.id}'),
       tooltip: card.groupName.isNotEmpty ? card.groupName : '选择分组',
       icon: Icon(
@@ -540,22 +564,27 @@ class _FlashCardPageState extends State<FlashCardPage> {
       final result = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
+          backgroundColor: StudyUi.surface(widget.isDarkMode),
+          surfaceTintColor: Colors.transparent,
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('添加到新的分组'),
-          content: TextField(
-            key: const Key('flash_card_new_group_field'),
-            controller: ctrl,
-            autofocus: true,
-            decoration: InputDecoration(
-              hintText: '分组名称',
-              filled: true,
-              fillColor: widget.isDarkMode
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFF2F5FC),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
+          content: SizedBox(
+            width: 360,
+            child: TextField(
+              key: const Key('flash_card_new_group_field'),
+              controller: ctrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: '分组名称',
+                filled: true,
+                fillColor: widget.isDarkMode
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : const Color(0xFFF2F5FC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
           ),
@@ -564,9 +593,9 @@ class _FlashCardPageState extends State<FlashCardPage> {
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('取消'),
             ),
-            ElevatedButton(
+            FilledButton(
               key: const Key('flash_card_create_group_button'),
-              style: ElevatedButton.styleFrom(
+              style: FilledButton.styleFrom(
                 backgroundColor: accent,
                 foregroundColor: Colors.white,
               ),
@@ -599,9 +628,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
     // 筛选到期复习的卡片：从未复习 + 已到期 + 收藏
     final reviewCards = all.where((c) => c.isDueForReview || c.isStarred).toList();
     if (reviewCards.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无需要复习的闪卡，继续保持！')),
-      );
+      StudyToast.show(context, '暂无需要复习的闪卡，继续保持！');
       return;
     }
     // 按 nextReviewDate 排序（null 排最前）
@@ -616,12 +643,7 @@ class _FlashCardPageState extends State<FlashCardPage> {
       _browseIndex = 0;
       _showBrowse = true;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('今日复习 ${ids.length} 张闪卡'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    StudyToast.show(context, '今日复习 ${ids.length} 张闪卡');
   }
 
   Future<void> _refreshTodayCards() async {
@@ -634,23 +656,22 @@ class _FlashCardPageState extends State<FlashCardPage> {
         .toList();
 
     if (todayLogs.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('今天还没有学习记录，请先记录学习内容')),
-      );
+      StudyToast.show(context, '今天还没有学习记录，请先记录学习内容');
       return;
     }
 
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在生成闪卡...')),
-      );
+      StudyToast.show(context, '正在生成闪卡...');
 
       final cards =
           await widget.controller.aiStudyService
               .generateFlashCards(logs: todayLogs, count: 8);
 
+      final existingKeys = _flashCardKeys(widget.controller.flashCards);
       final now = DateTime.now();
       final newCards = cards
+          .where((card) => !existingKeys.contains(_flashCardKey(card)))
+          .toList()
           .asMap()
           .entries
           .map(
@@ -665,18 +686,25 @@ class _FlashCardPageState extends State<FlashCardPage> {
           )
           .toList();
 
+      if (newCards.isEmpty) {
+        if (mounted) {
+          StudyToast.show(context, '今日闪卡已存在，没有新增重复卡片');
+        }
+        return;
+      }
+
       if (mounted) {
         await widget.controller.addFlashCards(newCards);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已生成 ${newCards.length} 张闪卡')),
-          );
+          StudyToast.show(context, '已生成 ${newCards.length} 张闪卡');
         }
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('生成闪卡失败，请重试')),
+        await StudyToast.dialog(
+          context,
+          title: '生成闪卡失败',
+          message: '这次没有生成成功，请稍后重试。',
         );
       }
     }
@@ -691,10 +719,32 @@ class _FlashCardPageState extends State<FlashCardPage> {
         .toList();
   }
 
+  Set<String> _flashCardKeys(Iterable<AiFlashCard> cards) {
+    return cards.map(_flashCardKey).toSet();
+  }
+
+  String _flashCardKey(AiFlashCard card) {
+    return '${card.courseName.trim().toLowerCase()}|'
+        '${card.question.trim().toLowerCase()}|'
+        '${card.answer.trim().toLowerCase()}';
+  }
+
+  String _dateKey(DateTime date) {
+    return '${date.year}${date.month.toString().padLeft(2, '0')}'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
   Widget _browseView(List<AiFlashCard> list, Color textColor, Color bodyColor) {
     final accent = widget.controller.primaryColor;
     if (_browseIndex >= list.length) _browseIndex = 0;
     final card = list[_browseIndex];
+    void showPrevious() {
+      if (_browseIndex > 0) setState(() => _browseIndex--);
+    }
+
+    void showNext() {
+      if (_browseIndex < list.length - 1) setState(() => _browseIndex++);
+    }
 
     return Column(children: [
       Padding(
@@ -717,14 +767,25 @@ class _FlashCardPageState extends State<FlashCardPage> {
       Expanded(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22),
-          child: _FlashCardView(
-            key: ValueKey(card.id),
-            isDarkMode: widget.isDarkMode,
-            controller: widget.controller,
-            card: card,
-            titleColor: textColor,
-            bodyColor: bodyColor,
-            accentColor: accent,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragEnd: (details) {
+              final velocity = details.primaryVelocity ?? 0;
+              if (velocity < -220) {
+                showNext();
+              } else if (velocity > 220) {
+                showPrevious();
+              }
+            },
+            child: _FlashCardView(
+              key: ValueKey(card.id),
+              isDarkMode: widget.isDarkMode,
+              controller: widget.controller,
+              card: card,
+              titleColor: textColor,
+              bodyColor: bodyColor,
+              accentColor: accent,
+            ),
           ),
         ),
       ),
@@ -736,21 +797,26 @@ class _FlashCardPageState extends State<FlashCardPage> {
               backgroundColor: accent.withValues(alpha: 0.14),
               foregroundColor: accent,
             ),
-            onPressed:
-                _browseIndex > 0 ? () => setState(() => _browseIndex--) : null,
+            onPressed: _browseIndex > 0 ? showPrevious : null,
             icon: const Icon(Icons.chevron_left_rounded),
           ),
           const SizedBox(width: 18),
-          Text('点击卡片翻转', style: TextStyle(color: bodyColor, fontSize: 13)),
+          Flexible(
+            child: Text(
+              '点击卡片翻转',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: bodyColor, fontSize: 13),
+            ),
+          ),
           const SizedBox(width: 18),
           IconButton.filledTonal(
             style: IconButton.styleFrom(
               backgroundColor: accent.withValues(alpha: 0.14),
               foregroundColor: accent,
             ),
-            onPressed: _browseIndex < list.length - 1
-                ? () => setState(() => _browseIndex++)
-                : null,
+            onPressed: _browseIndex < list.length - 1 ? showNext : null,
             icon: const Icon(Icons.chevron_right_rounded),
           ),
         ]),
@@ -758,8 +824,6 @@ class _FlashCardPageState extends State<FlashCardPage> {
     ]);
   }
 
-  String _dateKey(DateTime date) =>
-      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }
 
 class _FlashCardView extends StatefulWidget {
@@ -851,11 +915,16 @@ class _FlashCardViewState extends State<_FlashCardView>
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.82,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               Center(
                 child: Container(
                   width: 40,
@@ -891,7 +960,7 @@ class _FlashCardViewState extends State<_FlashCardView>
                 style: TextStyle(
                     color: widget.titleColor, fontSize: 14, height: 1.5),
                 decoration: InputDecoration(
-                  hintText: '把你知道的写下来，AI 会给你打分',
+                  hintText: '把你知道的写下来，系统会给你打分',
                   hintStyle: TextStyle(
                       color: widget.isDarkMode
                           ? Colors.white38
@@ -928,9 +997,7 @@ class _FlashCardViewState extends State<_FlashCardView>
                       onPressed: () {
                         final t = inputCtrl.text.trim();
                         if (t.isEmpty) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(content: Text('请先输入你的答案')),
-                          );
+                          StudyToast.show(ctx, '请先输入你的答案');
                           return;
                         }
                         Navigator.of(ctx).pop(t);
@@ -940,7 +1007,9 @@ class _FlashCardViewState extends State<_FlashCardView>
                   ),
                 ],
               ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -968,7 +1037,7 @@ class _FlashCardViewState extends State<_FlashCardView>
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2)),
                   SizedBox(width: 12),
-                  Text('AI 判分中...'),
+                  Text('判分中...'),
                 ],
               ),
             ),
@@ -991,8 +1060,10 @@ class _FlashCardViewState extends State<_FlashCardView>
     if (!mounted) return;
     Navigator.of(context).pop();
     if (grade == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error ?? '判分失败')),
+      await StudyToast.dialog(
+        context,
+        title: '判分失败',
+        message: error ?? '判分失败',
       );
       return;
     }
@@ -1034,9 +1105,14 @@ class _FlashCardViewState extends State<_FlashCardView>
               ),
             ),
             const SizedBox(width: 12),
-            Text(grade.label,
-                style: TextStyle(
-                    color: color, fontWeight: FontWeight.w800)),
+            Expanded(
+              child: Text(
+                grade.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: color, fontWeight: FontWeight.w800),
+              ),
+            ),
           ],
         ),
         content: SingleChildScrollView(
@@ -1044,7 +1120,7 @@ class _FlashCardViewState extends State<_FlashCardView>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('AI 反馈',
+              Text('复习反馈',
                   style: TextStyle(
                       color: widget.bodyColor,
                       fontSize: 12,
@@ -1141,11 +1217,14 @@ class _FlashCardViewState extends State<_FlashCardView>
   Widget _front() => Column(children: [
         Row(children: [
           if (widget.card.courseName.isNotEmpty)
-            BadgePill(
-              label: widget.card.courseName,
-              background: widget.accentColor.withValues(alpha: 0.1),
-              foreground: widget.accentColor,
+            Flexible(
+              child: BadgePill(
+                label: widget.card.courseName,
+                background: widget.accentColor.withValues(alpha: 0.1),
+                foreground: widget.accentColor,
+              ),
             ),
+          const SizedBox(width: 8),
           const Spacer(),
           Text(
             '点击翻转',
@@ -1156,8 +1235,12 @@ class _FlashCardViewState extends State<_FlashCardView>
           ),
         ]),
         const Divider(height: 32),
-        Icon(Icons.help_outline_rounded,
-            color: widget.accentColor, size: 36),
+        StudyAssetIcon(
+          asset: AppAssets.featureFlashcardIcon,
+          color: widget.accentColor,
+          size: 38,
+          fallbackIcon: Icons.help_outline_rounded,
+        ),
         const SizedBox(height: 20),
         Expanded(
           child: SingleChildScrollView(
@@ -1196,11 +1279,14 @@ class _FlashCardViewState extends State<_FlashCardView>
   Widget _back() => Column(children: [
         Row(children: [
           if (widget.card.courseName.isNotEmpty)
-            BadgePill(
-              label: widget.card.courseName,
-              background: const Color(0x194BC4A1),
-              foreground: const Color(0xFF4BC4A1),
+            Flexible(
+              child: BadgePill(
+                label: widget.card.courseName,
+                background: const Color(0x194BC4A1),
+                foreground: const Color(0xFF4BC4A1),
+              ),
             ),
+          const SizedBox(width: 8),
           const Spacer(),
           Text(
             '答案',
@@ -1211,7 +1297,12 @@ class _FlashCardViewState extends State<_FlashCardView>
           ),
         ]),
         const Divider(height: 32),
-        const Icon(Icons.lightbulb_rounded, color: Color(0xFF4BC4A1), size: 36),
+        const StudyAssetIcon(
+          asset: AppAssets.aiSuggestionIcon,
+          preserveColor: true,
+          size: 38,
+          fallbackIcon: Icons.lightbulb_rounded,
+        ),
         const SizedBox(height: 20),
         Expanded(
           child: SingleChildScrollView(

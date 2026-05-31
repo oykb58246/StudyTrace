@@ -8,16 +8,13 @@ import 'package:record/record.dart';
 
 import '../../controllers/app_data_controller.dart';
 import '../../models/ai_action_record.dart';
-import '../../models/ai_capability_trace.dart';
-import '../../models/ai_flash_card.dart';
 import '../../models/ai_learning_loop.dart';
 import '../../models/note_block.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_app_context_builder.dart';
-import '../../services/ai_semantic_search_service.dart';
+import '../../services/local_today_mission_builder.dart';
 import '../../services/ocr_service.dart';
-import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 import 'timer_page.dart';
 
@@ -39,7 +36,6 @@ class AiLearningCockpitPage extends StatefulWidget {
 
 class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
   final _sourceController = TextEditingController();
-  final _memoryController = TextEditingController();
   late final OcrService _ocrService;
   final AudioRecorder _audioRecorder = AudioRecorder();
 
@@ -48,14 +44,10 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
   bool _isGeneratingMission = false;
   bool _isApplying = false;
   String _statusText = '';
-  String _memoryAnswer = '';
   String _planCheckText = '';
-  List<_MemoryEvidence> _memoryEvidence = const [];
-  List<AiCapabilityTrace> _memoryCapabilityTraces = const [];
   bool _saveLog = true;
   bool _saveTasks = true;
   bool _saveNote = true;
-  bool _saveFlashcards = true;
   bool _isCheckingPlan = false;
   bool _isRecordingReview = false;
 
@@ -68,7 +60,6 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
   @override
   void dispose() {
     _sourceController.dispose();
-    _memoryController.dispose();
     _ocrService.dispose();
     unawaited(_audioRecorder.dispose());
     super.dispose();
@@ -76,21 +67,19 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.controller.primaryColor;
-    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    const accent = StudyUi.primary;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return Scaffold(
-      backgroundColor:
-          widget.isDarkMode ? const Color(0xFF111827) : const Color(0xFFF5F7FF),
+      backgroundColor: StudyUi.background(widget.isDarkMode),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: titleColor,
-        title: const Text('AI 学习驾驶舱', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('AI学习助手', style: TextStyle(fontWeight: FontWeight.w800)),
         actions: [
           IconButton(
-            tooltip: 'AI 对话',
+            tooltip: '学习对话',
             icon: const Icon(Icons.chat_bubble_outline_rounded),
             onPressed: widget.onOpenAiChat,
           ),
@@ -106,13 +95,9 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
                 isDarkMode: widget.isDarkMode,
                 accent: accent,
                 onPhotoLoop: _captureLoop,
-                onMission: _generateTodayMission,
-                onMemoryTap: () => _showMemorySheet(context),
                 onVoiceReview: _toggleVoiceReview,
                 isRecordingReview: _isRecordingReview,
               ),
-              const SizedBox(height: 14),
-              _CapabilityChain(isDarkMode: widget.isDarkMode),
               const SizedBox(height: 14),
               _ManualSourceCard(
                 isDarkMode: widget.isDarkMode,
@@ -136,15 +121,12 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
                   saveLog: _saveLog,
                   saveTasks: _saveTasks,
                   saveNote: _saveNote,
-                  saveFlashcards: _saveFlashcards,
                   isApplying: _isApplying,
                   isCheckingPlan: _isCheckingPlan,
                   planCheckText: _planCheckText,
                   onSaveLogChanged: (value) => setState(() => _saveLog = value),
                   onSaveTasksChanged: (value) => setState(() => _saveTasks = value),
                   onSaveNoteChanged: (value) => setState(() => _saveNote = value),
-                  onSaveFlashcardsChanged: (value) =>
-                      setState(() => _saveFlashcards = value),
                   onCheckPlan: _checkPlanBeforeApply,
                   onApply: _applyPlan,
                   onStartFocus: _startFirstFocusBlock,
@@ -156,15 +138,6 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
                 isBusy: _isGeneratingMission,
                 onGenerate: _generateTodayMission,
               ),
-              if (_memoryAnswer.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                _MemoryAnswerCard(
-                  isDarkMode: widget.isDarkMode,
-                  answer: _memoryAnswer,
-                  evidence: _memoryEvidence,
-                  capabilityTraces: _memoryCapabilityTraces,
-                ),
-              ],
             ],
           );
         },
@@ -175,7 +148,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
   Future<void> _captureLoop() async {
     setState(() {
       _isGeneratingLoop = true;
-      _statusText = '正在调用 vivo OCR，并准备多模态理解...';
+      _statusText = '正在识别图片内容，并整理学习资料...';
     });
     try {
       final image = await _ocrService.captureImage();
@@ -195,7 +168,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
           ))
               .trim();
       if (text.isEmpty) {
-        setState(() => _statusText = 'OCR 未识别到文字，改用图片多模态理解生成闭环...');
+        setState(() => _statusText = '没有识别到文字，正在结合图片内容整理学习计划...');
       }
       _sourceController.text = text;
       await _generateLoop(
@@ -207,7 +180,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
       if (!mounted) return;
       setState(() {
         _isGeneratingLoop = false;
-        _statusText = '拍照闭环生成失败：$error';
+        _statusText = '拍照整理失败：$error';
       });
     }
   }
@@ -225,8 +198,8 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
     setState(() {
       _isGeneratingLoop = true;
       _statusText = imageBase64 == null
-          ? '蓝心正在生成学习闭环...'
-          : '蓝心正在结合图片与 OCR 生成学习闭环...';
+          ? '正在整理学习计划...'
+          : '正在结合图片与文字整理学习计划...';
       _planCheckText = '';
     });
     try {
@@ -243,53 +216,107 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
       setState(() {
         _plan = plan;
         _isGeneratingLoop = false;
-        _statusText = '已生成可编辑闭环预览';
+        _statusText = '已生成可编辑学习计划';
         _saveLog = plan.summary.isNotEmpty;
-        _saveTasks = plan.taskDrafts.isNotEmpty;
+        _saveTasks = plan.taskDrafts.isNotEmpty || plan.reviewPlan.isNotEmpty;
         _saveNote = plan.noteDraft.title.isNotEmpty || plan.noteDraft.content.isNotEmpty;
-        _saveFlashcards = plan.flashcards.isNotEmpty;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _isGeneratingLoop = false;
-        _statusText = 'AI 闭环生成失败：$error';
+        _statusText = '学习计划生成失败：$error';
       });
     }
   }
 
   Future<void> _generateTodayMission() async {
+    if (_isGeneratingMission) return;
+    final localPlan = const LocalTodayMissionBuilder().build(
+      tasks: widget.controller.studyTasks,
+      logs: widget.controller.studyLogs,
+    );
     setState(() {
       _isGeneratingMission = true;
-      _statusText = '正在生成今日最优学习路径...';
+      _statusText = '已先整理本地今日安排，正在尝试云端优化...';
     });
+    _setTodayMissionPlan(
+      localPlan,
+      '已先整理本地今日安排，正在尝试云端优化...',
+      saveTasks: false,
+      keepBusy: true,
+    );
     try {
-      final plan = await widget.controller.aiStudyService.generateLearningLoop(
-        sourceText: '请基于当前任务、日志、笔记、闪卡和学习 streak，生成今天最优学习路径。',
-        sourceKind: 'manual',
-        target: 'task',
-        context: AiAppContextBuilder.build(
-          widget.controller,
-          currentLocation: 'today_mission',
-        ),
+      final plan = await widget.controller.aiStudyService.generateTodayMission(
+        context: _buildTodayMissionContext(),
       );
       if (!mounted) return;
-      setState(() {
-        _plan = plan;
-        _isGeneratingMission = false;
-        _statusText = '今日路径已生成，可一键落地或启动专注';
-        _saveLog = false;
-        _saveTasks = plan.taskDrafts.isNotEmpty || plan.reviewPlan.isNotEmpty;
-        _saveNote = false;
-        _saveFlashcards = false;
-      });
+      if (!_hasExecutableTodayPlan(plan)) {
+        setState(() {
+          _isGeneratingMission = false;
+          _statusText = '云端没有返回可执行安排，已保留本地今日安排';
+        });
+        StudyToast.show(context, '已保留本地今日安排');
+        return;
+      }
+      _setTodayMissionPlan(plan, '今日安排已生成，可保存到学习计划或启动专注');
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _isGeneratingMission = false;
-        _statusText = '今日路径生成失败：$error';
+        _statusText = '云端生成暂时较慢，已保留本地可编辑安排';
       });
+      StudyToast.show(context, '云端生成较慢，已先使用本地安排');
     }
+  }
+
+  void _setTodayMissionPlan(
+    AiLearningLoopPlan plan,
+    String statusText, {
+    bool? saveTasks,
+    bool keepBusy = false,
+  }) {
+    setState(() {
+      _plan = plan;
+      _isGeneratingMission = keepBusy;
+      _statusText = statusText;
+      _saveLog = false;
+      _saveTasks =
+          saveTasks ?? (plan.taskDrafts.isNotEmpty || plan.reviewPlan.isNotEmpty);
+      _saveNote = false;
+    });
+  }
+
+  List<String> _buildTodayMissionContext() {
+    final pendingTasks = widget.controller.studyTasks
+        .where((task) => task.effectiveStatus != StudyTaskStatus.completed)
+        .take(6)
+        .map((task) =>
+            '${task.title}｜${task.courseName}｜截止 ${_shortDate(task.deadline)}｜${task.effectiveStatus.label}')
+        .toList();
+    final recentLogs = widget.controller.studyLogs
+        .take(3)
+        .map((log) =>
+            '${_shortDate(log.date)}｜${log.courseName}｜${_clip(log.content, 48)}｜下一步 ${_clip(log.nextPlan, 36)}')
+        .toList();
+    return [
+      '当前位置：today_mission',
+      '可用课程：${widget.controller.courses.take(8).join('、')}',
+      if (pendingTasks.isNotEmpty) '未完成任务：${pendingTasks.join('\n')}',
+      if (recentLogs.isNotEmpty) '最近学习日志：${recentLogs.join('\n')}',
+    ];
+  }
+
+  bool _hasExecutableTodayPlan(AiLearningLoopPlan plan) =>
+      plan.taskDrafts.isNotEmpty || plan.reviewPlan.isNotEmpty;
+
+  String _shortDate(DateTime value) =>
+      '${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  String _clip(String value, int maxLength) {
+    final trimmed = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (trimmed.length <= maxLength) return trimmed;
+    return '${trimmed.substring(0, maxLength)}...';
   }
 
   Future<void> _checkPlanBeforeApply() async {
@@ -313,8 +340,8 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
     ].join('\n');
     try {
       final result = await widget.controller.aiStudyService.generateAssistantReply(
-        input: '请对以下学习闭环做落地前自检：检查截止时间冲突、任务密度、课程分布和是否适合今天执行。'
-            '用 3 条以内中文给出风险和调整建议。\n\n待落地计划：\n$planText\n\n现有待办：\n$pendingTasks',
+        input: '请对以下学习计划做保存前检查：检查截止时间冲突、任务密度、课程分布和是否适合今天执行。'
+            '用 3 条以内中文给出风险和调整建议。\n\n待保存计划：\n$planText\n\n现有待办：\n$pendingTasks',
         purpose: 'chat',
       );
       if (!mounted) return;
@@ -330,7 +357,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
   String _localPlanCheck(AiLearningLoopPlan plan) {
     final warnings = <String>[];
     if (plan.taskDrafts.length >= 3 && plan.reviewPlan.length >= 3) {
-      warnings.add('计划内容较满，建议先落地 1-2 个最关键任务。');
+      warnings.add('计划内容较满，建议先保存 1-2 个最关键任务。');
     }
     final courses = {
       ...widget.controller.studyTasks
@@ -346,7 +373,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
       warnings.add('部分专注块较长，可拆成 25-45 分钟的小块。');
     }
     if (warnings.isEmpty) {
-      warnings.add('未发现明显冲突，可以先落地任务和闪卡，再启动第一个专注块。');
+      warnings.add('未发现明显冲突，可以先保存任务，再启动第一个专注块。');
     }
     return warnings.map((item) => '· $item').join('\n');
   }
@@ -357,9 +384,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
     if (_planCheckText.trim().isEmpty) {
       await _checkPlanBeforeApply();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请确认落地前自检建议，再次点击即可落地')),
-      );
+      StudyToast.show(context, '请确认保存前检查建议，再次点击即可保存');
       return;
     }
     setState(() => _isApplying = true);
@@ -379,7 +404,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
         await widget.controller.addStudyNote(
           title: plan.noteDraft.title.isNotEmpty
               ? plan.noteDraft.title
-              : '${plan.courseName.isEmpty ? '学习' : plan.courseName}闭环笔记',
+              : '${plan.courseName.isEmpty ? '学习' : plan.courseName}复盘笔记',
           content: plan.noteDraft.content.isNotEmpty
               ? plan.noteDraft.content
               : plan.summary,
@@ -388,15 +413,14 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
         );
         created++;
       }
-      if (_saveFlashcards) created += await _createFlashcards(plan);
       if (created > 0) {
         await widget.controller.appendActionRecord(
           AiActionRecord(
             id: 'action_loop_${DateTime.now().microsecondsSinceEpoch}',
             toolId: 'loop.create_from_source',
-            targetTitle: plan.courseName.isEmpty ? '学习闭环' : plan.courseName,
+            targetTitle: plan.courseName.isEmpty ? '学习计划' : plan.courseName,
             status: AiActionStatus.executed,
-            resultMessage: '已落地 $created 项学习内容',
+            resultMessage: '已保存 $created 项学习内容',
             params: {
               'summary': plan.summary,
               'createdCount': created,
@@ -420,9 +444,9 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
               .create(
                 type: 'aiLoopApplied',
                 title: plan.courseName.isEmpty
-                    ? 'AI 学习闭环已落地'
-                    : '${plan.courseName} AI 学习闭环已落地',
-                summary: '已从 AI 闭环落地 $created 项学习内容',
+                    ? '学习内容已保存'
+                    : '${plan.courseName} 学习内容已保存',
+                summary: '已保存 $created 项学习内容',
                 sourceType: 'ai_action',
                 sourceId: 'loop.create_from_source',
                 payloadJson: {
@@ -437,16 +461,14 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
       if (!mounted) return;
       setState(() {
         _isApplying = false;
-        _statusText = created == 0 ? '没有勾选可落地内容' : '已落地 $created 项学习内容';
+        _statusText = created == 0 ? '没有勾选可保存内容' : '已保存 $created 项学习内容';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(created == 0 ? '没有勾选可落地内容' : '已落地 $created 项学习内容')),
-      );
+      StudyToast.show(context, created == 0 ? '没有勾选可保存内容' : '已保存 $created 项学习内容');
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _isApplying = false;
-        _statusText = '落地失败：$error';
+        _statusText = '保存失败：$error';
       });
     }
   }
@@ -491,23 +513,6 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
     return created;
   }
 
-  Future<int> _createFlashcards(AiLearningLoopPlan plan) async {
-    final now = DateTime.now();
-    final cards = plan.flashcards.take(8).map((draft) {
-      final index = plan.flashcards.indexOf(draft);
-      return AiFlashCard(
-        id: 'fc_loop_${now.microsecondsSinceEpoch}_$index',
-        question: draft.question,
-        answer: draft.answer,
-        hint: draft.hint,
-        courseName: draft.courseName.isNotEmpty ? draft.courseName : plan.courseName,
-        createdAt: now,
-      );
-    }).toList();
-    if (cards.isNotEmpty) await widget.controller.addFlashCards(cards);
-    return cards.length;
-  }
-
   List<NoteBlock> _noteBlocks(AiLearningLoopPlan plan) {
     var idCounter = DateTime.now().microsecondsSinceEpoch;
     String id() => 'block_${idCounter++}';
@@ -525,6 +530,9 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
         'heading' => NoteBlockType.heading,
         'bullet' => NoteBlockType.bullet,
         'todo' => NoteBlockType.todo,
+        'markdown' => NoteBlockType.markdown,
+        'image' => NoteBlockType.image,
+        'code' => NoteBlockType.code,
         _ => NoteBlockType.text,
       };
       return NoteBlock(id: id(), type: type, content: block.content);
@@ -612,166 +620,6 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
     }
   }
 
-  void _showMemorySheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _MemorySearchSheet(
-        isDarkMode: widget.isDarkMode,
-        controller: _memoryController,
-        isBusy: false,
-        onSearch: _searchMemory,
-      ),
-    );
-  }
-
-  Future<void> _searchMemory() async {
-    final query = _memoryController.text.trim();
-    if (query.isEmpty) return;
-    Navigator.of(context).pop();
-    setState(() {
-      _statusText = '正在用查询改写和语义排序召回学习记忆...';
-      _memoryAnswer = '';
-      _memoryEvidence = const [];
-      _memoryCapabilityTraces = const [];
-    });
-    try {
-      List<_MemoryEvidence> evidence;
-      try {
-        final local = _localMemoryContext(query);
-        await widget.controller.vivoCapabilityService.indexMemory(
-          local
-              .map((item) => {
-                    'sourceType': item.type,
-                    'sourceId': item.id,
-                    'title': item.title,
-                    'content': item.asContext,
-                  })
-              .toList(),
-        );
-        final result =
-            await widget.controller.vivoCapabilityService.searchMemory(query);
-        evidence = result.hits
-            .map(
-              (hit) => _MemoryEvidence(
-                id: hit['sourceId']?.toString() ?? '',
-                type: hit['sourceType']?.toString() ?? '向量记忆',
-                title: hit['title']?.toString() ?? '',
-                summary:
-                    '${hit['content']?.toString() ?? ''}｜相似度 ${(num.tryParse(hit['score']?.toString() ?? '') ?? 0).toStringAsFixed(3)}',
-              ),
-            )
-            .take(5)
-            .toList();
-        if (evidence.isEmpty) evidence = await _buildMemoryContext(query);
-        if (mounted) {
-          setState(() => _memoryCapabilityTraces = result.capabilityTraces);
-        }
-      } catch (_) {
-        evidence = await _buildMemoryContext(query);
-      }
-      final reply = await widget.controller.aiStudyService.generateAssistantReply(
-        input: '请根据召回的个人学习资料回答：$query。回答后给出一个下一步学习动作建议。',
-        context: evidence.map((item) => item.asContext).toList(),
-        purpose: 'chat',
-      );
-      if (!mounted) return;
-      setState(() {
-        _memoryAnswer = reply;
-        _memoryEvidence = evidence.take(5).toList();
-        _statusText = _memoryCapabilityTraces.isNotEmpty
-            ? '已基于向量检索和学习证据返回回答'
-            : '已基于查询改写、重排和学习证据返回回答';
-      });
-    } catch (error) {
-      if (!mounted) return;
-      final evidence = _localMemoryContext(query).take(5).toList();
-      setState(() {
-        _memoryAnswer = evidence.map((item) => item.asContext).join('\n');
-        _memoryEvidence = evidence;
-        _memoryCapabilityTraces = const [];
-        _statusText = '语义检索失败，已显示本地召回结果';
-      });
-    }
-  }
-
-  Future<List<_MemoryEvidence>> _buildMemoryContext(String query) async {
-    final local = _localMemoryContext(query);
-    if (local.isEmpty) {
-      return const [
-        _MemoryEvidence(
-          type: '空结果',
-          title: '未找到明显相关资料',
-          summary: '可以先记录学习日志或沉淀笔记，再回来检索。',
-        ),
-      ];
-    }
-    try {
-      final service = widget.controller.createSemanticSearchService();
-      final hits = await service.search<_MemoryEvidence>(
-        query: query,
-        candidates: local
-            .map((item) => SemanticSearchCandidate<_MemoryEvidence>(
-                  item: item,
-                  text: item.asContext,
-                  id: item.id,
-                ))
-            .toList(),
-      );
-      return hits.take(5).map((hit) => hit.item).toList();
-    } catch (_) {
-      return local.take(5).toList();
-    }
-  }
-
-  List<_MemoryEvidence> _localMemoryContext(String query) {
-    final q = query.toLowerCase();
-    final all = <_MemoryEvidence>[
-      ...widget.controller.studyTasks.map((task) => _MemoryEvidence(
-            id: 'task_${task.id}',
-            type: '任务',
-            title: task.title,
-            courseName: task.courseName,
-            summary:
-                '${task.note}｜截止 ${task.deadline.toIso8601String()}｜状态 ${task.effectiveStatus.name}',
-          )),
-      ...widget.controller.studyLogs.map((log) => _MemoryEvidence(
-            id: 'log_${log.id}',
-            type: '日志',
-            title: log.courseName.isEmpty ? '学习日志' : log.courseName,
-            courseName: log.courseName,
-            summary:
-                '${log.content}｜问题 ${log.problems}｜下一步 ${log.nextPlan}',
-          )),
-      ...widget.controller.studyNotes.where((note) => !note.isFolder).map(
-            (note) => _MemoryEvidence(
-              id: 'note_${note.id}',
-              type: '笔记',
-              title: note.title,
-              courseName: note.courseName,
-              summary: note.content,
-            ),
-          ),
-      ...widget.controller.flashCards.map((card) => _MemoryEvidence(
-            id: 'card_${card.id}',
-            type: '闪卡',
-            title: card.question,
-            courseName: card.courseName,
-            summary: card.answer,
-          )),
-      ...widget.controller.recentActionRecords.map((record) => _MemoryEvidence(
-            id: 'ai_${record.id}',
-            type: 'AI 操作',
-            title: record.targetTitle ?? record.toolId,
-            summary: record.resultMessage ?? record.errorMessage ?? '',
-          )),
-    ];
-    final matches = all
-        .where((item) => item.asContext.toLowerCase().contains(q))
-        .toList();
-    return matches.isEmpty ? all.take(12).toList() : matches.take(12).toList();
-  }
 }
 
 class _HeroPanel extends StatelessWidget {
@@ -779,8 +627,6 @@ class _HeroPanel extends StatelessWidget {
     required this.isDarkMode,
     required this.accent,
     required this.onPhotoLoop,
-    required this.onMission,
-    required this.onMemoryTap,
     required this.onVoiceReview,
     required this.isRecordingReview,
   });
@@ -788,71 +634,52 @@ class _HeroPanel extends StatelessWidget {
   final bool isDarkMode;
   final Color accent;
   final VoidCallback onPhotoLoop;
-  final VoidCallback onMission;
-  final VoidCallback onMemoryTap;
   final VoidCallback onVoiceReview;
   final bool isRecordingReview;
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
-    return GlassCard(
-      color: isDarkMode ? Colors.white.withValues(alpha: 0.08) : Colors.white,
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return StudyCard(
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           BadgePill(
-            label: 'vivo AIGC · AI 学习操作层',
-            background: accent.withValues(alpha: 0.12),
+            label: 'AI学习助手',
+            background: StudyUi.chipBackground(accent, isDarkMode),
             foreground: accent,
           ),
           const SizedBox(height: 14),
           Text(
-            '拍一下或说一句，AI 直接安排学习',
+            '拍一下或说一句，整理出可执行学习安排',
             style: TextStyle(
               color: titleColor,
               fontSize: 24,
               height: 1.12,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            '材料感知、意图理解、个人记忆召回和任务执行串成一条闭环。',
+            '资料识别和语音复盘集中在一个清楚流程里。',
             style: TextStyle(color: bodyColor, height: 1.4),
           ),
           const SizedBox(height: 16),
           _HeroAction(
             icon: Icons.photo_camera_rounded,
-            title: '一拍成学习闭环',
-            subtitle: '课件 / 笔记 / 题目 → 记录、任务、笔记、闪卡',
-            color: const Color(0xFF238BFF),
+            title: '拍照整理学习',
+            subtitle: '课件 / 笔记 / 题目 → 记录、任务、复习路径',
+            color: StudyUi.secondary,
             onTap: onPhotoLoop,
           ),
           const SizedBox(height: 10),
           _HeroAction(
-            icon: Icons.route_rounded,
-            title: '今日最优学习路径',
-            subtitle: '按任务、日志、闪卡和 streak 生成专注块',
-            color: const Color(0xFF4BC4A1),
-            onTap: onMission,
-          ),
-          const SizedBox(height: 10),
-          _HeroAction(
-            icon: Icons.manage_search_rounded,
-            title: '问我的学习记忆',
-            subtitle: '查询改写 + 语义排序召回个人学习资料',
-            color: const Color(0xFFFF9F50),
-            onTap: onMemoryTap,
-          ),
-          const SizedBox(height: 10),
-          _HeroAction(
             icon: isRecordingReview ? Icons.stop_circle_rounded : Icons.mic_rounded,
-            title: isRecordingReview ? '结束语音复盘' : '云端语音复盘',
-            subtitle: '主动录音 → 云端转写 → 生成可落地复盘闭环',
-            color: const Color(0xFF7C3AED),
+            title: isRecordingReview ? '结束语音复盘' : '语音复盘',
+            subtitle: '录音转文字，整理成下一步复习动作',
+            color: StudyUi.primary,
             onTap: onVoiceReview,
           ),
         ],
@@ -909,33 +736,6 @@ class _HeroAction extends StatelessWidget {
   }
 }
 
-class _CapabilityChain extends StatelessWidget {
-  const _CapabilityChain({required this.isDarkMode});
-
-  final bool isDarkMode;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = const [
-      ('vivo OCR', Icons.document_scanner_rounded),
-      ('查询改写', Icons.tune_rounded),
-      ('语义排序', Icons.sort_rounded),
-      ('蓝心决策', Icons.auto_awesome_rounded),
-    ];
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: items
-          .map((item) => Chip(
-                avatar: Icon(item.$2, size: 16),
-                label: Text(item.$1),
-                visualDensity: VisualDensity.compact,
-              ))
-          .toList(),
-    );
-  }
-}
-
 class _ManualSourceCard extends StatelessWidget {
   const _ManualSourceCard({
     required this.isDarkMode,
@@ -951,9 +751,8 @@ class _ManualSourceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
-    return GlassCard(
-      color: isDarkMode ? Colors.white.withValues(alpha: 0.08) : Colors.white,
+    final titleColor = StudyUi.title(isDarkMode);
+    return StudyCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -967,12 +766,10 @@ class _ManualSourceCard extends StatelessWidget {
             decoration: InputDecoration(
               hintText: '粘贴课程通知、课堂笔记、题目或复习目标...',
               filled: true,
-              fillColor: isDarkMode
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFF3F6FC),
+              fillColor: StudyUi.surfaceAlt(isDarkMode),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
+                borderSide: BorderSide(color: StudyUi.border(isDarkMode)),
               ),
             ),
           ),
@@ -987,8 +784,8 @@ class _ManualSourceCard extends StatelessWidget {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.auto_awesome_rounded),
-              label: Text(isBusy ? '生成中...' : '生成学习闭环'),
+                  : const Icon(Icons.route_rounded),
+              label: Text(isBusy ? '生成中...' : '生成学习计划'),
             ),
           ),
         ],
@@ -1005,14 +802,12 @@ class _LoopPreview extends StatelessWidget {
     required this.saveLog,
     required this.saveTasks,
     required this.saveNote,
-    required this.saveFlashcards,
     required this.isApplying,
     required this.isCheckingPlan,
     required this.planCheckText,
     required this.onSaveLogChanged,
     required this.onSaveTasksChanged,
     required this.onSaveNoteChanged,
-    required this.onSaveFlashcardsChanged,
     required this.onCheckPlan,
     required this.onApply,
     required this.onStartFocus,
@@ -1024,24 +819,21 @@ class _LoopPreview extends StatelessWidget {
   final bool saveLog;
   final bool saveTasks;
   final bool saveNote;
-  final bool saveFlashcards;
   final bool isApplying;
   final bool isCheckingPlan;
   final String planCheckText;
   final ValueChanged<bool> onSaveLogChanged;
   final ValueChanged<bool> onSaveTasksChanged;
   final ValueChanged<bool> onSaveNoteChanged;
-  final ValueChanged<bool> onSaveFlashcardsChanged;
   final VoidCallback onCheckPlan;
   final VoidCallback onApply;
   final VoidCallback onStartFocus;
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
-    return GlassCard(
-      color: isDarkMode ? Colors.white.withValues(alpha: 0.08) : Colors.white,
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return StudyCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1049,70 +841,21 @@ class _LoopPreview extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text('闭环预览', style: TextStyle(color: titleColor, fontSize: 18, fontWeight: FontWeight.w900)),
+                child: Text('计划预览', style: TextStyle(color: titleColor, fontSize: 18, fontWeight: FontWeight.w800)),
               ),
               if (plan.courseName.isNotEmpty)
-                BadgePill(label: plan.courseName, background: accent.withValues(alpha: 0.12), foreground: accent),
+                BadgePill(label: plan.courseName, background: StudyUi.chipBackground(accent, isDarkMode), foreground: accent),
             ],
           ),
           const SizedBox(height: 8),
-          Text(plan.summary.isEmpty ? 'AI 已生成可编辑草稿。' : plan.summary,
+          Text(plan.summary.isEmpty ? '已整理出可编辑草稿。' : plan.summary,
               style: TextStyle(color: bodyColor, height: 1.38)),
-          if (plan.concepts.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: plan.concepts.take(8).map((c) => Chip(label: Text(c), visualDensity: VisualDensity.compact)).toList(),
-            ),
-          ],
-          if (plan.vivoCapabilitiesUsed.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: plan.vivoCapabilitiesUsed
-                  .map(
-                    (capability) => Chip(
-                      avatar: const Icon(Icons.verified_rounded, size: 15),
-                      label: Text(capability),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
-          if (plan.capabilityTraces.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: plan.capabilityTraces
-                    .map(
-                      (trace) => Text(
-                        '${trace.abilityName} · ${trace.success ? '成功' : '降级'} · ${trace.durationMs} ms'
-                        '${trace.fallback == null ? '' : ' · ${trace.fallback}'}',
-                        style: TextStyle(color: bodyColor, fontSize: 12, height: 1.35),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-          ],
           const Divider(height: 24),
           _PreviewSwitch(label: '保存学习记录', value: saveLog, enabled: plan.summary.isNotEmpty, onChanged: onSaveLogChanged),
           _PreviewSwitch(label: '创建任务拆解', value: saveTasks, enabled: plan.taskDrafts.isNotEmpty || plan.reviewPlan.isNotEmpty, onChanged: onSaveTasksChanged),
           _PreviewSwitch(label: '沉淀学习笔记', value: saveNote, enabled: plan.noteDraft.title.isNotEmpty || plan.noteDraft.content.isNotEmpty, onChanged: onSaveNoteChanged),
-          _PreviewSwitch(label: '生成知识闪卡', value: saveFlashcards, enabled: plan.flashcards.isNotEmpty, onChanged: onSaveFlashcardsChanged),
           const SizedBox(height: 8),
           _PreviewList(title: '任务', items: plan.taskDrafts.map((t) => t.title).toList()),
-          _PreviewList(title: '闪卡', items: plan.flashcards.map((f) => f.question).toList()),
           _PreviewList(title: '复习路径', items: plan.reviewPlan.map((r) => '${r.title} · ${r.minutes} 分钟').toList()),
           if (planCheckText.trim().isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -1137,7 +880,7 @@ class _LoopPreview extends StatelessWidget {
               icon: isCheckingPlan
                   ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.fact_check_rounded),
-              label: Text(isCheckingPlan ? '自检中...' : '落地前自检'),
+              label: Text(isCheckingPlan ? '检查中...' : '保存前检查'),
             ),
           ),
           const SizedBox(height: 10),
@@ -1157,7 +900,7 @@ class _LoopPreview extends StatelessWidget {
                   icon: isApplying
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.done_all_rounded),
-                  label: Text(isApplying ? '落地中...' : '一键落地'),
+                  label: Text(isApplying ? '保存中...' : '保存到学习计划'),
                 ),
               ),
             ],
@@ -1232,184 +975,20 @@ class _TodayMissionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      color: isDarkMode ? Colors.white.withValues(alpha: 0.08) : Colors.white,
+    return StudyCard(
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const Icon(Icons.route_rounded, color: Color(0xFF4BC4A1)),
+          const Icon(Icons.route_rounded, color: StudyUi.success),
           const SizedBox(width: 12),
           const Expanded(
-            child: Text('不知道今天怎么学时，让 AI 直接生成 2-4 个可执行专注块。'),
+            child: Text('不知道今天怎么学时，先按本地待办生成专注块，云端可用时自动优化。'),
           ),
           TextButton(
             onPressed: isBusy ? null : onGenerate,
-            child: Text(isBusy ? '生成中' : '生成'),
+            child: Text(isBusy ? '优化中' : '生成'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MemoryAnswerCard extends StatelessWidget {
-  const _MemoryAnswerCard({
-    required this.isDarkMode,
-    required this.answer,
-    required this.evidence,
-    required this.capabilityTraces,
-  });
-
-  final bool isDarkMode;
-  final String answer;
-  final List<_MemoryEvidence> evidence;
-  final List<AiCapabilityTrace> capabilityTraces;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      color: isDarkMode ? Colors.white.withValues(alpha: 0.08) : Colors.white,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(answer, style: const TextStyle(height: 1.45)),
-          if (capabilityTraces.isNotEmpty) ...[
-            const Divider(height: 24),
-            const Text('能力调用证据', style: TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
-            ...capabilityTraces.map(
-              (trace) => Text(
-                '${trace.abilityName} · ${trace.success ? '成功' : '失败'} · ${trace.endpoint} · ${trace.durationMs} ms',
-                style: const TextStyle(fontSize: 12, height: 1.35),
-              ),
-            ),
-          ],
-          if (evidence.isNotEmpty) ...[
-            const Divider(height: 24),
-            const Text(
-              '证据来源',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            ...evidence.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Chip(
-                      label: Text(item.type),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          if (item.summary.trim().isNotEmpty)
-                            Text(
-                              item.summary,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12, height: 1.3),
-                            ),
-                          if (item.id.trim().isNotEmpty)
-                            Text(
-                              '来源 ID：${item.id}',
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _MemoryEvidence {
-  const _MemoryEvidence({
-    this.id = '',
-    required this.type,
-    required this.title,
-    this.courseName = '',
-    this.summary = '',
-  });
-
-  final String id;
-  final String type;
-  final String title;
-  final String courseName;
-  final String summary;
-
-  String get asContext {
-    return '$type：$title'
-        '${courseName.trim().isEmpty ? '' : '｜$courseName'}'
-        '${summary.trim().isEmpty ? '' : '｜$summary'}';
-  }
-}
-
-class _MemorySearchSheet extends StatelessWidget {
-  const _MemorySearchSheet({
-    required this.isDarkMode,
-    required this.controller,
-    required this.isBusy,
-    required this.onSearch,
-  });
-
-  final bool isDarkMode;
-  final TextEditingController controller;
-  final bool isBusy;
-  final VoidCallback onSearch;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-        decoration: BoxDecoration(
-          color: isDarkMode ? const Color(0xFF161D2A) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('问我的学习记忆', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: '例如：上次数据库索引问题',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onSubmitted: (_) => onSearch(),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: isBusy ? null : onSearch,
-                icon: const Icon(Icons.manage_search_rounded),
-                label: const Text('语义检索'),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

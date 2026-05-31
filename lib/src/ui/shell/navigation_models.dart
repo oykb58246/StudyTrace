@@ -148,9 +148,9 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.overview:
         return '作品总览';
       case AdminSection.aiAssistant:
-        return 'AI 功能';
+        return 'AI学习助手';
       case AdminSection.aiSettings:
-        return 'AI 设置';
+        return 'AI设置';
       case AdminSection.notes:
         return '学习笔记';
       case AdminSection.statistics:
@@ -176,7 +176,7 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.settings:
         return '系统设置';
       case AdminSection.auditLog:
-        return 'AI 操作记录';
+        return 'AI操作记录';
       case AdminSection.trash:
         return '回收站';
     }
@@ -187,9 +187,9 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.overview:
         return '学习数据总览与周报入口。';
       case AdminSection.aiAssistant:
-        return 'AI 学习助手、聊天、日志生成、任务拆解与周报分析。';
+        return 'AI学习助手、聊天、日志生成、任务拆解与周报分析。';
       case AdminSection.aiSettings:
-        return 'AI 模型状态、参数调节与云服务配置。';
+        return '助手状态、语音偏好与服务连通性。';
       case AdminSection.notes:
         return '记录课堂笔记、学习心得与知识整理。';
       case AdminSection.statistics:
@@ -197,9 +197,9 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.timer:
         return '番茄钟计时器，帮助保持专注学习节奏。';
       case AdminSection.flashCard:
-        return 'AI 从学习记录生成知识闪卡，巩固复习。';
+        return '从学习记录生成知识闪卡，巩固复习。';
       case AdminSection.learningMoments:
-        return '像朋友圈一样记录学习图文，并把任务、日志、笔记和 AI 操作汇成可追溯时间线。';
+        return '像朋友圈一样记录学习图文，并把任务、日志、笔记和AI操作汇成可追溯时间线。';
       case AdminSection.studyGroup:
         return '参与学习小组，与同伴交流讨论，共同进步。';
       case AdminSection.leaderboard:
@@ -215,7 +215,7 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.settings:
         return '管理通知、权限、隐私与系统偏好。';
       case AdminSection.auditLog:
-        return '查看 AI 操作历史与执行结果。';
+        return '查看AI操作历史与执行结果。';
       case AdminSection.trash:
         return '回收站中已删除的数据，可恢复或永久删除。';
     }
@@ -226,7 +226,7 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.overview:
         return Icons.home_outlined;
       case AdminSection.aiAssistant:
-        return Icons.auto_awesome_rounded;
+        return Icons.tips_and_updates_rounded;
       case AdminSection.aiSettings:
         return Icons.tune_rounded;
       case AdminSection.notes:
@@ -263,11 +263,11 @@ extension AdminSectionMeta on AdminSection {
   Color get accent {
     switch (this) {
       case AdminSection.overview:
-        return const Color(0xFF7D9BFF);
+        return const Color(0xFF4F7EE8);
       case AdminSection.aiAssistant:
         return const Color(0xFF4470E8);
       case AdminSection.aiSettings:
-        return const Color(0xFF8C7CFF);
+        return const Color(0xFF4F7EE8);
       case AdminSection.notes:
         return const Color(0xFF4CB9FF);
       case AdminSection.statistics:

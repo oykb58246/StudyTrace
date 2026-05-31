@@ -7,6 +7,14 @@ Widget buildLocalImageFromPath(
   required BoxFit fit,
   required Widget Function(BuildContext, Object, StackTrace?) errorBuilder,
 }) {
+  final uri = Uri.tryParse(path);
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    return Image.network(
+      path,
+      fit: fit,
+      errorBuilder: errorBuilder,
+    );
+  }
   return Image.file(
     File(path),
     fit: fit,

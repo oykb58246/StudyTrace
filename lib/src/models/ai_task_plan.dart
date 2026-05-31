@@ -16,13 +16,15 @@ class AiPlannedSubTask {
   factory AiPlannedSubTask.fromJson(Map<String, dynamic> json) {
     DateTime? startAt;
     if (json['startAt'] != null) {
-      startAt = DateTime.tryParse(json['startAt'] as String);
+      startAt = DateTime.tryParse(json['startAt'].toString());
     }
+    final fallbackDeadline = DateTime.now().add(const Duration(days: 7));
     return AiPlannedSubTask(
-      title: json['title'] as String,
+      title: json['title']?.toString() ?? '',
       startAt: startAt,
-      deadline: DateTime.parse(json['deadline'] as String),
-      note: json['note'] as String? ?? '',
+      deadline: DateTime.tryParse(json['deadline']?.toString() ?? '') ??
+          fallbackDeadline,
+      note: json['note']?.toString() ?? '',
     );
   }
 }
@@ -54,25 +56,26 @@ class AiTaskPlan {
     if (rawPlanned is List) {
       for (final item in rawPlanned) {
         if (item is Map<String, dynamic>) {
-          planned.add(AiPlannedSubTask.fromJson(item));
+          final plannedSubTask = AiPlannedSubTask.fromJson(item);
+          if (plannedSubTask.title.trim().isNotEmpty) planned.add(plannedSubTask);
         }
       }
     }
 
+    final fallbackDeadline = DateTime.now().add(const Duration(days: 7));
     return AiTaskPlan(
-      mainTitle: json['mainTitle'] as String,
-      taskType: _parseType(json['taskType'] as String? ?? 'other'),
-      courseName: json['courseName'] as String? ?? '',
-      deadline: json['deadline'] != null
-          ? DateTime.parse(json['deadline'] as String)
-          : DateTime.now().add(const Duration(days: 7)),
-      difficulty: json['difficulty'] as String? ?? '中等',
+      mainTitle: json['mainTitle']?.toString() ?? '',
+      taskType: _parseType(json['taskType']?.toString() ?? 'other'),
+      courseName: json['courseName']?.toString() ?? '',
+      deadline: DateTime.tryParse(json['deadline']?.toString() ?? '') ??
+          fallbackDeadline,
+      difficulty: json['difficulty']?.toString() ?? '中等',
       subTasks: (json['subTasks'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           [],
       plannedSubTasks: planned,
-      schedule: json['schedule'] as String? ?? '',
+      schedule: json['schedule']?.toString() ?? '',
     );
   }
 

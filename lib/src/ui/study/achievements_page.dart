@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../models/achievement.dart';
 import '../../theme/app_theme.dart';
+import '../shared/common_widgets.dart';
 
 class AchievementsPage extends StatelessWidget {
   const AchievementsPage({
@@ -16,114 +17,190 @@ class AchievementsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor = isDarkMode ? AppColors.darkBody : AppColors.body;
-    final cardColor = isDarkMode ? const Color(0xFF1E2430) : Colors.white;
     final accent = controller.primaryColor;
-
-    final unlockedTypes = controller.unlockedAchievements
-        .map((u) => u.type)
-        .toSet();
+    final unlockedByType = {
+      for (final record in controller.unlockedAchievements) record.type: record,
+    };
+    final unlocked = Achievement.all
+        .where((achievement) => unlockedByType.containsKey(achievement.type))
+        .toList();
+    final locked = Achievement.all
+        .where((achievement) => !unlockedByType.containsKey(achievement.type))
+        .toList();
+    final total = Achievement.all.length;
+    final level = _levelFor(controller.totalPoints);
+    final nextLevel = _nextLevelPoints(controller.totalPoints);
+    final levelStart = _levelStart(level);
+    final levelProgress = nextLevel == null
+        ? 1.0
+        : ((controller.totalPoints - levelStart) / (nextLevel - levelStart))
+            .clamp(0.0, 1.0);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
       children: [
-        // 积分概览
-        _PointsSummaryCard(
+        _PointsHero(
+          accent: accent,
           totalPoints: controller.totalPoints,
           streakDays: controller.studyStreak,
-          unlockedCount: controller.unlockedAchievements.length,
-          totalCount: Achievement.all.length,
+          level: level,
+          nextLevelPoints: nextLevel,
+          levelProgress: levelProgress,
+          unlockedCount: unlocked.length,
+          totalCount: total,
+        ),
+        const SizedBox(height: 18),
+        _BadgeWall(
+          achievements: Achievement.all,
+          unlockedByType: unlockedByType,
           accent: accent,
           isDarkMode: isDarkMode,
         ),
-        const SizedBox(height: 24),
-        Text(
-          '全部成就',
-          style: TextStyle(
-            color: textColor,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
+        const SizedBox(height: 22),
+        _SectionTitle(
+          title: '已解锁',
+          subtitle: '${unlocked.length} 个徽章已收入你的学习档案',
+          isDarkMode: isDarkMode,
         ),
         const SizedBox(height: 12),
-        // 成就列表
-        ...Achievement.all.map((achievement) {
-          final isUnlocked = unlockedTypes.contains(achievement.type);
-          final unlockedRecord = controller.unlockedAchievements
-              .where((u) => u.type == achievement.type)
-              .firstOrNull;
-          return _AchievementTile(
+        if (unlocked.isEmpty)
+          _EmptyAchievementCard(isDarkMode: isDarkMode)
+        else
+          ...unlocked.map(
+            (achievement) => _AchievementTile(
+              achievement: achievement,
+              isUnlocked: true,
+              unlockedAt: unlockedByType[achievement.type]?.unlockedAt,
+              accent: accent,
+              isDarkMode: isDarkMode,
+            ),
+          ),
+        const SizedBox(height: 18),
+        _SectionTitle(
+          title: '待解锁',
+          subtitle: '继续记录、复盘和生成闪卡，慢慢点亮它们',
+          isDarkMode: isDarkMode,
+        ),
+        const SizedBox(height: 12),
+        ...locked.map(
+          (achievement) => _AchievementTile(
             achievement: achievement,
-            isUnlocked: isUnlocked,
-            unlockedAt: unlockedRecord?.unlockedAt,
-            cardColor: cardColor,
-            textColor: textColor,
-            bodyColor: bodyColor,
+            isUnlocked: false,
             accent: accent,
             isDarkMode: isDarkMode,
-          );
-        }),
+          ),
+        ),
       ],
     );
   }
 }
 
-class _PointsSummaryCard extends StatelessWidget {
-  const _PointsSummaryCard({
+class _PointsHero extends StatelessWidget {
+  const _PointsHero({
+    required this.accent,
     required this.totalPoints,
     required this.streakDays,
+    required this.level,
+    required this.nextLevelPoints,
+    required this.levelProgress,
     required this.unlockedCount,
     required this.totalCount,
-    required this.accent,
-    required this.isDarkMode,
   });
 
+  final Color accent;
   final int totalPoints;
   final int streakDays;
+  final int level;
+  final int? nextLevelPoints;
+  final double levelProgress;
   final int unlockedCount;
   final int totalCount;
-  final Color accent;
-  final bool isDarkMode;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [accent, accent.withValues(alpha: 0.7)],
-        ),
+        color: StudyUi.primary,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: accent.withValues(alpha: 0.3),
-            blurRadius: 20,
+            color: accent.withValues(alpha: 0.18),
+            blurRadius: 18,
             offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _StatItem(
-                value: totalPoints.toString(),
-                label: '总积分',
-                icon: Icons.toll_rounded,
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(Icons.workspace_premium_rounded,
+                    color: Colors.white, size: 32),
               ),
-              _StatItem(
-                value: streakDays.toString(),
-                label: '连续天数',
-                icon: Icons.local_fire_department_rounded,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$totalPoints 积分',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'Lv.$level · $unlockedCount/$totalCount 个成就',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.82),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              _StatItem(
-                value: '$unlockedCount/$totalCount',
-                label: '已解锁',
-                icon: Icons.emoji_events_rounded,
+            ],
+          ),
+          const SizedBox(height: 18),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: levelProgress,
+              minHeight: 8,
+              backgroundColor: Colors.white.withValues(alpha: 0.18),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(Color(0xFF4BC4A1)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            nextLevelPoints == null
+                ? '已达到当前最高等级'
+                : '距离 Lv.${level + 1} 还差 ${nextLevelPoints! - totalPoints} 积分',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.78),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _HeroMetric(label: '连续学习', value: '$streakDays 天'),
+              const SizedBox(width: 10),
+              _HeroMetric(
+                label: '成就进度',
+                value: '${totalCount == 0 ? 0 : (unlockedCount / totalCount * 100).round()}%',
               ),
             ],
           ),
@@ -133,40 +210,172 @@ class _PointsSummaryCard extends StatelessWidget {
   }
 }
 
-class _StatItem extends StatelessWidget {
-  const _StatItem({
-    required this.value,
-    required this.label,
-    required this.icon,
+class _HeroMetric extends StatelessWidget {
+  const _HeroMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.72),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 3),
+            Text(value,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BadgeWall extends StatelessWidget {
+  const _BadgeWall({
+    required this.achievements,
+    required this.unlockedByType,
+    required this.accent,
+    required this.isDarkMode,
   });
 
-  final String value;
-  final String label;
-  final IconData icon;
+  final List<Achievement> achievements;
+  final Map<AchievementType, UnlockedAchievement> unlockedByType;
+  final Color accent;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return StudyCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionTitle(
+            title: '徽章墙',
+            subtitle: '把每一次学习行动沉淀成可见的成长痕迹',
+            isDarkMode: isDarkMode,
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: achievements
+                .map(
+                  (achievement) => _BadgeDot(
+                    achievement: achievement,
+                    unlocked:
+                        unlockedByType.containsKey(achievement.type),
+                    accent: accent,
+                    isDarkMode: isDarkMode,
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BadgeDot extends StatelessWidget {
+  const _BadgeDot({
+    required this.achievement,
+    required this.unlocked,
+    required this.accent,
+    required this.isDarkMode,
+  });
+
+  final Achievement achievement;
+  final bool unlocked;
+  final Color accent;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: achievement.title,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: unlocked
+              ? StudyUi.chipBackground(accent, isDarkMode)
+              : StudyUi.surfaceAlt(isDarkMode),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: unlocked
+                ? accent.withValues(alpha: 0.28)
+                : StudyUi.border(isDarkMode),
+          ),
+        ),
+        child: Icon(
+          _iconForAchievement(achievement.iconName),
+          color: unlocked ? accent : StudyUi.muted(isDarkMode),
+          size: 24,
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({
+    required this.title,
+    required this.subtitle,
+    required this.isDarkMode,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool isDarkMode;
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: Colors.white.withValues(alpha: 0.85), size: 28),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
+        Text(title,
+            style: TextStyle(
+                color: StudyUi.title(isDarkMode),
+                fontSize: 18,
+                fontWeight: FontWeight.w800)),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.8),
-            fontSize: 13,
-          ),
-        ),
+        Text(subtitle,
+            style: TextStyle(
+                color: StudyUi.body(isDarkMode), fontSize: 12, height: 1.4)),
       ],
+    );
+  }
+}
+
+class _EmptyAchievementCard extends StatelessWidget {
+  const _EmptyAchievementCard({required this.isDarkMode});
+
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return StudyCard(
+      child: Text(
+        '暂时还没有解锁成就。完成第一条学习记录或第一个任务后，它会马上出现。',
+        style: TextStyle(color: StudyUi.body(isDarkMode), height: 1.5),
+      ),
     );
   }
 }
@@ -175,159 +384,182 @@ class _AchievementTile extends StatelessWidget {
   const _AchievementTile({
     required this.achievement,
     required this.isUnlocked,
-    this.unlockedAt,
-    required this.cardColor,
-    required this.textColor,
-    required this.bodyColor,
     required this.accent,
     required this.isDarkMode,
+    this.unlockedAt,
   });
 
   final Achievement achievement;
   final bool isUnlocked;
   final DateTime? unlockedAt;
-  final Color cardColor;
-  final Color textColor;
-  final Color bodyColor;
   final Color accent;
   final bool isDarkMode;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: StudyCard(
+        padding: const EdgeInsets.all(16),
         color: isUnlocked
-            ? cardColor
-            : cardColor.withValues(alpha: isDarkMode ? 0.5 : 0.7),
-        borderRadius: BorderRadius.circular(16),
-        border: isUnlocked
-            ? Border.all(color: accent.withValues(alpha: 0.3), width: 1)
-            : null,
-      ),
-      child: Row(
-        children: [
-          // 图标
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isUnlocked
-                  ? accent.withValues(alpha: 0.15)
-                  : (isDarkMode
-                      ? Colors.white.withValues(alpha: 0.05)
-                      : const Color(0xFFF0F0F5)),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Text(
-                _iconEmoji(achievement.iconName),
-                style: TextStyle(
-                  fontSize: 22,
-                  color: isUnlocked ? null : Colors.grey,
-                ),
+            ? StudyUi.surface(isDarkMode)
+            : StudyUi.surface(isDarkMode).withValues(alpha: isDarkMode ? 0.7 : 1),
+        borderColor:
+            isUnlocked ? accent.withValues(alpha: 0.25) : StudyUi.border(isDarkMode),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: isUnlocked
+                    ? StudyUi.chipBackground(accent, isDarkMode)
+                    : StudyUi.surfaceAlt(isDarkMode),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                _iconForAchievement(achievement.iconName),
+                color: isUnlocked ? accent : StudyUi.muted(isDarkMode),
+                size: 24,
               ),
             ),
-          ),
-          const SizedBox(width: 14),
-          // 文字
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      achievement.title,
-                      style: TextStyle(
-                        color: isUnlocked ? textColor : bodyColor,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          achievement.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isUnlocked ? titleColor : bodyColor,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ),
+                      const SizedBox(width: 8),
+                      BadgePill(
+                        label: '+${achievement.points}分',
+                        background:
+                            StudyUi.chipBackground(accent, isDarkMode),
+                        foreground: isUnlocked
+                            ? accent
+                            : StudyUi.muted(isDarkMode),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    achievement.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isUnlocked
+                          ? bodyColor
+                          : bodyColor.withValues(alpha: 0.62),
+                      fontSize: 13,
+                      height: 1.35,
                     ),
-                    const SizedBox(width: 8),
+                  ),
+                  if (isUnlocked && unlockedAt != null) ...[
+                    const SizedBox(height: 5),
                     Text(
-                      '+${achievement.points}分',
+                      '解锁于 ${_formatDate(unlockedAt!)}',
                       style: TextStyle(
-                        color: isUnlocked ? accent : bodyColor.withValues(alpha: 0.5),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                        color: accent.withValues(alpha: 0.76),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  achievement.description,
-                  style: TextStyle(
-                    color: isUnlocked ? bodyColor : bodyColor.withValues(alpha: 0.5),
-                    fontSize: 13,
-                  ),
-                ),
-                if (isUnlocked && unlockedAt != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '解锁于 ${_formatDate(unlockedAt!)}',
-                    style: TextStyle(
-                      color: accent.withValues(alpha: 0.7),
-                      fontSize: 11,
-                    ),
-                  ),
                 ],
-              ],
+              ),
             ),
-          ),
-          // 状态
-          if (isUnlocked)
-            Icon(Icons.check_circle_rounded, color: accent, size: 22)
-          else
+            const SizedBox(width: 8),
             Icon(
-              Icons.lock_outline_rounded,
-              color: bodyColor.withValues(alpha: 0.3),
+              isUnlocked ? Icons.check_circle_rounded : Icons.lock_outline_rounded,
+              color: isUnlocked ? accent : StudyUi.muted(isDarkMode),
               size: 22,
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
 
-  String _iconEmoji(String name) {
-    switch (name) {
-      case 'edit_note':
-        return '📝';
-      case 'task_alt':
-        return '✅';
-      case 'emoji_events':
-        return '🏆';
-      case 'military_tech':
-        return '🎖️';
-      case 'local_fire_department':
-        return '🔥';
-      case 'whatshot':
-        return '🔥';
-      case 'stars':
-        return '⭐';
-      case 'summarize':
-        return '📊';
-      case 'style':
-        return '🃏';
-      case 'menu_book':
-        return '📖';
-      case 'toll':
-        return '🎯';
-      case 'workspace_premium':
-        return '🏅';
-      case 'diamond':
-        return '💎';
-      case 'smart_toy':
-        return '🤖';
-      default:
-        return '🏅';
-    }
-  }
+int _levelFor(int points) {
+  if (points >= 1000) return 5;
+  if (points >= 500) return 4;
+  if (points >= 200) return 3;
+  if (points >= 80) return 2;
+  return 1;
+}
 
-  String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+int _levelStart(int level) {
+  switch (level) {
+    case 5:
+      return 1000;
+    case 4:
+      return 500;
+    case 3:
+      return 200;
+    case 2:
+      return 80;
+    default:
+      return 0;
   }
+}
+
+int? _nextLevelPoints(int points) {
+  if (points < 80) return 80;
+  if (points < 200) return 200;
+  if (points < 500) return 500;
+  if (points < 1000) return 1000;
+  return null;
+}
+
+IconData _iconForAchievement(String name) {
+  switch (name) {
+    case 'edit_note':
+      return Icons.edit_note_rounded;
+    case 'task_alt':
+      return Icons.task_alt_rounded;
+    case 'emoji_events':
+      return Icons.emoji_events_rounded;
+    case 'military_tech':
+      return Icons.military_tech_rounded;
+    case 'local_fire_department':
+    case 'whatshot':
+      return Icons.local_fire_department_rounded;
+    case 'stars':
+      return Icons.stars_rounded;
+    case 'summarize':
+      return Icons.summarize_rounded;
+    case 'style':
+      return Icons.style_rounded;
+    case 'menu_book':
+      return Icons.menu_book_rounded;
+    case 'toll':
+      return Icons.toll_rounded;
+    case 'workspace_premium':
+      return Icons.workspace_premium_rounded;
+    case 'diamond':
+      return Icons.diamond_rounded;
+    case 'smart_toy':
+      return Icons.smart_toy_rounded;
+    default:
+      return Icons.emoji_events_rounded;
+  }
+}
+
+String _formatDate(DateTime date) {
+  return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }

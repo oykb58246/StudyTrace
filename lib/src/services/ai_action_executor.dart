@@ -10,8 +10,10 @@ import '../models/study_log_item.dart';
 import '../models/study_note.dart';
 import '../models/study_sub_task_item.dart';
 import '../models/study_task_item.dart';
+import '../models/vivo_capability.dart';
 import 'ai_study_service.dart';
 import 'ai_tool_registry.dart';
+import 'local_today_mission_builder.dart';
 
 typedef AiNavigationActionHandler = Future<AiActionResult> Function(
   AiAppAction action,
@@ -38,21 +40,27 @@ class AiActionExecutor {
     for (final action in actions.take(4)) {
       final toolId = _actionTypeToToolId(action.type) ?? action.type.name;
       final recordId = 'audit_${DateTime.now().microsecondsSinceEpoch}';
-      await controller.appendActionRecord(AiActionRecord(
-        id: recordId,
-        sessionId: sessionId,
-        toolId: toolId,
-        targetId: action.targetId,
-        targetTitle: action.targetTitle,
-        status: AiActionStatus.pending,
-        params: {
-          'sourceText': action.sourceText,
-          'title': action.title,
-          'content': action.content,
-          'status': action.status,
-        },
-        createdAt: DateTime.now(),
-      ));
+      var auditRecordSaved = false;
+      try {
+        await controller.appendActionRecord(AiActionRecord(
+          id: recordId,
+          sessionId: sessionId,
+          toolId: toolId,
+          targetId: action.targetId,
+          targetTitle: action.targetTitle,
+          status: AiActionStatus.pending,
+          params: {
+            'sourceText': action.sourceText,
+            'title': action.title,
+            'content': action.content,
+            'status': action.status,
+          },
+          createdAt: DateTime.now(),
+        ));
+        auditRecordSaved = true;
+      } catch (error) {
+        debugPrint('保存 AI 动作审计记录失败：$error');
+      }
 
       AiActionResult result;
       if (_isNavigationAction(action.type)) {
@@ -75,12 +83,19 @@ class AiActionExecutor {
       }
       results.add(result);
 
-      await controller.updateActionRecord(
-        recordId,
-        status: result.success ? AiActionStatus.executed : AiActionStatus.failed,
-        resultMessage: result.message,
-        errorMessage: result.success ? null : result.message,
-      );
+      if (auditRecordSaved) {
+        try {
+          await controller.updateActionRecord(
+            recordId,
+            status:
+                result.success ? AiActionStatus.executed : AiActionStatus.failed,
+            resultMessage: result.message,
+            errorMessage: result.success ? null : result.message,
+          );
+        } catch (error) {
+          debugPrint('更新 AI 动作审计记录失败：$error');
+        }
+      }
     }
     return results;
   }
@@ -136,14 +151,41 @@ class AiActionExecutor {
       AiAppActionType.noteFromOcr => AiToolIds.noteFromOcr,
       AiAppActionType.createFlashcardBatch => AiToolIds.createFlashcardBatch,
       AiAppActionType.startFocusWithTask => AiToolIds.startFocusWithTask,
-      _ => null,
+      AiAppActionType.generateImage => AiToolIds.generateImage,
+      AiAppActionType.refreshImage => AiToolIds.refreshImage,
+      AiAppActionType.generateVideo => AiToolIds.generateVideo,
+      AiAppActionType.refreshVideo => AiToolIds.refreshVideo,
+      AiAppActionType.translateText => AiToolIds.translateText,
+      AiAppActionType.searchPoi => AiToolIds.searchPoi,
+      AiAppActionType.reverseGeocode => AiToolIds.reverseGeocode,
     };
   }
 
   bool _isNavigationAction(AiAppActionType type) {
     final toolId = _actionTypeToToolId(type);
-    if (toolId == null) return false;
-    return AiToolRegistry.instance.isNavigationTool(toolId);
+    if (toolId != null && AiToolRegistry.instance.isNavigationTool(toolId)) {
+      return true;
+    }
+    return switch (type) {
+      AiAppActionType.switchTab ||
+      AiAppActionType.openTimer ||
+      AiAppActionType.openFlashcard ||
+      AiAppActionType.openNotes ||
+      AiAppActionType.openAiSettings ||
+      AiAppActionType.openDashboard ||
+      AiAppActionType.openTaskPlanning ||
+      AiAppActionType.openAiAssistant ||
+      AiAppActionType.openUserProfile ||
+      AiAppActionType.openAbout ||
+      AiAppActionType.openStudyGroup ||
+      AiAppActionType.openLeaderboard ||
+      AiAppActionType.openWeeklyReport ||
+      AiAppActionType.openSystemSettings ||
+      AiAppActionType.startFocus ||
+      AiAppActionType.startFocusWithTask =>
+        true,
+      _ => false,
+    };
   }
 
   Future<AiActionResult> _executeDataAction(
@@ -193,6 +235,13 @@ class AiActionExecutor {
         AiAppActionType.noteFromOcr => await _noteFromOcr(action, input),
         AiAppActionType.createFlashcardBatch =>
           await _createFlashcardBatch(action, input),
+        AiAppActionType.generateImage => await _generateImage(action, input),
+        AiAppActionType.refreshImage => await _refreshImage(action),
+        AiAppActionType.generateVideo => await _generateVideo(action, input),
+        AiAppActionType.refreshVideo => await _refreshVideo(action),
+        AiAppActionType.translateText => await _translateText(action, input),
+        AiAppActionType.searchPoi => await _searchPoi(action, input),
+        AiAppActionType.reverseGeocode => await _reverseGeocode(action, input),
         _ => AiActionResult(
             action: action,
             success: false,
@@ -215,7 +264,7 @@ class AiActionExecutor {
       return AiActionResult(
         action: action,
         success: false,
-        message: 'AI 没有生成有效任务标题',
+        message: '没有整理出有效任务标题',
       );
     }
     final now = DateTime.now();
@@ -461,7 +510,7 @@ class AiActionExecutor {
     final now = DateTime.now();
     final title = action.title?.trim().isNotEmpty == true
         ? action.title!.trim()
-        : 'AI 笔记 ${now.month}/${now.day}';
+        : '学习笔记 ${now.month}/${now.day}';
     final note = await controller.addStudyNote(
       title: title,
       content: content,
@@ -483,7 +532,7 @@ class AiActionExecutor {
       return AiActionResult(
         action: action,
         success: false,
-        message: '还没有收藏闪卡，先收藏几张再让 AI 整理',
+        message: '还没有收藏闪卡，先收藏几张再整理',
       );
     }
     final context = starred
@@ -743,7 +792,7 @@ class AiActionExecutor {
     return AiActionResult(
       action: action,
       success: true,
-      message: next ? '已切换到 vivo 蓝皮肤' : '已切换到传统紫皮肤',
+      message: next ? '已切换到清爽蓝皮肤' : '已切换到经典紫皮肤',
     );
   }
 
@@ -813,7 +862,7 @@ class AiActionExecutor {
     return AiActionResult(
       action: action,
       success: false,
-      message: '比赛版使用内置云服务，服务地址不可由用户或 AI 修改',
+      message: '当前版本使用内置云服务，服务地址不可在应用内修改',
     );
   }
 
@@ -1023,7 +1072,7 @@ class AiActionExecutor {
       return AiActionResult(
         action: action,
         success: false,
-        message: 'AI 没有生成有效闪卡',
+        message: '没有整理出有效闪卡',
       );
     }
     await controller.addFlashCards(cards);
@@ -1195,7 +1244,7 @@ class AiActionExecutor {
     );
   }
 
-  // ── Phase 2 扩展：AI 周计划 / 日志扩写 ──
+  // ── Phase 2 扩展：学习周计划 / 日志扩写 ──
 
   Future<AiActionResult> _generateWeeklyPlan(AiAppAction action) async {
     // status 可覆盖天数，默认 7
@@ -1226,7 +1275,7 @@ class AiActionExecutor {
       return AiActionResult(
         action: action,
         success: false,
-        message: 'AI 没有生成有效计划',
+        message: '没有整理出有效计划',
       );
     }
     var created = 0;
@@ -1256,7 +1305,7 @@ class AiActionExecutor {
       return AiActionResult(
         action: action,
         success: false,
-        message: 'AI 生成的计划全是历史日期，已忽略',
+        message: '生成的学习计划全是历史日期，已忽略',
       );
     }
     return AiActionResult(
@@ -1292,7 +1341,7 @@ class AiActionExecutor {
     final safeText = noteText.trim().isEmpty ? context.join('\n') : noteText;
     final title = log.courseName.isNotEmpty
         ? '${log.courseName} 学习笔记 ${log.date.month}/${log.date.day}'
-        : 'AI 学习笔记 ${DateTime.now().month}/${DateTime.now().day}';
+        : '学习整理笔记 ${DateTime.now().month}/${DateTime.now().day}';
     final note = await controller.addStudyNote(
       title: title,
       content: safeText,
@@ -1316,7 +1365,7 @@ class AiActionExecutor {
       return AiActionResult(
         action: action,
         success: false,
-        message: '请提供要生成闭环的学习材料',
+        message: '请提供要整理的学习材料',
       );
     }
     final plan = await aiService.generateLearningLoop(
@@ -1329,18 +1378,26 @@ class AiActionExecutor {
       action: action,
       success: created == 0 ? false : true,
       message: created == 0
-          ? 'AI 生成了闭环草稿，但没有可落地内容'
-          : '已生成并落地学习闭环：$created 项内容',
+          ? '已整理出草稿，但没有可保存内容'
+          : '已保存学习安排：$created 项内容',
     );
   }
 
   Future<AiActionResult> _generateTodayMission(AiAppAction action) async {
-    final plan = await aiService.generateLearningLoop(
-      sourceText: '请基于我的当前学习状态生成今日最优学习路径。',
-      sourceKind: 'manual',
-      target: 'task',
-      context: _compactContext(),
-    );
+    var usedLocalFallback = false;
+    AiLearningLoopPlan plan;
+    try {
+      plan = await aiService.generateTodayMission(
+        context: _compactContext(),
+      );
+      if (!_hasExecutableTodayPlan(plan)) {
+        usedLocalFallback = true;
+        plan = _buildLocalTodayMissionPlan();
+      }
+    } catch (_) {
+      usedLocalFallback = true;
+      plan = _buildLocalTodayMissionPlan();
+    }
     var created = 0;
     final today = DateTime.now();
     for (final item in plan.reviewPlan.take(4)) {
@@ -1352,7 +1409,7 @@ class AiActionExecutor {
         note: [
           if (item.reason.isNotEmpty) item.reason,
           '建议专注 ${item.minutes} 分钟',
-          if (plan.summary.isNotEmpty) 'AI 路径摘要：${plan.summary}',
+          if (plan.summary.isNotEmpty) '学习安排摘要：${plan.summary}',
         ].join('\n'),
       );
       created++;
@@ -1363,9 +1420,23 @@ class AiActionExecutor {
     return AiActionResult(
       action: action,
       success: created > 0,
-      message: created > 0 ? '已生成今日最优路径：$created 个学习块' : '暂时没有生成可执行路径',
+      message: created > 0
+          ? usedLocalFallback
+              ? '云端生成较慢，已先用本地数据生成今日学习安排：$created 个学习块'
+              : '已生成今日学习安排：$created 个学习块'
+          : '暂时没有生成学习安排',
     );
   }
+
+  AiLearningLoopPlan _buildLocalTodayMissionPlan() {
+    return const LocalTodayMissionBuilder().build(
+      tasks: controller.studyTasks,
+      logs: controller.studyLogs,
+    );
+  }
+
+  bool _hasExecutableTodayPlan(AiLearningLoopPlan plan) =>
+      plan.taskDrafts.isNotEmpty || plan.reviewPlan.isNotEmpty;
 
   Future<AiActionResult> _searchMemory(AiAppAction action, String input) async {
     final query = _bestSource(action, input);
@@ -1432,8 +1503,228 @@ class AiActionExecutor {
     return AiActionResult(
       action: action,
       success: count > 0,
-      message: count > 0 ? '已生成 $count 张知识闪卡' : 'AI 没有生成有效闪卡',
+      message: count > 0 ? '已生成 $count 张知识闪卡' : '没有整理出有效闪卡',
     );
+  }
+
+  Future<AiActionResult> _generateImage(
+    AiAppAction action,
+    String input,
+  ) async {
+    final prompt = _bestSource(action, input);
+    if (prompt.isEmpty) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '请提供图片提示词',
+      );
+    }
+    final task = await controller.vivoCapabilityService.createCover(
+      prompt: prompt,
+      purpose: 'chat_image',
+    );
+    final ready = await _refreshImageTaskIfPossible(task.taskId);
+    return AiActionResult(
+      action: action,
+      success: true,
+      message: _formatImageTaskMessage(ready ?? task),
+      createdId: task.taskId,
+    );
+  }
+
+  Future<AiActionResult> _refreshImage(AiAppAction action) async {
+    final taskId = (action.targetId ?? action.content ?? action.sourceText ?? '')
+        .trim();
+    if (taskId.isEmpty) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '请提供图片任务 taskId',
+      );
+    }
+    final task = await controller.vivoCapabilityService.refreshImageTask(taskId);
+    return AiActionResult(
+      action: action,
+      success: true,
+      message: _formatImageTaskMessage(task),
+      createdId: task.taskId,
+    );
+  }
+
+  Future<AiActionResult> _generateVideo(
+    AiAppAction action,
+    String input,
+  ) async {
+    final prompt = _bestSource(action, input);
+    if (prompt.isEmpty) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '请提供视频提示词',
+      );
+    }
+    final task = await controller.vivoCapabilityService.createVideo(
+      prompt: prompt,
+      purpose: 'chat_video',
+    );
+    final ready = await _refreshVideoTaskIfPossible(task.taskId);
+    return AiActionResult(
+      action: action,
+      success: true,
+      message: _formatVideoTaskMessage(ready ?? task),
+      createdId: task.taskId,
+    );
+  }
+
+  Future<AiActionResult> _refreshVideo(AiAppAction action) async {
+    final taskId = (action.targetId ?? action.content ?? action.sourceText ?? '')
+        .trim();
+    if (taskId.isEmpty) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '请提供视频任务 taskId',
+      );
+    }
+    final task = await controller.vivoCapabilityService.refreshVideoTask(taskId);
+    return AiActionResult(
+      action: action,
+      success: true,
+      message: _formatVideoTaskMessage(task),
+      createdId: task.taskId,
+    );
+  }
+
+  Future<AiActionResult> _translateText(
+    AiAppAction action,
+    String input,
+  ) async {
+    final text = _bestSource(action, input);
+    if (text.isEmpty) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '请提供待翻译文本',
+      );
+    }
+    final result = await controller.vivoCapabilityService.translate(
+      text,
+      from: 'auto',
+      to: _normalizeLanguage(action.status ?? action.targetTitle ?? 'en'),
+    );
+    return AiActionResult(
+      action: action,
+      success: result.text.trim().isNotEmpty,
+      message: result.text.trim().isEmpty ? '没有返回译文' : '译文：${result.text}',
+    );
+  }
+
+  Future<AiActionResult> _searchPoi(
+    AiAppAction action,
+    String input,
+  ) async {
+    final query = _bestSource(action, input);
+    if (query.isEmpty) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '请提供地点关键词',
+      );
+    }
+    final result = await controller.vivoCapabilityService.searchPoi(
+      query,
+      city: action.targetTitle ?? '',
+      location: action.status ?? '',
+    );
+    return AiActionResult(
+      action: action,
+      success: true,
+      message: '地点搜索结果：${_compactJson(result)}',
+    );
+  }
+
+  Future<AiActionResult> _reverseGeocode(
+    AiAppAction action,
+    String input,
+  ) async {
+    final location = _bestSource(action, input);
+    if (location.isEmpty) {
+      return AiActionResult(
+        action: action,
+        success: false,
+        message: '请提供经纬度 location',
+      );
+    }
+    final result = await controller.vivoCapabilityService.reverseGeocode(
+      location,
+    );
+    return AiActionResult(
+      action: action,
+      success: true,
+      message: '逆地理结果：${_compactJson(result)}',
+    );
+  }
+
+  Future<GeneratedImageTask?> _refreshImageTaskIfPossible(String taskId) async {
+    if (taskId.isEmpty) return null;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      return controller.vivoCapabilityService.refreshImageTask(taskId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<GeneratedVideoTask?> _refreshVideoTaskIfPossible(String taskId) async {
+    if (taskId.isEmpty) return null;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      return controller.vivoCapabilityService.refreshVideoTask(taskId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatImageTaskMessage(GeneratedImageTask task) {
+    final taskId = task.taskId;
+    final status = task.status;
+    final urls = task.imagesUrl;
+    if (urls.isNotEmpty) {
+      final images = urls.map((url) => '![AI 图片]($url)').join('\n\n');
+      return '图片任务 $taskId 已返回（$status）：\n\n$images';
+    }
+    return '图片任务已提交，taskId：$taskId，状态：$status。稍后可以让我刷新图片任务 $taskId。';
+  }
+
+  String _formatVideoTaskMessage(GeneratedVideoTask task) {
+    final taskId = task.taskId;
+    final status = task.status;
+    final urls = task.videosUrl;
+    if (urls.isNotEmpty) {
+      final videos = urls
+          .map((url) => '- [查看生成视频]($url)\n\n<video src="$url"></video>')
+          .join('\n');
+      return '视频任务 $taskId 已返回（$status）：\n\n$videos';
+    }
+    return '视频任务已提交，taskId：$taskId，状态：$status。稍后可以让我刷新视频任务 $taskId。';
+  }
+
+  String _normalizeLanguage(String raw) {
+    final text = raw.trim().toLowerCase();
+    if (text.contains('中文') || text == 'zh' || text == 'cn') return 'zh';
+    if (text.contains('英文') || text == 'english') return 'en';
+    if (text.contains('日文') || text == 'japanese') return 'ja';
+    if (text.contains('韩文') || text == 'korean') return 'ko';
+    return text.isEmpty ? 'en' : text;
+  }
+
+  String _compactJson(Map<String, dynamic> data) {
+    final text = data.entries
+        .where((entry) => entry.value != null)
+        .take(8)
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join('；');
+    return text.length > 600 ? '${text.substring(0, 600)}...' : text;
   }
 
   Future<int> _applyLearningLoopPlan(AiLearningLoopPlan plan) async {
@@ -1452,7 +1743,7 @@ class AiActionExecutor {
       await controller.addStudyNote(
         title: plan.noteDraft.title.isNotEmpty
             ? plan.noteDraft.title
-            : '${plan.courseName.isEmpty ? '学习' : plan.courseName}闭环笔记',
+            : '${plan.courseName.isEmpty ? '学习' : plan.courseName}复盘笔记',
         content: plan.noteDraft.content.isNotEmpty
             ? plan.noteDraft.content
             : plan.summary,
@@ -1525,6 +1816,9 @@ class AiActionExecutor {
         'heading' => NoteBlockType.heading,
         'bullet' => NoteBlockType.bullet,
         'todo' => NoteBlockType.todo,
+        'markdown' => NoteBlockType.markdown,
+        'image' => NoteBlockType.image,
+        'code' => NoteBlockType.code,
         _ => NoteBlockType.text,
       };
       return NoteBlock(id: id(), type: type, content: block.content);
@@ -1716,7 +2010,14 @@ class AiActionExecutor {
         continue;
       }
       if (trimmed.isEmpty) continue;
-      if (trimmed == '---' || trimmed == '***') {
+      final imageMatch = RegExp(r'^!\[[^\]]*\]\(([^)]+)\)$').firstMatch(trimmed);
+      if (imageMatch != null) {
+        blocks.add(NoteBlock(
+          id: id(),
+          type: NoteBlockType.image,
+          content: imageMatch.group(1)!.trim(),
+        ));
+      } else if (trimmed == '---' || trimmed == '***') {
         blocks.add(NoteBlock(id: id(), type: NoteBlockType.divider));
       } else if (trimmed.startsWith('#')) {
         blocks.add(NoteBlock(

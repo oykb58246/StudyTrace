@@ -7,6 +7,7 @@ import { GroupsModule } from './modules/groups/groups.module';
 import { CommunityEvidenceModule } from './modules/community-evidence/community-evidence.module';
 import { HealthModule } from './modules/health/health.module';
 import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
+import { MomentsModule } from './modules/moments/moments.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -23,6 +24,7 @@ import { PrismaModule } from './prisma/prisma.module';
     CommunityEvidenceModule,
     ActivitiesModule,
     LeaderboardsModule,
+    MomentsModule,
     AiModule,
   ],
 })

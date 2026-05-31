@@ -4,13 +4,13 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lordicon/lordicon.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/study_log_item.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
-import '../../services/ai_study_service.dart';
+import '../../services/ai_exceptions.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/ocr_service.dart';
 import '../../theme/app_theme.dart';
@@ -33,7 +33,6 @@ class HomePage extends StatelessWidget {
     this.onOpenTimer,
     this.onOpenFlashCards,
     this.onOpenLearningMoments,
-    this.onOpenDashboard,
     this.onOpenStudyGroup,
     this.onOpenLeaderboard,
     this.onOpenSyncSettings,
@@ -52,7 +51,6 @@ class HomePage extends StatelessWidget {
   final VoidCallback? onOpenTimer;
   final VoidCallback? onOpenFlashCards;
   final VoidCallback? onOpenLearningMoments;
-  final VoidCallback? onOpenDashboard;
   final VoidCallback? onOpenStudyGroup;
   final VoidCallback? onOpenLeaderboard;
   final VoidCallback? onOpenSyncSettings;
@@ -83,8 +81,7 @@ class HomePage extends StatelessWidget {
             .toSet()
             .toList();
         final textColor = isDarkMode ? Colors.white : AppColors.ink;
-        final bodyColor =
-            isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
         return Column(
           children: [
@@ -93,218 +90,216 @@ class HomePage extends StatelessWidget {
                 children: [
                   _HomeRiveBackground(isDarkMode: isDarkMode),
                   RefreshIndicator(
-                    onRefresh: () async => controller.notifyListeners(),
+                    onRefresh: controller.load,
                     child: ListView(
-                    key: const Key('page_home'),
-                    padding: const EdgeInsets.fromLTRB(20, 76, 20, 124),
-              children: [
-              Center(
-                child: Column(
-                  children: [
-                    Image.asset(
-                      isDarkMode
-                          ? 'logo/logo白透明.png'
-                          : 'logo/logo黑透明.png',
-                      height: 36,
-                      fit: BoxFit.fitHeight,
-                    ),
-                    const SizedBox(height: 7),
-                    Image.asset(
-                      'logo/文字logo.png',
-                      height: 28,
-                      fit: BoxFit.fitHeight,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              _HomeAiChatEntry(
-                isDarkMode: isDarkMode,
-                onTap: onOpenAiChat ?? onOpenAiAssistant,
-              ),
-              const SizedBox(height: 14),
-              _HomeAiSuggestion(
-                isDarkMode: isDarkMode,
-                controller: controller,
-                onOpenAssistant: onOpenAiAssistant,
-                onOpenTasks: onOpenTasks,
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _HomeFeatureCard(
-                      title: '语音创建',
-                      subtitle: '说出记录或任务',
-                      asset: 'assets/icons/home_voice.png',
-                      colors: const [Color(0xFF0E8CFF), Color(0xFF5A7BFF)],
-                      onTap: () => _openAiCreate(
-                        context,
-                        source: _AiCreateSource.voice,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _HomeFeatureCard(
-                      title: '拍照创建',
-                      subtitle: '识图生成记录',
-                      asset: 'assets/icons/home_camera.png',
-                      colors: const [Color(0xFFFF5A3D), Color(0xFFFF9F50)],
-                      onTap: () => _openAiCreate(
-                        context,
-                        source: _AiCreateSource.photo,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _HomeToolCard(
-                      label: '任务编排',
-                      asset: 'assets/icons/home_plan.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenTaskPlanning,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _HomeToolCard(
-                      label: '学习笔记',
-                      asset: 'assets/icons/home_notes.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenNotes,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final shortcuts = [
-                    _HomeShortcut(
-                      label: '学迹动态',
-                      asset: 'assets/icons/home_continue.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenLearningMoments,
-                    ),
-                    _HomeShortcut(
-                      label: '知识闪卡',
-                      asset: 'assets/icons/home_flashcard.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenFlashCards,
-                    ),
-                    _HomeShortcut(
-                      label: '数据看板',
-                      asset: 'assets/icons/home_dashboard.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenDashboard,
-                    ),
-                    _HomeShortcut(
-                      label: '专注计时',
-                      asset: 'assets/icons/home_timer.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenTimer,
-                    ),
-                    _HomeShortcut(
-                      label: '学习小组',
-                      asset: 'assets/icons/home_group.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenStudyGroup,
-                    ),
-                    _HomeShortcut(
-                      label: '排行榜',
-                      asset: 'assets/icons/home_rank.png',
-                      isDarkMode: isDarkMode,
-                      onTap: onOpenLeaderboard,
-                    ),
-                  ];
-                  final scrolledShortcuts = <Widget>[
-                    for (var i = 0; i < shortcuts.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 12),
-                      shortcuts[i],
-                    ],
-                  ];
-
-                  if (constraints.maxWidth >= 760) {
-                    return Align(
-                      alignment: Alignment.center,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 760),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: shortcuts,
+                      key: const Key('page_home'),
+                      padding: const EdgeInsets.fromLTRB(20, 76, 20, 124),
+                      children: [
+                        Center(
+                          child: Column(
+                            children: [
+                              Image.asset(
+                                isDarkMode
+                                    ? 'logo/logo白透明.png'
+                                    : 'logo/logo黑透明.png',
+                                height: 36,
+                                fit: BoxFit.fitHeight,
+                              ),
+                              const SizedBox(height: 7),
+                              Image.asset(
+                                'logo/文字logo.png',
+                                height: 28,
+                                fit: BoxFit.fitHeight,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  }
+                        const SizedBox(height: 20),
+                        _HomeAiChatEntry(
+                          isDarkMode: isDarkMode,
+                          onTap: onOpenAiChat ?? onOpenAiAssistant,
+                        ),
+                        const SizedBox(height: 14),
+                        _HomeAiSuggestion(
+                          isDarkMode: isDarkMode,
+                          controller: controller,
+                          onOpenAssistant: onOpenAiAssistant,
+                          onOpenTasks: onOpenTasks,
+                        ),
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _HomeFeatureCard(
+                                title: '语音创建',
+                                subtitle: '说出记录或任务',
+                                asset: 'assets/icons/home_voice_v3.png',
+                                colors: const [
+                                  Color(0xFF0E8CFF),
+                                  Color(0xFF5A7BFF)
+                                ],
+                                onTap: () => _openAiCreate(
+                                  context,
+                                  source: _AiCreateSource.voice,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _HomeFeatureCard(
+                                title: '拍照创建',
+                                subtitle: '识图生成记录',
+                                asset: 'assets/icons/home_camera_v3.png',
+                                colors: const [
+                                  Color(0xFFFF5A3D),
+                                  Color(0xFFFF9F50)
+                                ],
+                                onTap: () => _openAiCreate(
+                                  context,
+                                  source: _AiCreateSource.photo,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _HomeToolCard(
+                                label: '任务编排',
+                                asset: 'assets/icons/home_plan_v3.png',
+                                isDarkMode: isDarkMode,
+                                onTap: onOpenTaskPlanning,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _HomeToolCard(
+                                label: '学习笔记',
+                                asset: 'assets/icons/home_notes_v3.png',
+                                isDarkMode: isDarkMode,
+                                onTap: onOpenNotes,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final shortcuts = [
+                              _HomeShortcut(
+                                label: '学迹动态',
+                                asset: 'assets/icons/home_continue_v3.png',
+                                isDarkMode: isDarkMode,
+                                onTap: onOpenLearningMoments,
+                              ),
+                              _HomeShortcut(
+                                label: '知识闪卡',
+                                asset: 'assets/icons/home_flashcard_v3.png',
+                                isDarkMode: isDarkMode,
+                                onTap: onOpenFlashCards,
+                              ),
+                              _HomeShortcut(
+                                label: '专注计时',
+                                asset: 'assets/icons/home_timer_v3.png',
+                                isDarkMode: isDarkMode,
+                                onTap: onOpenTimer,
+                              ),
+                              _HomeShortcut(
+                                label: '学习小组',
+                                asset: 'assets/icons/home_group_v3.png',
+                                isDarkMode: isDarkMode,
+                                onTap: onOpenStudyGroup,
+                              ),
+                              _HomeShortcut(
+                                label: '排行榜',
+                                asset: 'assets/icons/home_rank_v3.png',
+                                isDarkMode: isDarkMode,
+                                onTap: onOpenLeaderboard,
+                              ),
+                            ];
 
-                  if (constraints.maxWidth >= 520) {
-                    return Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: shortcuts,
-                    );
-                  }
-
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    clipBehavior: Clip.none,
-                    child: Row(children: scrolledShortcuts),
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              _ProgressPanel(
-                isDarkMode: isDarkMode,
-                accent: accent,
-                completedTasks: completedTasks,
-                totalTasks: totalTasks,
-                progress: progress,
-                streak: controller.studyStreak,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                '最近记录',
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (recentCourseNames.isNotEmpty)
-                Text(
-                  '本周课程：${recentCourseNames.join('、')}',
-                  style: TextStyle(color: bodyColor, fontSize: 13),
-                ),
-              if (recentCourseNames.isNotEmpty) const SizedBox(height: 12),
-              if (recentLogs.isEmpty)
-                _EmptyRecentCard(isDarkMode: isDarkMode)
-              else
-                for (final log in recentLogs.take(4)) ...[
-                  _RecentLogCard(
-                    courseName:
-                        log.courseName.isNotEmpty ? log.courseName : '未归课程',
-                    content: log.content.isNotEmpty ? log.content : '无内容摘要',
-                    date: _fmtDate(log.date),
-                    isDarkMode: isDarkMode,
-                  ),
-                  if (log != recentLogs.take(4).last)
-                    const SizedBox(height: 10),
-                ],
-              ],
+                            return ScrollConfiguration(
+                              behavior: const _HomeToolbarScrollBehavior(),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                clipBehavior: Clip.none,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 2),
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    minWidth: constraints.maxWidth > 4
+                                        ? constraints.maxWidth - 4
+                                        : 0,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      for (var i = 0;
+                                          i < shortcuts.length;
+                                          i++) ...[
+                                        if (i > 0) const SizedBox(width: 12),
+                                        shortcuts[i],
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        _ProgressPanel(
+                          isDarkMode: isDarkMode,
+                          accent: accent,
+                          completedTasks: completedTasks,
+                          totalTasks: totalTasks,
+                          progress: progress,
+                          streak: controller.studyStreak,
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          '最近记录',
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (recentCourseNames.isNotEmpty)
+                          Text(
+                            '本周课程：${recentCourseNames.join('、')}',
+                            style: TextStyle(color: bodyColor, fontSize: 13),
+                          ),
+                        if (recentCourseNames.isNotEmpty)
+                          const SizedBox(height: 12),
+                        if (recentLogs.isEmpty)
+                          _EmptyRecentCard(isDarkMode: isDarkMode)
+                        else
+                          for (final log in recentLogs.take(4)) ...[
+                            _RecentLogCard(
+                              courseName: log.courseName.isNotEmpty
+                                  ? log.courseName
+                                  : '未归课程',
+                              content: log.content.isNotEmpty
+                                  ? log.content
+                                  : '无内容摘要',
+                              date: _fmtDate(log.date),
+                              isDarkMode: isDarkMode,
+                            ),
+                            if (log != recentLogs.take(4).last)
+                              const SizedBox(height: 10),
+                          ],
+                      ],
                     ), // RefreshIndicator
+                  ),
+                ],
+              ),
             ),
           ],
-        ),
-      ),
-    ],
-  );
+        );
       },
     );
   }
@@ -457,6 +452,16 @@ class _GlassCard extends StatelessWidget {
   }
 }
 
+class _HomeToolbarScrollBehavior extends MaterialScrollBehavior {
+  const _HomeToolbarScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        ...super.dragDevices,
+        PointerDeviceKind.mouse,
+      };
+}
+
 class _HomeAiChatEntry extends StatelessWidget {
   const _HomeAiChatEntry({
     required this.isDarkMode,
@@ -498,14 +503,12 @@ class _HomeAiChatEntry extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: ColorFiltered(
-                  colorFilter: const ColorFilter.mode(
-                    Colors.white,
-                    BlendMode.srcIn,
-                  ),
-                  child: _HomeAnimatedIcon(
-                    asset: 'assets/icons/lordicon/vimeo.json',
-                    size: 25,
+                child: const Center(
+                  child: StudyAssetIcon(
+                    asset: AppAssets.sideAiAssistantIcon,
+                    size: 28,
+                    color: Colors.white,
+                    fallbackIcon: Icons.auto_awesome_rounded,
                   ),
                 ),
               ),
@@ -528,7 +531,7 @@ class _HomeAiChatEntry extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '拍照、记忆检索、路径规划',
+                      '拍照、语音复盘、路径规划',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -596,7 +599,8 @@ class _HomeFeatureCard extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: colors.map((color) => color.withValues(alpha: 0.9)).toList(),
+              colors:
+                  colors.map((color) => color.withValues(alpha: 0.9)).toList(),
             ),
             border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
             boxShadow: [
@@ -624,21 +628,11 @@ class _HomeFeatureCard extends StatelessWidget {
               Positioned(
                 right: -10,
                 bottom: -12,
-                child: Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.32),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
+                child: SizedBox(
+                  width: 84,
+                  height: 84,
                   child: Center(
-                    child: ColorFiltered(
-                      colorFilter: const ColorFilter.mode(
-                        Colors.white,
-                        BlendMode.srcIn,
-                      ),
-                      child: _HomeAnimatedIcon(asset: asset, size: 66),
-                    ),
+                    child: _HomeAnimatedIcon(asset: asset, size: 82),
                   ),
                 ),
               ),
@@ -672,7 +666,7 @@ class _HomeFeatureCard extends StatelessWidget {
   }
 }
 
-class _HomeAnimatedIcon extends StatefulWidget {
+class _HomeAnimatedIcon extends StatelessWidget {
   const _HomeAnimatedIcon({
     required this.asset,
     required this.size,
@@ -682,83 +676,23 @@ class _HomeAnimatedIcon extends StatefulWidget {
   final double size;
 
   @override
-  State<_HomeAnimatedIcon> createState() => _HomeAnimatedIconState();
-}
-
-class _HomeAnimatedIconState extends State<_HomeAnimatedIcon> {
-  IconController? _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _setupController();
-  }
-
-  @override
-  void didUpdateWidget(covariant _HomeAnimatedIcon oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.asset != widget.asset) {
-      _controller?.dispose();
-      _setupController();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  void _setupController() {
-    final path = _lordiconAssetFor(widget.asset);
-    if (path == null) {
-      _controller = null;
-      return;
-    }
-    final controller = IconController.assets(path);
-    controller.addStatusListener((status) {
-      if (status == ControllerStatus.ready) {
-        controller.playFromBeginning();
-      }
-    });
-    _controller = controller;
-    setState(() {});
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final controller = _controller;
-    if (controller == null) {
-      return Image.asset(widget.asset, width: widget.size, height: widget.size);
-    }
-    return IconViewer(
-      key: ValueKey(widget.asset),
-      controller: controller,
-      width: widget.size,
-      height: widget.size,
+    return Image.asset(
+      asset,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Icon(
+        Icons.auto_awesome_rounded,
+        size: size * 0.62,
+        color: StudyUi.primary,
+      ),
     );
   }
 }
 
-String? _lordiconAssetFor(String asset) {
-  return switch (asset) {
-    'assets/icons/home_voice.png' => 'assets/icons/lordicon/voice.json',
-    'assets/icons/home_camera.png' => 'assets/icons/lordicon/camera.json',
-    'assets/icons/home_plan.png' => 'assets/icons/lordicon/route.json',
-    'assets/icons/home_notes.png' => 'assets/icons/lordicon/notes.json',
-    'assets/icons/home_flashcard.png' => 'assets/icons/lordicon/cards.json',
-    'assets/icons/home_dashboard.png' => 'assets/icons/lordicon/chart.json',
-    'assets/icons/home_timer.png' => 'assets/icons/lordicon/timer.json',
-    'assets/icons/home_group.png' => 'assets/icons/lordicon/group.json',
-    'assets/icons/home_rank.png' => 'assets/icons/lordicon/rank.json',
-    'assets/icons/home_report.png' => 'assets/icons/lordicon/report.json',
-    'assets/icons/home_sync.png' => 'assets/icons/lordicon/sync.json',
-    'assets/icons/home_continue.png' => 'assets/icons/lordicon/play.json',
-    'assets/icons/lordicon/bonfire.json' => 'assets/icons/lordicon/bonfire.json',
-    'assets/icons/lordicon/vimeo.json' => 'assets/icons/lordicon/vimeo.json',
-    _ => null,
-  };
-}
+bool _isGeneratedHomeIcon(String asset) =>
+    asset.startsWith('assets/icons/home_') && asset.endsWith('_v3.png');
 
 class _HomeToolCard extends StatelessWidget {
   const _HomeToolCard({
@@ -775,6 +709,8 @@ class _HomeToolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final generatedIcon = _isGeneratedHomeIcon(asset);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -789,16 +725,21 @@ class _HomeToolCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: isDarkMode
-                      ? Colors.white.withValues(alpha: 0.05)
-                      : Colors.white.withValues(alpha: 0.36),
-                  borderRadius: BorderRadius.circular(20),
-                ),
+                width: generatedIcon ? 64 : 56,
+                height: generatedIcon ? 64 : 56,
+                decoration: generatedIcon
+                    ? null
+                    : BoxDecoration(
+                        color: isDarkMode
+                            ? Colors.white.withValues(alpha: 0.05)
+                            : Colors.white.withValues(alpha: 0.36),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
                 child: Center(
-                  child: _HomeAnimatedIcon(asset: asset, size: 50),
+                  child: _HomeAnimatedIcon(
+                    asset: asset,
+                    size: generatedIcon ? 62 : 50,
+                  ),
                 ),
               ),
               const SizedBox(height: 6),
@@ -833,6 +774,8 @@ class _HomeShortcut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final generatedIcon = _isGeneratedHomeIcon(asset);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -842,23 +785,28 @@ class _HomeShortcut extends StatelessWidget {
           width: 84,
           child: _GlassCard(
             isDarkMode: isDarkMode,
-            height: 92,
+            height: 100,
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
             radius: 22,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: isDarkMode
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.white.withValues(alpha: 0.36),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
+                  width: generatedIcon ? 56 : 50,
+                  height: generatedIcon ? 56 : 50,
+                  decoration: generatedIcon
+                      ? null
+                      : BoxDecoration(
+                          color: isDarkMode
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : Colors.white.withValues(alpha: 0.36),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
                   child: Center(
-                    child: _HomeAnimatedIcon(asset: asset, size: 44),
+                    child: _HomeAnimatedIcon(
+                      asset: asset,
+                      size: generatedIcon ? 54 : 44,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -882,6 +830,7 @@ class _HomeShortcut extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _HomeTabs extends StatelessWidget {
   const _HomeTabs({required this.isDarkMode});
 
@@ -941,13 +890,16 @@ class _HomeTabs extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _RecommendationCard extends StatelessWidget {
   const _RecommendationCard({
     required this.title,
     required this.subtitle,
     required this.asset,
     required this.isDarkMode,
+    // ignore: unused_element_parameter
     this.buttonLabel,
+    // ignore: unused_element_parameter
     this.onTap,
   });
 
@@ -1074,9 +1026,11 @@ class _ProgressPanel extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Center(
-                  child: _HomeAnimatedIcon(
-                    asset: 'assets/icons/lordicon/bonfire.json',
-                    size: 50,
+                  child: const StudyAssetIcon(
+                    asset: AppAssets.featureTaskPlanIcon,
+                    size: 48,
+                    color: StudyUi.warning,
+                    fallbackIcon: Icons.local_fire_department_rounded,
                   ),
                 ),
               ),
@@ -1155,19 +1109,13 @@ class _RecentLogCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       child: Row(
         children: [
-          Container(
+          SizedBox(
             width: 50,
             height: 50,
-            decoration: BoxDecoration(
-              color: isDarkMode
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : Colors.white.withValues(alpha: 0.34),
-              borderRadius: BorderRadius.circular(18),
-            ),
             child: Center(
               child: _HomeAnimatedIcon(
-                asset: 'assets/icons/home_notes.png',
-                size: 42,
+                asset: 'assets/icons/home_notes_v3.png',
+                size: 48,
               ),
             ),
           ),
@@ -1409,7 +1357,8 @@ class _AiCreateInputState extends State<_AiCreateInput> {
     setState(() => _isProcessing = true);
     try {
       if (_mode == _AiCreateMode.log) {
-        final log = await widget.controller.aiStudyService.generateStudyLog(input);
+        final log =
+            await widget.controller.aiStudyService.generateStudyLog(input);
         await widget.controller.addStudyLog(
           date: DateTime.now(),
           courseName: log.courseName,
@@ -1419,7 +1368,8 @@ class _AiCreateInputState extends State<_AiCreateInput> {
           nextPlan: log.nextPlan,
         );
       } else {
-        final plan = await widget.controller.aiStudyService.generateTaskPlan(input);
+        final plan =
+            await widget.controller.aiStudyService.generateTaskPlan(input);
         final now = DateTime.now();
         final planned = plan.plannedSubTasks.isNotEmpty
             ? plan.plannedSubTasks
@@ -1452,10 +1402,9 @@ class _AiCreateInputState extends State<_AiCreateInput> {
         );
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_mode == _AiCreateMode.log ? '学习记录已保存' : '学习任务已创建'),
-        ),
+      StudyToast.show(
+        context,
+        _mode == _AiCreateMode.log ? '学习记录已保存' : '学习任务已创建',
       );
       Navigator.of(context).pop();
     } catch (error) {
@@ -1541,9 +1490,8 @@ class _AiCreateInputState extends State<_AiCreateInput> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _isProcessing ? null : _toggleSpeech,
-                    icon: Icon(_isListening
-                        ? Icons.stop_rounded
-                        : Icons.mic_rounded),
+                    icon: Icon(
+                        _isListening ? Icons.stop_rounded : Icons.mic_rounded),
                     label: Text(_isListening ? '停止听写' : '开始语音'),
                   ),
                 ),
@@ -1663,7 +1611,12 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
   @override
   void initState() {
     super.initState();
+    _manualController.addListener(_handleManualInputChanged);
     _initSpeech();
+  }
+
+  void _handleManualInputChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _initSpeech() async {
@@ -1673,8 +1626,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
           if (mounted) {
             setState(() {
               _isInitialized = false;
-              _speechError =
-                  '语音功能需要 Google Play 服务支持，当前设备暂不支持';
+              _speechError = '语音功能需要 Google Play 服务支持，当前设备暂不支持';
               _isCheckingSpeech = false;
             });
           }
@@ -1685,8 +1637,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
           _isInitialized = available;
           _isCheckingSpeech = false;
           if (!available) {
-            _speechError =
-                '语音功能需要 Google Play 服务支持，当前设备暂不支持';
+            _speechError = '语音功能需要 Google Play 服务支持，当前设备暂不支持';
           }
         });
       }
@@ -1719,8 +1670,10 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
     final locale = await _bestLocale();
     if (locale == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未找到可用的语音语言包')),
+        await StudyToast.dialog(
+          context,
+          title: '语音不可用',
+          message: '未找到可用的语音语言包',
         );
       }
       return;
@@ -1729,21 +1682,36 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
       _isListening = true;
       _recognizedText = '';
     });
-    _speech.listen(
-      onResult: (result) {
-        if (mounted) {
-          setState(() => _recognizedText = result.recognizedWords);
-        }
-      },
-      localeId: locale,
-      listenFor: const Duration(seconds: 15),
-      pauseFor: const Duration(seconds: 3),
-    );
+    try {
+      await _speech.listen(
+        onResult: (result) {
+          if (mounted) {
+            setState(() => _recognizedText = result.recognizedWords);
+          }
+        },
+        localeId: locale,
+        listenFor: const Duration(seconds: 15),
+        pauseFor: const Duration(seconds: 3),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isListening = false;
+        _speechError = '语音识别不可用，可手动输入任务';
+      });
+      await StudyToast.dialog(
+        context,
+        title: '语音识别失败',
+        message: '$error',
+      );
+    }
   }
 
-  void _stopListening() {
-    _speech.stop();
-    setState(() => _isListening = false);
+  Future<void> _stopListening() async {
+    try {
+      await _speech.stop();
+    } catch (_) {}
+    if (mounted) setState(() => _isListening = false);
   }
 
   Future<void> _createTaskFromInput(String text) async {
@@ -1751,22 +1719,32 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
     setState(() => _isProcessing = true);
 
     try {
-      final plan = await widget.controller.aiStudyService.generateTaskPlan(text);
+      final plan =
+          await widget.controller.aiStudyService.generateTaskPlan(text);
       final now = DateTime.now();
       final subTasks = plan.plannedSubTasks.isNotEmpty
-          ? plan.plannedSubTasks.map((p) => StudySubTaskItem(
-                id: 'sub_v_${now.microsecondsSinceEpoch}_${plan.plannedSubTasks.indexOf(p)}',
-                title: p.title, startAt: p.startAt,
-                deadline: p.deadline, note: p.note,
-                createdAt: now, updatedAt: now,
-              )).toList()
-          : plan.subTasks.map((s) => StudySubTaskItem(
-                id: 'sub_v_${now.microsecondsSinceEpoch}_${plan.subTasks.indexOf(s)}',
-                title: s, deadline: plan.deadline,
-                createdAt: now, updatedAt: now,
-              )).toList();
+          ? plan.plannedSubTasks
+              .map((p) => StudySubTaskItem(
+                    id: 'sub_v_${now.microsecondsSinceEpoch}_${plan.plannedSubTasks.indexOf(p)}',
+                    title: p.title,
+                    startAt: p.startAt,
+                    deadline: p.deadline,
+                    note: p.note,
+                    createdAt: now,
+                    updatedAt: now,
+                  ))
+              .toList()
+          : plan.subTasks
+              .map((s) => StudySubTaskItem(
+                    id: 'sub_v_${now.microsecondsSinceEpoch}_${plan.subTasks.indexOf(s)}',
+                    title: s,
+                    deadline: plan.deadline,
+                    createdAt: now,
+                    updatedAt: now,
+                  ))
+              .toList();
       await widget.controller.addStudyTask(
-        title: plan.mainTitle,
+        title: plan.mainTitle.trim().isNotEmpty ? plan.mainTitle : text.trim(),
         type: plan.taskType,
         courseName: plan.courseName,
         deadline: plan.deadline,
@@ -1783,9 +1761,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
       );
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ 任务已创建')),
-      );
+      StudyToast.show(context, '任务已创建');
       Navigator.of(context).pop();
     }
   }
@@ -1793,6 +1769,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
   @override
   void dispose() {
     _speech.stop();
+    _manualController.removeListener(_handleManualInputChanged);
     _manualController.dispose();
     super.dispose();
   }
@@ -1811,8 +1788,8 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: textColor,
-        title: const Text('快速创建任务',
-            style: TextStyle(fontWeight: FontWeight.w800)),
+        title:
+            const Text('快速创建任务', style: TextStyle(fontWeight: FontWeight.w800)),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 40),
@@ -1856,8 +1833,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
                 ),
                 onPressed: _isProcessing
                     ? null
-                    : () =>
-                        _createTaskFromInput(_manualController.text),
+                    : () => _createTaskFromInput(_manualController.text),
                 icon: _isProcessing
                     ? const SizedBox(
                         width: 18,
@@ -1921,9 +1897,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
                   ),
                   child: Center(
                     child: Icon(
-                      _isListening
-                          ? Icons.mic_rounded
-                          : Icons.mic_none_rounded,
+                      _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
                       color: Colors.white,
                       size: _isListening ? 44 : 36,
                     ),
@@ -1972,8 +1946,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
                   ),
                   onPressed: _isProcessing
                       ? null
-                      : () =>
-                          _createTaskFromInput(_recognizedText),
+                      : () => _createTaskFromInput(_recognizedText),
                   icon: _isProcessing
                       ? const SizedBox(
                           width: 18,
@@ -1996,7 +1969,6 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
     );
   }
 }
-
 
 // ── Home 顶部 AI 建议卡 ──
 // 首次渲染异步读取缓存；过期 / 无缓存时调 AI 生成一条行动建议。
@@ -2023,9 +1995,11 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
   final _storage = LocalStorageService();
 
   String? _text;
+  String? _errorText;
   bool _loading = false;
   bool _dismissed = false;
   bool _hasError = false;
+  bool _usingLocalFallback = false;
 
   @override
   void initState() {
@@ -2057,16 +2031,21 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
         final raw = await storage.getString(_cacheKey);
         if (raw != null && raw.isNotEmpty) {
           final decoded = jsonDecode(raw) as Map<String, dynamic>;
-          final savedAt = DateTime.tryParse(decoded['savedAt'] as String? ?? '');
+          final savedAt =
+              DateTime.tryParse(decoded['savedAt'] as String? ?? '');
           final text = decoded['text'] as String? ?? '';
           final dismissed = decoded['dismissed'] as bool? ?? false;
           if (savedAt != null &&
               text.isNotEmpty &&
+              !_isStaleUnavailableSuggestion(text) &&
               DateTime.now().difference(savedAt) < _cacheDuration) {
             if (mounted) {
               setState(() {
                 _text = text;
                 _dismissed = dismissed;
+                _hasError = false;
+                _errorText = null;
+                _usingLocalFallback = false;
               });
             }
             return;
@@ -2078,8 +2057,12 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
     setState(() {
       _loading = true;
       _hasError = false;
+      _errorText = null;
+      _usingLocalFallback = false;
     });
     try {
+      await _waitForControllerLoaded();
+      if (!mounted) return;
       final tasks = widget.controller.studyTasks;
       final logs = widget.controller.studyLogs;
       if (tasks.isEmpty && logs.isEmpty) {
@@ -2087,6 +2070,30 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
           setState(() {
             _loading = false;
             _text = '还没记录学习数据，从「AI 对话」开始一下吧。';
+            _hasError = false;
+            _errorText = null;
+            _usingLocalFallback = false;
+          });
+        }
+        return;
+      }
+      if (!force) {
+        final localText = _buildLocalSuggestion(tasks, logs);
+        await storage.setString(
+          _cacheKey,
+          jsonEncode({
+            'savedAt': DateTime.now().toIso8601String(),
+            'text': localText,
+            'source': 'local',
+          }),
+        );
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _text = localText;
+            _hasError = false;
+            _errorText = null;
+            _usingLocalFallback = true;
           });
         }
         return;
@@ -2120,16 +2127,149 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
         setState(() {
           _text = text;
           _loading = false;
+          _hasError = false;
+          _errorText = null;
+          _usingLocalFallback = false;
         });
       }
-    } catch (_) {
+    } on AiServiceException catch (error) {
       if (mounted) {
         setState(() {
           _loading = false;
           _hasError = true;
+          _errorText = _friendlyAiSuggestionError(error.message);
+          _usingLocalFallback = true;
+          _text = _buildLocalSuggestion(
+            widget.controller.studyTasks,
+            widget.controller.studyLogs,
+          );
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _hasError = true;
+          _errorText = _friendlyAiSuggestionError(error.toString());
+          _usingLocalFallback = true;
+          _text = _buildLocalSuggestion(
+            widget.controller.studyTasks,
+            widget.controller.studyLogs,
+          );
         });
       }
     }
+  }
+
+  bool _isStaleUnavailableSuggestion(String text) {
+    final source = text.trim();
+    if (source.isEmpty) return true;
+    return source.contains('暂时无法获取') ||
+        source.contains('暂不可用') ||
+        source.contains('不可用') ||
+        source.contains('无法获取') ||
+        source.contains('请求失败') ||
+        source.contains('生成失败') ||
+        source.contains('云端未生成');
+  }
+
+  Future<void> _waitForControllerLoaded() async {
+    if (widget.controller.isLoaded) return;
+    for (var i = 0; i < 12; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted || widget.controller.isLoaded) return;
+    }
+  }
+
+  String _buildLocalSuggestion(
+    List<StudyTaskItem> tasks,
+    List<StudyLogItem> logs,
+  ) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final pending = tasks
+        .where((task) => task.effectiveStatus != StudyTaskStatus.completed)
+        .toList()
+      ..sort((a, b) => a.deadline.compareTo(b.deadline));
+
+    final overdue = pending.where((task) => task.deadline.isBefore(today));
+    if (overdue.isNotEmpty) {
+      final task = overdue.first;
+      return '本地建议：有 ${overdue.length} 项任务已过截止时间，先处理「${_taskTitle(task)}」，把它拆成 25 分钟专注块推进。';
+    }
+
+    final dueToday = pending.where((task) => _isSameDay(task.deadline, now));
+    if (dueToday.isNotEmpty) {
+      final task = dueToday.first;
+      return '本地建议：「${_taskTitle(task)}」今天截止，建议先完成最小可提交版本，再补充细节。';
+    }
+
+    final dueSoon = pending.where((task) {
+      final diff = task.deadline.difference(now);
+      return !diff.isNegative && diff.inHours <= 48;
+    });
+    if (dueSoon.isNotEmpty) {
+      final task = dueSoon.first;
+      return '本地建议：「${_taskTitle(task)}」将在 48 小时内截止，今天先安排一个专注计时，降低临近截止风险。';
+    }
+
+    if (logs.isEmpty) {
+      return '本地建议：还没有学习日志，先写一条今天学了什么、卡在哪里、下一步做什么，后续 AI 才能给出更准建议。';
+    }
+
+    final latestLog = logs.reduce(
+      (a, b) => a.date.isAfter(b.date) ? a : b,
+    );
+    final latestDay = DateTime(
+      latestLog.date.year,
+      latestLog.date.month,
+      latestLog.date.day,
+    );
+    final gapDays = today.difference(latestDay).inDays;
+    if (gapDays >= 2) {
+      return '本地建议：已经 $gapDays 天没有新的学习日志了，今天先补一条 3 分钟复盘，恢复记录节奏。';
+    }
+
+    if (pending.isNotEmpty) {
+      final task = pending.first;
+      return '本地建议：当前优先推进「${_taskTitle(task)}」，完成后再记录一次学习日志，方便形成闭环。';
+    }
+
+    return '本地建议：当前没有明显待办压力，保持学习记录和复盘节奏就很好。';
+  }
+
+  String _taskTitle(StudyTaskItem task) {
+    final title = task.title.trim();
+    return title.isEmpty ? '未命名任务' : title;
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _friendlyAiSuggestionError(String message) {
+    final source = message.trim();
+    if (source.isEmpty) return '云端请求失败';
+    if (source.contains('BLUEHEART_API_KEY')) {
+      return '后端未配置 BLUEHEART_API_KEY';
+    }
+    if (source.contains('BLUEHEART_APP_ID')) {
+      return '后端未配置 BLUEHEART_APP_ID';
+    }
+    if (source.contains('请先登录') ||
+        source.contains('401') ||
+        source.contains('登录已过期')) {
+      return '未登录或登录态已过期';
+    }
+    if (source.contains('超时')) return '云端请求超时';
+    if (source.contains('无法连接') ||
+        source.contains('网络') ||
+        source.contains('SocketException')) {
+      return '无法连接后端服务';
+    }
+    const maxLength = 64;
+    return source.length > maxLength
+        ? '${source.substring(0, maxLength)}...'
+        : source;
   }
 
   @override
@@ -2155,156 +2295,173 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 400),
       child: Container(
-        key: ValueKey('suggestion_$_text'),
+        key: ValueKey('suggestion_${_hasError}_${_text}_$_errorText'),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-          color: accent.withValues(alpha: 0.18),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.auto_awesome_rounded, color: accent, size: 18),
+            color: accent.withValues(alpha: 0.18),
+            width: 1,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'AI 建议',
-                      style: TextStyle(
-                        color: titleColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'beta',
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const StudyAssetIcon(
+                asset: AppAssets.aiSuggestionIcon,
+                preserveColor: true,
+                fallbackIcon: Icons.lightbulb_rounded,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        _usingLocalFallback ? '本地建议' : 'AI 建议',
                         style: TextStyle(
-                            color: accent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700),
+                          color: titleColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
+                      const Spacer(),
+                      InkWell(
+                        onTap: _dismiss,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(Icons.close_rounded,
+                              size: 16, color: bodyColor),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (_loading)
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: accent),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('AI 正在分析你的学习数据...',
+                            style: TextStyle(color: bodyColor, fontSize: 12)),
+                      ],
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _text ?? '',
+                          style: TextStyle(
+                            color: bodyColor,
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                        if (_hasError) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '云端未生成：${_errorText ?? '原因未知'}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: bodyColor.withValues(alpha: 0.72),
+                                    fontSize: 11,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: '重试云端建议',
+                                onPressed: () => _loadOrFetch(force: true),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 32,
+                                  height: 32,
+                                ),
+                                icon: Icon(
+                                  Icons.refresh_rounded,
+                                  size: 18,
+                                  color: accent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
                     ),
-                    const Spacer(),
-                    InkWell(
-                      onTap: _dismiss,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: Icon(Icons.close_rounded,
-                            size: 16, color: bodyColor),
-                      ),
+                  if (!_loading && _text != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        if (widget.onOpenTasks != null)
+                          TextButton.icon(
+                            onPressed: widget.onOpenTasks,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.task_alt_rounded, size: 14),
+                            label: const Text('查看任务',
+                                style: TextStyle(fontSize: 12)),
+                          ),
+                        if (widget.onOpenAssistant != null)
+                          TextButton.icon(
+                            onPressed: widget.onOpenAssistant,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const StudyAssetIcon(
+                              asset: AppAssets.aiFloatingAssistantIcon,
+                              preserveColor: true,
+                              fallbackIcon: Icons.smart_toy_rounded,
+                              size: 16,
+                            ),
+                            label: const Text('AI 助手',
+                                style: TextStyle(fontSize: 12)),
+                          ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: '刷新建议',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _loadOrFetch(force: true),
+                          icon: const Icon(Icons.refresh_rounded, size: 16),
+                        ),
+                      ],
                     ),
                   ],
-                ),
-                const SizedBox(height: 6),
-                if (_loading)
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: accent),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('AI 正在分析你的学习数据...',
-                          style: TextStyle(color: bodyColor, fontSize: 12)),
-                    ],
-                  )
-                else if (_hasError)
-                  Row(
-                    children: [
-                      Text('AI 建议暂不可用',
-                          style: TextStyle(color: bodyColor, fontSize: 12)),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () => _loadOrFetch(force: true),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  )
-                else
-                  Text(
-                    _text ?? '',
-                    style: TextStyle(
-                        color: bodyColor, fontSize: 13, height: 1.5),
-                  ),
-                if (!_loading && !_hasError && _text != null) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      if (widget.onOpenTasks != null)
-                        TextButton.icon(
-                          onPressed: widget.onOpenTasks,
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          icon: const Icon(Icons.task_alt_rounded, size: 14),
-                          label: const Text('查看任务',
-                              style: TextStyle(fontSize: 12)),
-                        ),
-                      if (widget.onOpenAssistant != null)
-                        TextButton.icon(
-                          onPressed: widget.onOpenAssistant,
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          icon: const Icon(
-                              Icons.auto_awesome_rounded, size: 14),
-                          label: const Text('AI 助手',
-                              style: TextStyle(fontSize: 12)),
-                        ),
-                      const Spacer(),
-                      IconButton(
-                        tooltip: '刷新建议',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _loadOrFetch(force: true),
-                        icon: const Icon(Icons.refresh_rounded, size: 16),
-                      ),
-                    ],
-                  ),
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }

@@ -9,6 +9,7 @@ import '../../controllers/app_data_controller.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 import '../shared/app_assets.dart';
+import '../shared/common_widgets.dart';
 import '../shared/rive_safe_widget.dart';
 import '../shell/app_shell.dart';
 
@@ -100,6 +101,15 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       if (_isAdvancingToLogin) {
         return;
       }
+
+      setState(() => _ctaState = _CtaState.loading);
+      final resumed = await _tryResumeLocalSession();
+      if (resumed) {
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _ctaState = _CtaState.idle);
+
       _isAdvancingToLogin = true;
       try {
         await _pageController.animateToPage(
@@ -138,33 +148,52 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
       if (!mounted) return;
 
-      setState(() => _ctaState = _CtaState.success);
-      await Future<void>.delayed(const Duration(milliseconds: 260));
+      await _playSuccessTransition();
       if (!mounted) return;
 
-      setState(() => _ctaState = _CtaState.confetti);
-      await Future<void>.delayed(const Duration(milliseconds: 320));
-      if (!mounted) return;
-
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => AppShell(
-            initialController: controller,
-          ),
-        ),
-      );
+      _openAppShell(controller);
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _ctaState = _CtaState.idle);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_friendlyAuthError(error))),
+      StudyToast.dialog(
+        context,
+        title: '登录失败',
+        message: _friendlyAuthError(error),
       );
     } catch (_) {
       if (!mounted) return;
       setState(() => _ctaState = _CtaState.idle);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('登录失败，请稍后重试')),
+      StudyToast.dialog(
+        context,
+        title: '登录失败',
+        message: '登录失败，请稍后重试',
       );
+    }
+  }
+
+  Future<bool> _tryResumeLocalSession() async {
+    final controller = AppDataController();
+    try {
+      await controller.load();
+      if (!mounted) {
+        controller.dispose();
+        return true;
+      }
+      if (!controller.isLoggedIn) {
+        controller.dispose();
+        return false;
+      }
+
+      await _playSuccessTransition();
+      if (!mounted) {
+        controller.dispose();
+        return true;
+      }
+      _openAppShell(controller);
+      return true;
+    } catch (_) {
+      controller.dispose();
+      return false;
     }
   }
 
@@ -207,6 +236,26 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       return '用户名需要 3-32 位';
     }
     return message;
+  }
+
+  Future<void> _playSuccessTransition() async {
+    if (!mounted) return;
+    setState(() => _ctaState = _CtaState.success);
+    await Future<void>.delayed(const Duration(milliseconds: 260));
+    if (!mounted) return;
+
+    setState(() => _ctaState = _CtaState.confetti);
+    await Future<void>.delayed(const Duration(milliseconds: 320));
+  }
+
+  void _openAppShell(AppDataController controller) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => AppShell(
+          initialController: controller,
+        ),
+      ),
+    );
   }
 
   Future<void> _handleBackToLanding() async {
@@ -304,8 +353,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                                     _emailController,
                                                 passwordController:
                                                     _passwordController,
-                                                isRegisterMode:
-                                                    _isRegisterMode,
+                                                isRegisterMode: _isRegisterMode,
                                                 onToggleMode: () {
                                                   setState(() =>
                                                       _isRegisterMode =
@@ -480,14 +528,6 @@ class _LandingPage extends StatelessWidget {
             height: 34,
             fit: BoxFit.fitHeight,
           ),
-          const SizedBox(height: 16),
-          Text(
-            '管理课程任务、记录学习过程、自动生成学习周报。',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontSize: 16,
-                  color: AppColors.body.withValues(alpha: 0.72),
-                ),
-          ),
         ],
       ),
     );
@@ -554,7 +594,8 @@ class _LoginPageState extends State<_LoginPage> {
                 hintText: '用户名',
                 filled: true,
                 fillColor: Colors.white,
-                suffixIcon: Icon(Icons.person_outline_rounded, color: AppColors.muted),
+                suffixIcon:
+                    Icon(Icons.person_outline_rounded, color: AppColors.muted),
               ),
             )
           else
@@ -571,7 +612,8 @@ class _LoginPageState extends State<_LoginPage> {
                 hintText: '用户名 / 邮箱',
                 filled: true,
                 fillColor: Colors.white,
-                suffixIcon: Icon(Icons.person_outline_rounded, color: AppColors.muted),
+                suffixIcon:
+                    Icon(Icons.person_outline_rounded, color: AppColors.muted),
               ),
             ),
           const SizedBox(height: 16),
@@ -610,7 +652,7 @@ class _LoginPageState extends State<_LoginPage> {
                     color: const Color(0xFF4470E8),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                ),
+                  ),
             ),
           ),
         ],
@@ -735,9 +777,8 @@ class _AnimatedPrimaryActionButtonState
     final isLoading = widget.state == _CtaState.loading;
     final isSuccess =
         widget.state == _CtaState.success || widget.state == _CtaState.confetti;
-    final buttonText = widget.progress < 0.5
-        ? '开始使用'
-        : (widget.isRegisterMode ? '注册' : '登录');
+    final buttonText =
+        widget.progress < 0.5 ? '开始使用' : (widget.isRegisterMode ? '注册' : '登录');
 
     return AnimatedBuilder(
       animation: _errorController,

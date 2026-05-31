@@ -7,7 +7,9 @@ import '../../controllers/app_data_controller.dart';
 import '../../models/weekly_report_item.dart';
 import '../../services/report_export_service.dart';
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
+import '../shared/markdown_styles.dart';
 
 class CourseArchivePage extends StatelessWidget {
   const CourseArchivePage({
@@ -26,7 +28,7 @@ class CourseArchivePage extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        final accent = controller.primaryColor;
+        const accent = StudyUi.primary;
         final courses = controller.courseNames;
         final allReports = controller.weeklyReports;
         // 按 createdAt 倒序排列（最新的在前）
@@ -42,9 +44,38 @@ class CourseArchivePage extends StatelessWidget {
             Text(
               '课程归档',
               style: TextStyle(
-                color: isDarkMode ? Colors.white : Colors.black,
+                color: StudyUi.title(isDarkMode),
                 fontSize: 24,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 14),
+            StudyCard(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Image.asset(
+                    AppAssets.uiRefreshFeatureArchive,
+                    width: 82,
+                    height: 82,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.archive_rounded,
+                      color: StudyUi.muted(isDarkMode),
+                      size: 44,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      '课程、周报和资料按课程名归档，方便期末复盘。',
+                      style: TextStyle(
+                        color: StudyUi.body(isDarkMode),
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -54,9 +85,9 @@ class CourseArchivePage extends StatelessWidget {
                 Text(
                   '课程列表',
                   style: TextStyle(
-                    color: isDarkMode ? Colors.white : Colors.black,
+                    color: StudyUi.title(isDarkMode),
                     fontSize: 22,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
                 const Spacer(),
@@ -69,19 +100,12 @@ class CourseArchivePage extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             if (courses.isEmpty)
-              GlassCard(
+              const StudyEmptyState(
                 key: const Key('courses_empty_state'),
-                color: isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                    : null,
-                child: Text(
-                  '尚无双课程。添加学习任务或学习记录时填写课程名，这里会自动汇总。',
-                  style: TextStyle(
-                    color:
-                        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-                    height: 1.55,
-                  ),
-                ),
+                asset: AppAssets.uiRefreshFeatureArchive,
+                title: '还没有课程归档',
+                message: '添加学习任务或学习记录时填写课程名，这里会自动汇总。',
+                compact: true,
               )
             else
               for (final course in courses) ...[
@@ -93,7 +117,7 @@ class CourseArchivePage extends StatelessWidget {
                     onTap: () => onViewCourse(course),
                     onLongPress: () =>
                         _showDeleteCourseConfirm(context, course),
-                    child: GlassCard(
+                    child: StudyCard(
                       color: isDarkMode
                           ? const Color(0xFF242B37).withValues(alpha: 0.9)
                           : null,
@@ -104,13 +128,14 @@ class CourseArchivePage extends StatelessWidget {
                             height: 44,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(14),
-                              gradient: LinearGradient(
-                                colors: [accent, const Color(0xFF8D5EFF)],
+                              color: StudyUi.chipBackground(accent, isDarkMode),
+                              border: Border.all(
+                                color: accent.withValues(alpha: 0.20),
                               ),
                             ),
                             child: ColorFiltered(
                               colorFilter: const ColorFilter.mode(
-                                Colors.white,
+                                accent,
                                 BlendMode.srcIn,
                               ),
                               child: Lottie.asset(
@@ -129,6 +154,8 @@ class CourseArchivePage extends StatelessWidget {
                               children: [
                                 Text(
                                   course,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: isDarkMode
                                         ? Colors.white
@@ -174,7 +201,7 @@ class CourseArchivePage extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             if (reports.isEmpty)
-              GlassCard(
+              StudyCard(
                 key: const Key('reports_empty_state'),
                 color: isDarkMode
                     ? const Color(0xFF242B37).withValues(alpha: 0.9)
@@ -213,9 +240,7 @@ class CourseArchivePage extends StatelessWidget {
                               '--- ${_fmtDate(r.startDate)} ~ ${_fmtDate(r.endDate)} ---\n${r.content}')
                           .join('\n\n');
                       Clipboard.setData(ClipboardData(text: allContent));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('全部周报已复制到剪贴板')),
-                      );
+                      StudyToast.show(context, '全部周报已复制到剪贴板');
                     },
                     icon: const Icon(Icons.copy_all_rounded, size: 18),
                     label: const Text('复制全部周报',
@@ -260,7 +285,7 @@ class CourseArchivePage extends StatelessWidget {
                     key: Key('report_item_${report.id}'),
                     borderRadius: BorderRadius.circular(28),
                     onTap: () => _showReportDetail(context, report),
-                    child: GlassCard(
+                    child: StudyCard(
                       color: isDarkMode
                           ? const Color(0xFF242B37).withValues(alpha: 0.9)
                           : null,
@@ -369,60 +394,22 @@ class CourseArchivePage extends StatelessWidget {
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(22),
-            child: GlassCard(
+            child: StudyCard(
               color: isDarkMode
                   ? const Color(0xFF242B37).withValues(alpha: 0.92)
                   : null,
               child: MarkdownBody(
                 data: report.content,
                 selectable: true,
-                styleSheet: MarkdownStyleSheet(
-                  p: TextStyle(
-                    color:
-                        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-                    height: 1.65,
-                    fontSize: 14,
-                  ),
-                  h1: TextStyle(
-                    color: isDarkMode ? Colors.white : AppColors.ink,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    height: 1.5,
-                  ),
-                  h2: TextStyle(
-                    color: isDarkMode ? Colors.white : AppColors.ink,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    height: 1.5,
-                  ),
-                  h3: TextStyle(
-                    color: isDarkMode ? Colors.white : AppColors.ink,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    height: 1.5,
-                  ),
-                  em: TextStyle(
-                    color:
-                        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-                    fontStyle: FontStyle.italic,
-                  ),
-                  strong: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDarkMode ? Colors.white : AppColors.ink,
-                  ),
-                  blockquote: TextStyle(
-                    color: isDarkMode ? Colors.white54 : AppColors.muted,
-                    fontSize: 14,
-                  ),
-                  code: TextStyle(
-                    backgroundColor:
-                        isDarkMode ? Colors.black26 : const Color(0xFFE8ECFF),
-                    color: isDarkMode
-                        ? const Color(0xFFB0E0E6)
-                        : const Color(0xFF5A67D8),
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                  ),
+                styleSheet: buildStudyMarkdownStyleSheet(
+                  isDarkMode: isDarkMode,
+                  bodyHeight: 1.65,
+                ),
+                imageBuilder: (uri, title, alt) => buildStudyMarkdownImage(
+                  uri,
+                  title,
+                  alt,
+                  isDarkMode: isDarkMode,
                 ),
               ),
             ),
@@ -434,9 +421,7 @@ class CourseArchivePage extends StatelessWidget {
 
   void _copyReportContent(BuildContext context, WeeklyReportItem report) {
     Clipboard.setData(ClipboardData(text: report.content));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('周报已复制到剪贴板')),
-    );
+    StudyToast.show(context, '周报已复制到剪贴板');
   }
 
   Future<void> _exportReport(
@@ -483,15 +468,15 @@ class CourseArchivePage extends StatelessWidget {
   }) async {
     await Clipboard.setData(ClipboardData(text: path));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已导出 $kind，文件路径已复制：$path')),
-    );
+    StudyToast.show(context, '已导出 $kind，文件路径已复制');
   }
 
   void _showExportError(BuildContext context, Object error) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('导出失败：$error')),
+    StudyToast.dialog(
+      context,
+      title: '导出失败',
+      message: '$error',
     );
   }
 
@@ -501,20 +486,25 @@ class CourseArchivePage extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: StudyUi.surface(isDarkMode),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('添加课程'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: '课程名称',
-            filled: true,
-            fillColor: isDarkMode
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF2F5FC),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
+        content: SizedBox(
+          width: 360,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: '课程名称',
+              filled: true,
+              fillColor: isDarkMode
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : const Color(0xFFF2F5FC),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
             ),
           ),
         ),
@@ -523,8 +513,8 @@ class CourseArchivePage extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('取消'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
+          FilledButton(
+            style: FilledButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: Colors.white,
             ),
@@ -546,7 +536,9 @@ class CourseArchivePage extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: StudyUi.surface(isDarkMode),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('删除课程'),
         content: Text('确定删除课程「$course」吗？\n\n仅删除课程标签，不会删除已有的任务和日志。'),
         actions: [
@@ -554,8 +546,8 @@ class CourseArchivePage extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('取消'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
+          FilledButton(
+            style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFEF6850),
               foregroundColor: Colors.white,
             ),
@@ -600,8 +592,33 @@ class CourseDetailPage extends StatelessWidget {
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             foregroundColor: isDarkMode ? Colors.white : AppColors.ink,
-            title: Text(courseName,
-                style: const TextStyle(fontWeight: FontWeight.w800)),
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: StudyUi.chipBackground(accent, isDarkMode),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.school_rounded,
+                    color: StudyUi.primary,
+                    size: 17,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    courseName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
           ),
           body: ListView(
             key: const Key('page_course_detail'),
@@ -611,11 +628,7 @@ class CourseDetailPage extends StatelessWidget {
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(30),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [accent, const Color(0xFF8D5EFF)],
-                  ),
+                  color: StudyUi.primary,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,7 +669,7 @@ class CourseDetailPage extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               if (tasks.isEmpty)
-                GlassCard(
+                StudyCard(
                   color: isDarkMode
                       ? const Color(0xFF242B37).withValues(alpha: 0.9)
                       : null,
@@ -670,7 +683,7 @@ class CourseDetailPage extends StatelessWidget {
                 )
               else
                 for (final task in tasks) ...[
-                  GlassCard(
+                  StudyCard(
                     color: isDarkMode
                         ? const Color(0xFF242B37).withValues(alpha: 0.9)
                         : null,
@@ -679,16 +692,20 @@ class CourseDetailPage extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              task.title,
-                              style: TextStyle(
-                                color:
-                                    isDarkMode ? Colors.white : AppColors.ink,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
+                            Expanded(
+                              child: Text(
+                                task.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color:
+                                      isDarkMode ? Colors.white : AppColors.ink,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                            const Spacer(),
+                            const SizedBox(width: 10),
                             BadgePill(
                               label: task.status.label,
                               background: const Color(0x197394F9),
@@ -721,7 +738,7 @@ class CourseDetailPage extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               if (logs.isEmpty)
-                GlassCard(
+                StudyCard(
                   color: isDarkMode
                       ? const Color(0xFF242B37).withValues(alpha: 0.9)
                       : null,
@@ -735,7 +752,7 @@ class CourseDetailPage extends StatelessWidget {
                 )
               else
                 for (final log in logs) ...[
-                  GlassCard(
+                  StudyCard(
                     color: isDarkMode
                         ? const Color(0xFF242B37).withValues(alpha: 0.9)
                         : null,

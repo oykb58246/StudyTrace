@@ -25,6 +25,7 @@ import '../services/ai_credential_service.dart';
 import '../services/ai_semantic_search_service.dart';
 import '../services/ai_study_service.dart';
 import '../services/api_client.dart';
+import '../services/api_endpoint_config.dart';
 import '../services/auth_service.dart';
 import '../services/activity_service.dart';
 import '../services/connectivity_service.dart';
@@ -34,6 +35,7 @@ import '../services/gamification_service.dart';
 import '../services/group_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/learning_alert_service.dart';
+import '../services/learning_moment_service.dart';
 import '../services/learning_trace_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_service.dart';
@@ -109,20 +111,14 @@ class AppDataController extends ChangeNotifier {
   bool _isLoaded = false;
   bool _darkMode = false;
   bool _skinVivo = true; // true=vivo蓝, false=传统紫
-  String _apiBaseUrl = _defaultBaseUrl();
+  String _apiBaseUrl = ApiEndpointConfig.defaultBaseUrl();
 
-  static String _defaultBaseUrl() {
-    final current = Uri.base;
-    if ((current.scheme == 'http' || current.scheme == 'https') &&
-        current.host == 'studytrace.oykb.cn') {
-      return '${current.scheme}://${current.authority}';
-    }
-    return 'https://studytrace.oykb.cn';
+  static String _normalizeBaseUrl(String? value) {
+    return ApiEndpointConfig.normalizeBaseUrl(value);
   }
-
-  static String _normalizeBaseUrl(String value) => _defaultBaseUrl();
   bool _isLoggedIn = false;
   ApiClient? _backendApi;
+  bool _isHandlingUnauthorizedSession = false;
 
   AiConfig _aiConfig = const AiConfig();
 
@@ -192,7 +188,7 @@ class AppDataController extends ChangeNotifier {
 
   AiStudyService get aiStudyService {
     final backend = _isLoggedIn ? _ensureBackendClient() : null;
-    return AiStudyService(backendClient: backend);
+    return AiStudyService(backendClient: backend, config: _aiConfig);
   }
 
   OcrService createOcrService() {
@@ -221,6 +217,11 @@ class AppDataController extends ChangeNotifier {
     return LeaderboardService(apiClient: api);
   }
 
+  LearningMomentService get learningMomentService {
+    final api = _isLoggedIn ? _ensureBackendClient() : null;
+    return LearningMomentService(apiClient: api);
+  }
+
   ActivityService get activityService {
     final api = _isLoggedIn ? _ensureBackendClient() : null;
     return ActivityService(apiClient: api);
@@ -240,7 +241,7 @@ class AppDataController extends ChangeNotifier {
       CloudSpeechService(vivoCapabilityService);
 
   LocationEvidenceService get locationEvidenceService =>
-      LocationEvidenceService(vivoCapabilityService, communityEvidenceService);
+      LocationEvidenceService(communityEvidenceService);
 
   AiConfig get aiConfig => _aiConfig;
   Color get primaryColor =>
@@ -356,7 +357,7 @@ class AppDataController extends ChangeNotifier {
     final loadedReports = results[4] as List<WeeklyReportItem>;
     _darkMode = results[5] as bool;
     _skinVivo = results[6] as bool;
-    _apiBaseUrl = _defaultBaseUrl();
+    _apiBaseUrl = _normalizeBaseUrl(results[7] as String?);
     final token = results[8] as String?;
     _isLoggedIn = token != null && token.isNotEmpty;
     _aiConfig = results[9] as AiConfig;
@@ -841,7 +842,9 @@ class AppDataController extends ChangeNotifier {
   }
 
   Future<void> setApiBaseUrl(String url) async {
-    _apiBaseUrl = _defaultBaseUrl();
+    _apiBaseUrl = _normalizeBaseUrl(url);
+    _backendApi?.baseUrl = _apiBaseUrl;
+    _connectivity.checkUrl = _apiBaseUrl;
     await _storage.saveServerBaseUrl(_apiBaseUrl);
     notifyListeners();
   }
@@ -860,7 +863,7 @@ class AppDataController extends ChangeNotifier {
     _isLoggedIn = false;
     _backendApi = null;
     _connectivity.stopMonitoring();
-    _authService.attach(ApiClient(baseUrl: _apiBaseUrl, credentials: _credentials));
+    _authService.attach(_createBackendClient());
     await _credentials.clearAuthToken();
     await _credentials.clearRefreshToken();
     notifyListeners();
@@ -937,7 +940,7 @@ class AppDataController extends ChangeNotifier {
   Future<void> login(String token) async {
     _isLoggedIn = true;
     await _credentials.saveAuthToken(token);
-    _backendApi ??= ApiClient(baseUrl: _apiBaseUrl, credentials: _credentials);
+    _backendApi ??= _createBackendClient();
     _authService.attach(_backendApi!);
     notifyListeners();
   }
@@ -946,6 +949,9 @@ class AppDataController extends ChangeNotifier {
     required String identifier,
     required String password,
   }) async {
+    if (!_isLoaded) {
+      _apiBaseUrl = _normalizeBaseUrl(await _storage.loadServerBaseUrl());
+    }
     final api = _ensureBackendClient();
     _authService.attach(api);
     final result = await _authService.login(
@@ -974,6 +980,9 @@ class AppDataController extends ChangeNotifier {
     required String password,
     String? nickname,
   }) async {
+    if (!_isLoaded) {
+      _apiBaseUrl = _normalizeBaseUrl(await _storage.loadServerBaseUrl());
+    }
     final api = _ensureBackendClient();
     _authService.attach(api);
     final result = await _authService.register(
@@ -1034,35 +1043,67 @@ class AppDataController extends ChangeNotifier {
       existing.baseUrl = _apiBaseUrl;
       return existing;
     }
-    final client = ApiClient(baseUrl: _apiBaseUrl, credentials: _credentials);
+    final client = _createBackendClient();
     _backendApi = client;
     return client;
   }
 
+  ApiClient _createBackendClient() {
+    return ApiClient(
+      baseUrl: _apiBaseUrl,
+      credentials: _credentials,
+      onUnauthorized: _handleUnauthorizedCloudSession,
+    );
+  }
+
+  Future<void> _handleUnauthorizedCloudSession() async {
+    if (_isHandlingUnauthorizedSession) return;
+    _isHandlingUnauthorizedSession = true;
+    try {
+      _isLoggedIn = false;
+      _backendApi = null;
+      _connectivity.stopMonitoring();
+      _authService.attach(_createBackendClient());
+      await _credentials.clearAuthToken();
+      await _credentials.clearRefreshToken();
+      notifyListeners();
+    } finally {
+      _isHandlingUnauthorizedSession = false;
+    }
+  }
+
   Future<void> syncToCloud() async {
     if (!_isLoggedIn) return;
-    final api = _ensureBackendClient();
-    _syncService.attach(api);
-    _activityService.attach(api);
+    try {
+      final api = _ensureBackendClient();
+      _syncService.attach(api);
+      _activityService.attach(api);
 
-    final localItems = _syncService.buildLocalPayloads(
-      tasks: _studyTasks,
-      logs: _studyLogs,
-      notes: _studyNotes,
-      cards: _flashCards,
-      courses: _courses,
-      reports: _weeklyReports,
-      profile: _userProfile,
-      trashItems: _trashItems,
-      actionRecords: _actionRecords,
-      moments: _learningMoments,
-      gamificationState: _gamificationState,
-    );
-    await _syncService.push(localItems);
+      final localItems = _syncService.buildLocalPayloads(
+        tasks: _studyTasks,
+        logs: _studyLogs,
+        notes: _studyNotes,
+        cards: _flashCards,
+        courses: _courses,
+        reports: _weeklyReports,
+        profile: _userProfile,
+        trashItems: _trashItems,
+        actionRecords: _actionRecords,
+        moments: _learningMoments,
+        gamificationState: _gamificationState,
+      );
+      await _syncService.push(localItems);
 
-    final result = await _syncService.pull();
-    _applyPullItems(result.items);
-    await _persistSyncedData();
+      final result = await _syncService.pull();
+      _applyPullItems(result.items);
+      await _persistSyncedData();
+    } on ApiException catch (error) {
+      if (error.isUnauthorized) {
+        await _handleUnauthorizedCloudSession();
+        return;
+      }
+      rethrow;
+    }
   }
 
   Future<void> _persistSyncedData() async {
@@ -1081,7 +1122,7 @@ class AppDataController extends ChangeNotifier {
 
   void _queueSync() {
     if (!_isLoggedIn) return;
-    unawaited(syncToCloud());
+    unawaited(syncToCloud().catchError((Object _) {}));
   }
 
   Future<void> _pushDeletedEntity({
@@ -1102,6 +1143,11 @@ class AppDataController extends ChangeNotifier {
           deletedAt: deletedAt,
         ),
       ]);
+    } on ApiException catch (error) {
+      if (error.isUnauthorized) {
+        await _handleUnauthorizedCloudSession();
+      }
+      // 离线或服务异常时保留本地回收站，后续全量同步会补齐。
     } catch (_) {
       // 离线或服务异常时保留本地回收站，后续全量同步会补齐。
     }
@@ -1708,35 +1754,47 @@ class AppDataController extends ChangeNotifier {
     List<String> imagePaths = const [],
     LearningMomentVisibility visibility = LearningMomentVisibility.private,
     String? groupId,
+    List<String> allowedGroupIds = const [],
+    List<String> deniedGroupIds = const [],
     String? sourceType,
     String? sourceId,
   }) async {
     final now = DateTime.now();
+    final effectiveAllowedGroupIds =
+        allowedGroupIds.isNotEmpty
+            ? allowedGroupIds
+            : (groupId == null || groupId.isEmpty ? const <String>[] : [groupId]);
     final moment = LearningMoment(
       id: 'moment_${now.microsecondsSinceEpoch}',
       content: content.trim(),
       courseName: courseName.trim(),
-      imagePaths: imagePaths.take(3).toList(growable: false),
+      imagePaths: imagePaths.take(9).toList(growable: false),
       visibility: visibility,
-      groupId: groupId,
+      allowedGroupIds: effectiveAllowedGroupIds,
+      deniedGroupIds: deniedGroupIds,
       sourceType: sourceType,
       sourceId: sourceId,
+      author: LearningMomentAuthor(
+        nickname: _userProfile.nickname,
+        avatarEmoji: _userProfile.avatarEmoji,
+        avatarImageUrl: _userProfile.avatarImagePath,
+      ),
+      isMine: true,
       createdAt: now,
     );
     _learningMoments.insert(0, moment);
     await _storage.saveLearningMoments(_learningMoments);
     notifyListeners();
     _queueSync();
-    if (visibility == LearningMomentVisibility.group &&
-        groupId != null &&
-        groupId.isNotEmpty) {
+    if (visibility == LearningMomentVisibility.includeGroups &&
+        effectiveAllowedGroupIds.isNotEmpty) {
       await _recordActivity(
         type: 'momentShared',
         title: courseName.trim().isEmpty
             ? '分享了一条学迹动态'
             : '分享了 ${courseName.trim()} 的学习动态',
         summary: content.trim(),
-        groupId: groupId,
+        groupId: effectiveAllowedGroupIds.first,
         sourceType: sourceType ?? 'learning_moment',
         sourceId: sourceId ?? moment.id,
         payloadJson: {
@@ -1817,6 +1875,11 @@ class AppDataController extends ChangeNotifier {
         sourceId: sourceId,
         payloadJson: payloadJson,
       );
+    } on ApiException catch (error) {
+      if (error.isUnauthorized) {
+        await _handleUnauthorizedCloudSession();
+      }
+      // 活动上报失败不影响本地学习流程。
     } catch (_) {
       // 活动上报失败不影响本地学习流程。
     }

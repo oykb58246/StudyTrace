@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_endpoint_config.dart';
+
 /// 网络连接状态
 enum ConnectivityStatus {
   online,
@@ -32,12 +34,7 @@ class ConnectivityService {
   bool get isOffline => _status == ConnectivityStatus.offline;
 
   static String _defaultCheckUrl() {
-    final current = Uri.base;
-    if ((current.scheme == 'http' || current.scheme == 'https') &&
-        current.host == 'studytrace.oykb.cn') {
-      return '${current.scheme}://${current.authority}';
-    }
-    return 'https://studytrace.oykb.cn';
+    return ApiEndpointConfig.defaultBaseUrl();
   }
 
   /// 开始定期检查网络状态
@@ -61,8 +58,9 @@ class ConnectivityService {
 
   Future<void> _checkConnectivity() async {
     try {
-      final uri = Uri.parse(checkUrl);
-      await http.head(uri).timeout(const Duration(seconds: 5));
+      final baseUrl = checkUrl.trim().replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.parse('$baseUrl/health');
+      await http.get(uri).timeout(const Duration(seconds: 5));
       _updateStatus(ConnectivityStatus.online);
     } catch (_) {
       _updateStatus(ConnectivityStatus.offline);

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
-import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 
 class TaskPlanningPage extends StatelessWidget {
@@ -44,10 +43,9 @@ class TaskPlanningPage extends StatelessWidget {
                 t.deadline.isBefore(weekEnd))
             .toList();
 
-        final accent = controller.primaryColor;
-        final textColor = isDarkMode ? Colors.white : AppColors.ink;
-        final bodyColor =
-            isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        const accent = StudyUi.primary;
+        final textColor = StudyUi.title(isDarkMode);
+        final bodyColor = StudyUi.body(isDarkMode);
 
         return RefreshIndicator(
           onRefresh: () async => controller.notifyListeners(),
@@ -55,37 +53,36 @@ class TaskPlanningPage extends StatelessWidget {
           key: const Key('page_task_planning'),
           padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
           children: [
-            Text('任务编排', style: TextStyle(color: textColor, fontSize: 24, fontWeight: FontWeight.w700)),
+            Text('任务编排', style: TextStyle(color: textColor, fontSize: 24, fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
             Text('${tasks.where((t) => t.effectiveStatus != StudyTaskStatus.completed).length} 项未完成，${overdueTasks.length} 项逾期',
                 style: TextStyle(color: bodyColor, fontSize: 13)),
             const SizedBox(height: 18),
             // Overdue section
             if (overdueTasks.isNotEmpty) ...[
-              _sectionHeader('⚠️ 逾期任务', const Color(0xFFEF6850), textColor),
+              _sectionHeader('逾期任务', StudyUi.danger, textColor),
               const SizedBox(height: 10),
               ...overdueTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor, accent)),
               const SizedBox(height: 18),
             ],
             // Today
             if (todayTasks.isNotEmpty) ...[
-              _sectionHeader('📅 今日待办', const Color(0xFFF8AA5B), textColor),
+              _sectionHeader('今日待办', StudyUi.warning, textColor),
               const SizedBox(height: 10),
               ...todayTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor, accent)),
               const SizedBox(height: 18),
             ],
             // This week
             if (weekTasks.isNotEmpty) ...[
-              _sectionHeader('📆 本周待办', const Color(0xFF7394F9), textColor),
+              _sectionHeader('本周待办', StudyUi.secondary, textColor),
               const SizedBox(height: 10),
               ...weekTasks.map((t) => _planTaskCard(t, isDarkMode, textColor, bodyColor, accent)),
             ],
             if (overdueTasks.isEmpty && todayTasks.isEmpty && weekTasks.isEmpty)
-              GlassCard(
-                color: isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.9)
-                    : null,
-                child: const Text('暂无待办任务，去添加一个吧！', style: TextStyle(height: 1.5)),
+              const StudyEmptyState.tasks(
+                title: '近期没有待办任务',
+                message: '新增任务并设置截止时间后，今天、本周和逾期任务会自动归到这里。',
+                compact: true,
               ),
           ],
           ), // RefreshIndicator
@@ -109,13 +106,12 @@ Widget _planTaskCard(StudyTaskItem task, bool isDarkMode, Color textColor, Color
   final progress = task.progress;
   final progressColor =
       task.effectiveStatus == StudyTaskStatus.completed
-          ? const Color(0xFF4BC4A1)
+          ? StudyUi.success
           : task.deadline.isBefore(DateTime.now())
-              ? const Color(0xFFEF6850)
+              ? StudyUi.danger
               : accent;
 
-  return GlassCard(
-    color: isDarkMode ? const Color(0xFF242B37).withValues(alpha: 0.9) : null,
+  return StudyCard(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,

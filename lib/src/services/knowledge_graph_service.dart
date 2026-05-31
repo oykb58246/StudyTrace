@@ -120,8 +120,8 @@ class KnowledgeGraphService {
     // 其他节点围绕各自的课程节点
     final courseChildren = <String, List<KnowledgeNode>>{};
     for (final edge in edges) {
-      final fromNode = nodes.where((n) => n.id == edge.fromId).firstOrNull;
-      final toNode = nodes.where((n) => n.id == edge.toId).firstOrNull;
+      final fromNode = _nodeById(nodes, edge.fromId);
+      final toNode = _nodeById(nodes, edge.toId);
       if (fromNode != null && toNode != null) {
         courseChildren
             .putIfAbsent(edge.fromId, () => [])
@@ -161,5 +161,12 @@ class KnowledgeGraphService {
         nodes[i] = nodes[i].copyWith(x: pos.dx, y: pos.dy);
       }
     }
+  }
+
+  KnowledgeNode? _nodeById(List<KnowledgeNode> nodes, String id) {
+    for (final node in nodes) {
+      if (node.id == id) return node;
+    }
+    return null;
   }
 }

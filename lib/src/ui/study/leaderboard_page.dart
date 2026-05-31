@@ -7,6 +7,8 @@ import '../../services/api_client.dart';
 import '../../services/group_service.dart';
 import '../../services/leaderboard_service.dart';
 import '../../theme/app_theme.dart';
+import '../shared/app_assets.dart';
+import '../shared/common_widgets.dart';
 
 class LeaderboardPage extends StatefulWidget {
   const LeaderboardPage({
@@ -192,10 +194,15 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.auto_graph_rounded, color: accent, size: 22),
+              StudyAssetIcon(
+                asset: AppAssets.featureGroupRankIcon,
+                color: accent,
+                size: 24,
+                fallbackIcon: Icons.auto_graph_rounded,
+              ),
               const SizedBox(width: 8),
               Text(
-                '证据型排行维度',
+                '学习排行维度',
                 style: TextStyle(
                   color: titleColor,
                   fontWeight: FontWeight.w800,
@@ -213,21 +220,21 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
           Row(
             children: [
               _EvidenceMetric(
-                label: '证据轨迹',
+                label: '学习轨迹',
                 value: '${events.length}',
                 accent: accent,
                 bodyColor: bodyColor,
               ),
               const SizedBox(width: 8),
               _EvidenceMetric(
-                label: 'AI 闭环',
+                label: '学习复盘',
                 value: '$aiEvents',
                 accent: const Color(0xFF0EA5E9),
                 bodyColor: bodyColor,
               ),
               const SizedBox(width: 8),
               _EvidenceMetric(
-                label: '证据包',
+                label: '成果包',
                 value: '$evidencePackages',
                 accent: const Color(0xFFF59E0B),
                 bodyColor: bodyColor,
@@ -247,37 +254,16 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
   }
 
   Widget _buildLoginPrompt(Color bodyColor, Color titleColor, Color accent) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.lock_rounded,
-              size: 48, color: accent.withValues(alpha: 0.5)),
-          const SizedBox(height: 16),
-          Text('请先登录',
-              style: TextStyle(
-                  color: titleColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Text('登录后可查看个人积分和小组排名',
-              style: TextStyle(color: bodyColor, fontSize: 13)),
-        ],
-      ),
+    return const StudyEmptyState(
+      asset: AppAssets.uiRefreshFeatureRank,
+      title: '登录后查看排名',
+      message: '个人积分、小组排名和学习记录排行会显示在这里。',
     );
   }
 
   Widget _buildErrorState(Color bodyColor, Color accent) {
-    return Container(
+    return StudyCard(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
       child: Column(
         children: [
           Icon(Icons.cloud_off_rounded,
@@ -293,30 +279,16 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
 
   Widget _buildScoreCard(Color titleColor, Color bodyColor, Color accent) {
     final score = _myScore;
-    return Container(
+    return StudyCard(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [accent, Color.lerp(accent, Colors.purple, 0.4)!],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withValues(alpha: 0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+      borderColor: accent.withValues(alpha: widget.isDarkMode ? 0.24 : 0.18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             '我的积分',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
+              color: bodyColor,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -324,8 +296,8 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
           const SizedBox(height: 8),
           Text(
             '${score?.totalPoints ?? 0}',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: titleColor,
               fontSize: 36,
               fontWeight: FontWeight.w800,
             ),
@@ -333,11 +305,11 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
           const SizedBox(height: 16),
           Row(
             children: [
-              _scoreChip('今日', score?.todayPoints ?? 0),
+              _scoreChip('今日', score?.todayPoints ?? 0, accent, bodyColor),
               const SizedBox(width: 10),
-              _scoreChip('本周', score?.weekPoints ?? 0),
+              _scoreChip('本周', score?.weekPoints ?? 0, accent, bodyColor),
               const SizedBox(width: 10),
-              _scoreChip('本月', score?.monthPoints ?? 0),
+              _scoreChip('本月', score?.monthPoints ?? 0, accent, bodyColor),
             ],
           ),
         ],
@@ -345,20 +317,20 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
     );
   }
 
-  Widget _scoreChip(String label, int value) {
+  Widget _scoreChip(String label, int value, Color accent, Color bodyColor) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.18),
+          color: StudyUi.chipBackground(accent, widget.isDarkMode),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           children: [
             Text(
               '$value',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: accent,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -367,7 +339,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
             Text(
               label,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.75),
+                color: bodyColor,
                 fontSize: 11,
               ),
             ),
@@ -405,7 +377,11 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                 items: _groups
                     .map((g) => DropdownMenuItem(
                           value: g.id,
-                          child: Text(g.name),
+                          child: Text(
+                            g.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ))
                     .toList(),
                 onChanged: (v) {
@@ -447,10 +423,10 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
   Widget _buildMetricSelector(Color accent) {
     const metrics = <String, String>{
       'points': '积分',
-      'loops': 'AI 闭环',
+      'loops': '学习复盘',
       'review': '复盘',
-      'evidencePackages': '证据包',
-      'challengeEvidence': '挑战证据',
+      'evidencePackages': '成果包',
+      'challengeEvidence': '挑战记录',
       'streak': '连续学习',
     };
     return SingleChildScrollView(
@@ -586,6 +562,8 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
               Expanded(
                 child: Text(
                   entry.username ?? '未知用户',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: titleColor,
                     fontSize: 14,
@@ -593,12 +571,19 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                   ),
                 ),
               ),
-              Text(
-                '${entry.points}',
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+              SizedBox(
+                width: 56,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '${entry.points}',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 4),
@@ -612,27 +597,10 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
   }
 
   Widget _buildNoGroupHint(Color bodyColor, Color titleColor, Color accent) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.groups_rounded,
-              size: 48, color: accent.withValues(alpha: 0.5)),
-          const SizedBox(height: 16),
-          Text('加入小组后可查看排名',
-              style: TextStyle(
-                  color: titleColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Text('前往"学习小组"页面创建或加入小组',
-              style: TextStyle(color: bodyColor, fontSize: 13)),
-        ],
-      ),
+    return const StudyEmptyState(
+      asset: AppAssets.uiRefreshFeatureRank,
+      title: '加入小组后可查看排名',
+      message: '前往学习小组页面创建或加入小组，再回来查看组内学习排行。',
     );
   }
 }
@@ -662,12 +630,19 @@ class _EvidenceMetric extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                color: accent,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
             ),
             Text(

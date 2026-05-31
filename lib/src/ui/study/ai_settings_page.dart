@@ -28,19 +28,12 @@ class AiSettingsPage extends StatefulWidget {
 }
 
 class _AiSettingsPageState extends State<AiSettingsPage> {
-  late final TextEditingController _maxTokensController;
-  late double _temperature;
-  late double _topP;
-  late bool _thinkingEnabled;
-  late double _frequencyPenalty;
-  late double _presencePenalty;
-  late String _reasoningEffort;
   late bool _isEnabled;
+  late bool _thinkingEnabled;
   late bool _voiceMode;
   late double _voiceRate;
   bool _isSaving = false;
   bool _isTestingBackend = false;
-  bool _showAdvanced = false;
   DailyReminderSettings _dailyReminderSettings =
       DailyReminderSettings.defaults;
   LearningAlertSettings _learningAlertSettings =
@@ -56,15 +49,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   void initState() {
     super.initState();
     final config = widget.controller.aiConfig;
-    _maxTokensController =
-        TextEditingController(text: config.maxTokens.toString());
-    _temperature = config.temperature;
-    _topP = config.topP;
-    _thinkingEnabled = config.thinkingEnabled;
-    _frequencyPenalty = config.frequencyPenalty;
-    _presencePenalty = config.presencePenalty;
-    _reasoningEffort = config.reasoningEffort;
     _isEnabled = config.isEnabled;
+    _thinkingEnabled = config.thinkingEnabled;
     _voiceMode = config.voiceMode;
     _voiceRate = config.voiceRate;
     _loadDailyReminderSettings();
@@ -105,21 +91,14 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   }
 
   @override
-  void dispose() {
-    _maxTokensController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final titleColor = widget.isDarkMode ? Colors.white : Colors.black;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        final accent = widget.controller.primaryColor;
+        const accent = StudyUi.primary;
         if (widget.mode == AiSettingsMode.system) {
           return _buildSystemSettingsView(
             titleColor: titleColor,
@@ -132,16 +111,16 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
           children: [
             Text(
-              'AI 设置',
+              'AI设置',
               style: TextStyle(
                 color: titleColor,
                 fontSize: 24,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              '学迹 AI 已就绪，可用于对话、学习日志、任务拆解与周报分析。',
+              'AI学习助手已就绪，可用于对话、学习记录、任务拆解与周报复盘。',
               style: TextStyle(color: bodyColor, fontSize: 15, height: 1.5),
             ),
             const SizedBox(height: 18),
@@ -152,9 +131,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
             _buildSectionCard(
               icon: Icons.cloud_rounded,
-              iconColor: const Color(0xFFF8AA5B),
-              title: '云端 AI',
-              subtitle: '连接学迹 AI 与云同步服务',
+              iconColor: StudyUi.warning,
+              title: '云端服务',
+              subtitle: '连接AI学习助手与云同步服务',
               badge: '推荐',
               children: [
                 _buildBuiltInEndpointTile(),
@@ -173,7 +152,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                       icon: const Icon(Icons.wifi_protected_setup_rounded, size: 18),
                       label: const Text('测试连接'),
                       style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFF8AA5B),
+                        foregroundColor: StudyUi.warning,
                       ),
                     ),
                   ],
@@ -182,227 +161,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             ),
             const SizedBox(height: 14),
 
-            _buildSectionCard(
-              icon: Icons.auto_awesome_rounded,
-              iconColor: const Color(0xFF4470E8),
-              title: 'AI 生成参数',
-              subtitle: '调整生成稳定性、长度与思考模式',
-              badge: '云端',
-              children: [
-                InkWell(
-                  onTap: () => setState(() => _showAdvanced = !_showAdvanced),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _showAdvanced
-                            ? Icons.expand_less_rounded
-                            : Icons.expand_more_rounded,
-                        size: 18,
-                        color: bodyColor,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '高级参数',
-                        style: TextStyle(color: bodyColor, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_showAdvanced) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Temperature: ${_temperature.toStringAsFixed(1)}',
-                              style: TextStyle(
-                                color: widget.isDarkMode
-                                    ? Colors.white70
-                                    : AppColors.muted,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Slider(
-                              value: _temperature,
-                              min: 0,
-                              max: 2.0,
-                              divisions: 20,
-                              activeColor: accent,
-                              inactiveColor: widget.isDarkMode
-                                  ? Colors.white.withValues(alpha: 0.12)
-                                  : const Color(0xFFE0E4EE),
-                              onChanged: (v) =>
-                                  setState(() => _temperature = v),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  _buildTextField(
-                    controller: _maxTokensController,
-                    label: 'Max Tokens',
-                    hintText: '1200',
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Top P: ${_topP.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color: widget.isDarkMode
-                                    ? Colors.white70
-                                    : AppColors.muted,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Slider(
-                              value: _topP,
-                              min: 0,
-                              max: 1.0,
-                              divisions: 20,
-                              activeColor: accent,
-                              inactiveColor: widget.isDarkMode
-                                  ? Colors.white.withValues(alpha: 0.12)
-                                  : const Color(0xFFE0E4EE),
-                              onChanged: (v) => setState(() => _topP = v),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SwitchListTile(
-                    value: _thinkingEnabled,
-                    onChanged: (v) =>
-                        setState(() => _thinkingEnabled = v),
-                    contentPadding: EdgeInsets.zero,
-                    activeThumbColor: accent,
-                    title: Text(
-                      '深度思考模式',
-                      style: TextStyle(
-                        color: widget.isDarkMode
-                            ? Colors.white
-                            : AppColors.ink,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    subtitle: Text(
-                      '模型先思考再回答，适合复杂分析',
-                      style: TextStyle(
-                        color: bodyColor,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '频率惩罚: ${_frequencyPenalty.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color: widget.isDarkMode
-                                    ? Colors.white70
-                                    : AppColors.muted,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Slider(
-                              value: _frequencyPenalty,
-                              min: -2.0,
-                              max: 2.0,
-                              divisions: 40,
-                              activeColor: accent,
-                              inactiveColor: widget.isDarkMode
-                                  ? Colors.white.withValues(alpha: 0.12)
-                                  : const Color(0xFFE0E4EE),
-                              onChanged: (v) =>
-                                  setState(() => _frequencyPenalty = v),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '存在惩罚: ${_presencePenalty.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color: widget.isDarkMode
-                                    ? Colors.white70
-                                    : AppColors.muted,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Slider(
-                              value: _presencePenalty,
-                              min: -2.0,
-                              max: 2.0,
-                              divisions: 40,
-                              activeColor: accent,
-                              inactiveColor: widget.isDarkMode
-                                  ? Colors.white.withValues(alpha: 0.12)
-                                  : const Color(0xFFE0E4EE),
-                              onChanged: (v) =>
-                                  setState(() => _presencePenalty = v),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  DropdownButtonFormField<String>(
-                    value: _reasoningEffort,
-                    decoration: _inputDecoration('思考深度'),
-                    dropdownColor: widget.isDarkMode
-                        ? const Color(0xFF242B37)
-                        : Colors.white,
-                    style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : AppColors.ink,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('默认')),
-                      DropdownMenuItem(value: 'minimal', child: Text('Minimal — 最快')),
-                      DropdownMenuItem(value: 'low', child: Text('Low — 快速')),
-                      DropdownMenuItem(value: 'medium', child: Text('Medium — 均衡')),
-                      DropdownMenuItem(value: 'high', child: Text('High — 深度')),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setState(() => _reasoningEffort = v);
-                    },
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Text(
-                  '模型供应商密钥由云端托管。App 只保存服务地址和生成参数。',
-                  style: TextStyle(color: bodyColor, fontSize: 13, height: 1.5),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            GlassCard(
+            StudyCard(
               color: widget.isDarkMode
                   ? const Color(0xFF242B37).withValues(alpha: 0.9)
                   : null,
@@ -413,7 +172,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '启用 AI 功能',
+                          '启用AI学习助手',
                           style: TextStyle(
                             color:
                                 widget.isDarkMode ? Colors.white : AppColors.ink,
@@ -423,7 +182,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '关闭后将停用云端 AI 生成、改写和语义能力',
+                          '关闭后将停用云端整理、改写和语义搜索能力',
                           style: TextStyle(color: bodyColor, fontSize: 13),
                         ),
                       ],
@@ -439,7 +198,45 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               ),
             ),
             const SizedBox(height: 8),
-            GlassCard(
+            StudyCard(
+              color: widget.isDarkMode
+                  ? const Color(0xFF242B37).withValues(alpha: 0.9)
+                  : null,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '思考深度',
+                          style: TextStyle(
+                            color:
+                                widget.isDarkMode ? Colors.white : AppColors.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '开启深度后，AI聊天以外的生成、整理和分析能力会使用更强推理；AI聊天仍使用右上角单独开关',
+                          style: TextStyle(color: bodyColor, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _thinkingEnabled,
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: accent,
+                    onChanged: (value) =>
+                        setState(() => _thinkingEnabled = value),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            StudyCard(
               color: widget.isDarkMode
                   ? const Color(0xFF242B37).withValues(alpha: 0.9)
                   : null,
@@ -464,7 +261,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '启用后 AI 对话可用语音连续交流（半双工，先听后说）',
+                              '启用后学习对话可用语音连续交流（半双工，先听后说）',
                               style:
                                   TextStyle(color: bodyColor, fontSize: 13),
                             ),
@@ -591,7 +388,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
 
-    return GlassCard(
+    return StudyCard(
       color: widget.isDarkMode
           ? const Color(0xFF242B37).withValues(alpha: 0.9)
           : null,
@@ -699,8 +496,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  widget.controller.apiBaseUrl,
-                  style: TextStyle(color: bodyColor, fontSize: 12),
+                  '由 StudyTrace 安全托管，登录后自动连接',
+                  style: TextStyle(
+                    color: bodyColor,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -714,8 +515,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     return _buildSectionCard(
       icon: Icons.dns_rounded,
       iconColor: const Color(0xFFF8AA5B),
-      title: '云服务与 API',
-      subtitle: '云同步、学习小组与 AI 功能使用内置服务',
+      title: '云端服务',
+      subtitle: '云同步、学习小组与AI学习助手使用内置服务',
       children: [
         _buildBuiltInEndpointTile(),
         const SizedBox(height: 12),
@@ -815,7 +616,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   Widget _buildPrivacyDataSection({required Color bodyColor}) {
     return _buildSectionCard(
       icon: Icons.verified_user_rounded,
-      iconColor: const Color(0xFF7D9BFF),
+      iconColor: StudyUi.secondary,
       title: '数据与隐私',
       subtitle: '公开运营所需的合规说明和数据控制',
       children: [
@@ -830,9 +631,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           onTap: () => _showLegalSheet('用户协议', _termsText),
         ),
         _legalTile(
-          icon: Icons.auto_awesome_rounded,
-          title: 'AI 数据使用说明',
-          onTap: () => _showLegalSheet('AI 数据使用说明', _aiDataText),
+          icon: Icons.privacy_tip_rounded,
+          title: 'AI学习助手数据使用说明',
+          onTap: () => _showLegalSheet('AI学习助手数据使用说明', _aiDataText),
         ),
         _legalTile(
           icon: Icons.security_rounded,
@@ -895,7 +696,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       icon: Icons.notifications_active_rounded,
       iconColor: const Color(0xFF4BC4A1),
       title: '通知与学习预警',
-      subtitle: '任务提醒、每日提醒和 AI 学习风险摘要',
+      subtitle: '任务提醒、每日提醒和学习风险摘要',
       children: [
         SwitchListTile(
           value: _dailyReminderSettings.enabled,
@@ -977,7 +778,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           activeThumbColor: Colors.white,
           activeTrackColor: accent,
           title: Text(
-            'AI 学习预警中心',
+            '学习预警中心',
             style: TextStyle(
               color: titleColor,
               fontSize: 14,
@@ -1100,7 +901,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
   Widget _skinSelector() {
     final accent = widget.controller.primaryColor;
-    return GlassCard(
+    return StudyCard(
       color: widget.isDarkMode
           ? const Color(0xFF242B37).withValues(alpha: 0.9)
           : null,
@@ -1136,7 +937,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               selectedForegroundColor: Colors.white,
             ),
             segments: const [
-              ButtonSegment(value: true, label: Text('vivo蓝', style: TextStyle(fontSize: 12))),
+              ButtonSegment(value: true, label: Text('云端', style: TextStyle(fontSize: 12))),
               ButtonSegment(value: false, label: Text('传统', style: TextStyle(fontSize: 12))),
             ],
             selected: {widget.controller.skinVivo},
@@ -1152,12 +953,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
     final (String label, String detail, Color color) = isBackendReachable
         ? (
-            '学迹 AI 已连接',
-            '云端 AI 能力已就绪',
+            'AI学习助手已连接',
+            '云端AI学习助手已就绪',
             const Color(0xFF4BC4A1),
           )
         : (
-            'AI 服务未连接',
+            'AI学习助手未连接',
             '请登录后使用内置云端服务',
             const Color(0xFFF77D8E),
           );
@@ -1231,7 +1032,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '今日 AI 调用',
+                  '今日助手调用',
                   style: TextStyle(
                     color: titleColor,
                     fontSize: 13,
@@ -1241,7 +1042,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 const SizedBox(height: 2),
                 Text(
                   _todayUsageLimit == null
-                      ? '统计当前设备的 AI 调用次数'
+                      ? '统计当前设备的助手调用次数'
                       : '上限 $_todayUsageLimit 次，剩余 $_todayUsageRemaining 次',
                   style: TextStyle(color: bodyColor, fontSize: 11),
                 ),
@@ -1275,59 +1076,20 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hintText,
-    bool obscureText = false,
-    Widget? suffixIcon,
-    ValueChanged<String>? onChanged,
-  }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscureText,
-      onChanged: onChanged,
-      style: TextStyle(
-        color: widget.isDarkMode ? Colors.white : AppColors.ink,
-        fontSize: 14,
-      ),
-      decoration: _inputDecoration(label).copyWith(
-        hintText: hintText,
-        suffixIcon: suffixIcon,
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: TextStyle(
-        color: widget.isDarkMode ? Colors.white70 : AppColors.muted,
-      ),
-      filled: true,
-      fillColor: widget.isDarkMode
-          ? Colors.white.withValues(alpha: 0.06)
-          : const Color(0xFFF2F5FC),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-    );
-  }
-
   AiConfig _formConfig() {
-    final maxTokens = int.tryParse(_maxTokensController.text.trim()) ?? 1200;
+    final current = widget.controller.aiConfig;
     return AiConfig(
-      temperature: _temperature,
-      maxTokens: maxTokens.clamp(1, 65536).toInt(),
-      topP: _topP,
+      temperature: 0.7,
+      maxTokens: 1200,
+      topP: 0.7,
+      thinkingMode: _thinkingEnabled,
       thinkingEnabled: _thinkingEnabled,
-      frequencyPenalty: _frequencyPenalty,
-      presencePenalty: _presencePenalty,
-      reasoningEffort: _reasoningEffort,
+      frequencyPenalty: 0.0,
+      presencePenalty: 0.0,
+      reasoningEffort: '',
       isEnabled: _isEnabled,
       voiceMode: _voiceMode,
+      voiceLanguage: current.voiceLanguage,
       voiceRate: _voiceRate,
     );
   }
@@ -1363,12 +1125,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       await widget.controller.saveDailyReminderSettings(settings);
       if (!mounted) return;
       setState(() => _dailyReminderSettings = settings);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(settings.enabled ? '每日学习提醒已开启' : '每日学习提醒已关闭'),
-          backgroundColor: const Color(0xFF4BC4A1),
-        ),
-      );
+      StudyToast.show(context, settings.enabled ? '每日学习提醒已开启' : '每日学习提醒已关闭');
     } catch (error) {
       _showError('通知设置保存失败：$error');
     } finally {
@@ -1398,12 +1155,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       await widget.controller.saveLearningAlertSettings(settings);
       if (!mounted) return;
       setState(() => _learningAlertSettings = settings);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(settings.enabled ? '学习预警设置已更新' : '学习预警已关闭'),
-          backgroundColor: const Color(0xFF4BC4A1),
-        ),
-      );
+      StudyToast.show(context, settings.enabled ? '学习预警设置已更新' : '学习预警已关闭');
     } catch (error) {
       _showError('学习预警设置保存失败：$error');
     } finally {
@@ -1421,12 +1173,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     try {
       await widget.controller.pushTopLearningAlertNow();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已推送最高风险学习预警'),
-          backgroundColor: Color(0xFF4BC4A1),
-        ),
-      );
+      StudyToast.show(context, '已推送最高风险学习预警');
     } catch (error) {
       _showError('学习预警推送失败：$error');
     } finally {
@@ -1441,12 +1188,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         config: _formConfig(),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('AI 设置已保存'),
-          backgroundColor: Color(0xFF4BC4A1),
-        ),
-      );
+      StudyToast.show(context, 'AI设置已保存');
+    } catch (error) {
+      _showError('AI设置保存失败：$error');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -1461,12 +1205,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       final resp = await http.get(uri).timeout(const Duration(seconds: 5));
       if (!mounted) return;
       if (resp.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('连接成功 (状态码: ${resp.statusCode})'),
-            backgroundColor: const Color(0xFF4BC4A1),
-          ),
-        );
+        StudyToast.show(context, '连接成功 (状态码: ${resp.statusCode})');
       } else {
         _showError('云服务暂无正常响应，状态码: ${resp.statusCode}');
       }
@@ -1483,12 +1222,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     try {
       final file = await widget.controller.exportAllUserData();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('数据已导出：${file.path}'),
-          backgroundColor: const Color(0xFF4BC4A1),
-        ),
-      );
+      StudyToast.show(context, '数据已导出：${file.path}');
     } catch (error) {
       _showError('导出失败：$error');
     } finally {
@@ -1582,10 +1316,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(message), backgroundColor: const Color(0xFFF77D8E)),
-    );
+    StudyToast.dialog(context, title: '操作失败', message: message);
   }
 
   static const _privacyPolicyText = '''
@@ -1597,23 +1328,23 @@ StudyTrace 会保存你主动创建的学习任务、学习记录、笔记、闪
 ''';
 
   static const _termsText = '''
-StudyTrace 是免费的学习管理工具，提供任务管理、学习记录、AI 辅助、小组和排行榜功能。
+StudyTrace 是免费的学习管理工具，提供任务管理、学习记录、AI学习助手、小组和排行榜功能。
 
-你需要对自己发布在小组中的内容负责，不得上传违法、侵权、骚扰或恶意内容。AI 生成内容仅作学习辅助，不构成专业建议。
+你需要对自己发布在小组中的内容负责，不得上传违法、侵权、骚扰或恶意内容。助手生成内容仅作学习辅助，不构成专业建议。
 
 服务可能因维护、网络或第三方能力波动而短暂不可用，我们会尽力保持稳定并持续改进。
 ''';
 
   static const _aiDataText = '''
-AI 功能由 StudyTrace 后端统一代理调用 vivo 蓝心 AIGC 能力。App 不保存、不输入、不内置 vivo 或其他模型供应商 Key。
+AI学习助手由 StudyTrace 后端统一代理云端能力。App 不保存、不输入、不内置模型供应商 Key。
 
-当你使用 AI 对话、拍照识别、任务拆解、周计划、笔记改写或语义搜索时，请求内容可能会发送到云端处理。后端会记录必要的调用日志用于限额、排障和成本控制。
+当你使用学习对话、拍照识别、任务拆解、周计划、笔记改写或语义搜索时，请求内容可能会发送到云端处理。后端会记录必要的调用日志用于限额、排障和成本控制。
 
-请避免输入身份证号、银行卡号、密码等敏感信息。AI 结果可能不准确，重要事项请自行核对。
+请避免输入身份证号、银行卡号、密码等敏感信息。助手结果可能不准确，重要事项请自行核对。
 ''';
 
   static const _permissionText = '''
-网络：用于登录、云同步、小组、排行榜和 AI 能力。
+网络：用于登录、云同步、小组、排行榜和AI学习助手。
 
 相机与相册：用于拍照创建学习记录、拍照成笔记、头像选择和 OCR 识别。
 

@@ -41,7 +41,7 @@ enum AchievementType {
   /// 积分达到 1000
   points1000,
 
-  /// 使用 AI 助手 10 次
+  /// 使用AI学习助手10次
   aiUsage10,
 }
 
@@ -156,8 +156,8 @@ class Achievement {
     ),
     Achievement(
       type: AchievementType.aiUsage10,
-      title: 'AI 好伙伴',
-      description: '使用 AI 助手 10 次',
+      title: 'AI学习助手伙伴',
+      description: '使用AI学习助手10次',
       iconName: 'smart_toy',
       points: 20,
     ),

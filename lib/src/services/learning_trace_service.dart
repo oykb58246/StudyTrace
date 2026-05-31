@@ -4,6 +4,7 @@ import '../models/learning_moment.dart';
 import '../models/study_log_item.dart';
 import '../models/study_note.dart';
 import '../models/study_task_item.dart';
+import 'ai_tool_registry.dart';
 
 class LearningTraceService {
   const LearningTraceService();
@@ -115,11 +116,11 @@ class LearningTraceService {
   LearningTraceEvent _fromActionRecord(AiActionRecord record) {
     final title = record.targetTitle?.trim().isNotEmpty == true
         ? record.targetTitle!.trim()
-        : record.toolId;
+        : AiToolRegistry.instance.userFacingLabel(record.toolId);
     return LearningTraceEvent(
       id: 'ai_${record.id}',
       type: LearningTraceEventType.aiAction,
-      title: 'AI 已执行：$title',
+      title: 'AI已执行：$title',
       summary: record.resultMessage ?? '',
       sourceId: record.targetId,
       happenedAt: record.createdAt,
