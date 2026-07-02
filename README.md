@@ -52,7 +52,7 @@ StudyTrace 不是通用 AI 导学、错题题库或笔记助手，而是把大�
 - **深色模式**：侧边栏底部小方形按钮切换日间/夜间。
 
 ### 后端上线能力
-- **技术路线**：Node/NestJS + PostgreSQL + Prisma + JWT。
+- **技术路线**：Node/NestJS + MySQL + Prisma + JWT。
 - **已具备骨架**：认证、用户、同步、AI 代理、学习小组、动态、排行榜、挑战、证据包、地点打卡、记忆索引、备份导出。
 - **主要目录**：`backend/`
 - **注意**：学迹动态默认写入个人私密证据链；只有显式选择小组、挑战提交证据或证据包分享到小组时，才进入组内动态和组榜。
@@ -69,7 +69,7 @@ StudyTrace 不是通用 AI 导学、错题题库或笔记助手，而是把大�
 | AI 服务 | 后端托管 vivo AIGC/蓝心能力，客户端不保存模型 Key |
 | 图表与交互 | `fl_chart`、`table_calendar`、`rive`、`flutter_markdown` |
 | 输入能力 | `image_picker`、`google_mlkit_text_recognition`、`speech_to_text`、`record` |
-| 后端 | NestJS、PostgreSQL、Prisma、JWT、Docker |
+| 后端 | NestJS、MySQL、Prisma、JWT、Docker |
 | 平台 | Android / Windows / Web |
 
 ---
@@ -160,36 +160,79 @@ flutter run
 
 ### 后端
 
+后端实际运行链路为 NestJS + Prisma + MySQL。数据库结构以 `backend/prisma/schema.prisma`
+和 `backend/prisma/migrations/` 为准，后端代码通过 `PrismaService` 访问数据库；
+`backend/sql/schema.mysql.sql` 是早期尚未接入后端时整理的手写 SQL 参考，保留为数据库设计草案和后续演进方向，不会被当前后端、Docker 或 Prisma 自动执行。
+
+#### 方式一：本地 MySQL + Prisma（推荐开发方式）
+
+1. 启动你本机的 MySQL 8.x，并创建数据库：
+
+```sql
+CREATE DATABASE IF NOT EXISTS studytrace
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+```
+
+2. 准备后端环境变量：
+
 ```bash
 cd backend
 cp .env.example .env
+```
+
+然后在 `backend/.env` 中配置数据库连接，例如：
+
+```text
+DATABASE_URL="mysql://root:你的密码@localhost:3306/studytrace"
+JWT_SECRET="本地开发用的一段长随机字符串"
+PORT="3000"
+```
+
+3. 安装依赖、生成 Prisma Client、同步数据库结构并启动：
+
+```bash
 npm install
 npm run prisma:generate
 npm run prisma:migrate
 npm run start:dev
 ```
 
-本地 MySQL 初始化（studytrace）：
+`npm run prisma:migrate` 会读取 `backend/prisma/schema.prisma` 和迁移记录来创建/更新表结构。
+如果只是快速把当前 Prisma schema 推到一个临时数据库，也可以在后端目录手动执行
+`npx prisma db push`；正式开发更建议使用 migration，方便团队同步结构变更。
 
-```bash
-mysql -u root -p
-CREATE DATABASE IF NOT EXISTS studytrace CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE studytrace;
-SOURCE sql/schema.mysql.sql;
-```
-
-然后在 backend/.env 配置：
-
-```text
-DATABASE_URL="mysql://root:你的密码@localhost:3306/studytrace"
-```
-
-Docker：
+#### 方式二：Docker Compose（推荐一键本地运行）
 
 ```bash
 cd backend
 docker compose up --build
 ```
+
+`backend/docker-compose.yml` 会启动两个服务：
+
+- `mysql`：MySQL 8.0，默认数据库/用户/密码均为 `studytrace`
+- `api`：NestJS 后端，监听 `3000`
+
+Docker 场景下，API 容器访问 MySQL 不能使用 `localhost`，因为 `localhost` 指的是 API 容器自身。
+请把 `backend/.env` 中的数据库地址写成：
+
+```text
+DATABASE_URL="mysql://studytrace:studytrace@mysql:3306/studytrace"
+```
+
+容器启动时会执行 `backend/startup.sh`，其中 `npx prisma db push --accept-data-loss`
+会按当前 `backend/prisma/schema.prisma` 同步数据库结构，然后启动 `node dist/main`。
+
+#### 关于 `backend/sql/schema.mysql.sql`
+
+这个 SQL 文件不是当前后端的初始化入口。它记录了项目早期未接入 NestJS/Prisma
+之前的手写 MySQL 设计，包括课程、任务、日志、笔记、闪卡等学习管理核心表，
+适合作为数据库课程工程、设计说明或后续功能扩展的参考。
+
+当前后端已经演进为 Prisma 模型，使用字符串主键、同步表、活动/积分/小组/证据包/记忆索引等实体。
+如果直接手动执行 `SOURCE backend/sql/schema.mysql.sql;`，生成的表结构不会与当前 Prisma
+模型完全一致，后端运行也不会自动使用这些表。后续若要把该 SQL 中的课程、任务、日志、笔记等设计正式接入后端，应先把它们迁移到 `backend/prisma/schema.prisma`，再生成 Prisma migration。
 
 ---
 
@@ -199,15 +242,13 @@ docker compose up --build
 
 1) 配置本地后端地址（本机开发）
 
-当前默认指向线上地址，若要访问本地后端，请在 [lib/src/controllers/app_data_controller.dart](lib/src/controllers/app_data_controller.dart) 的 `_defaultBaseUrl()` 中改为本地地址：
+当前默认指向 `https://api.studytrace.oykb.cn`。若要访问本地后端，可以在 App 的 AI 设置/服务地址中改为本地地址，或通过 `ApiEndpointConfig`/`AppDataController` 的后端地址配置传入：
 
-```dart
-static String _defaultBaseUrl() {
-  return 'http://localhost:3000';
-}
-```
+- Windows/Web 本机开发：`http://localhost:3000`
+- Android 模拟器：`http://10.0.2.2:3000`
+- 真机：`http://你的局域网IP:3000`
 
-Android 模拟器请改为 `http://10.0.2.2:3000`，真机请改为你的局域网 IP。
+后端地址会保存在本地存储中，后续登录、同步、AI 代理、小组和排行榜接口都会复用这个地址。
 
 2) 在 Service 层调用接口
 
