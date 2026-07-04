@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { startOfToday } from '../../common/date-range';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -123,7 +123,7 @@ export class AiService {
     const prepared =
       dto.imageBase64 && !rawSourceText
         ? await this.dtoWithOcrImageSummary({
-            input: '请识别这张学习材料，并生成学习闭环。',
+            input: '请识别这张学习材料，并整理成学习计划。',
             imageBase64: dto.imageBase64,
           })
         : null;
@@ -141,12 +141,12 @@ export class AiService {
       : '["蓝心对话"]';
     const outputSchema =
       target === 'task'
-        ? '请输出 JSON：{"summary":"","courseName":"","concepts":[],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[]},"flashcards":[],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"task.add_direct","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":'
-        : '请输出 JSON：{"summary":"","courseName":"","concepts":[""],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[{"type":"heading|text|bullet|todo","content":""}]},"flashcards":[{"question":"","answer":"","hint":"","courseName":""}],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"log.create|task.add_direct|note.save|flashcard.create_batch","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":';
+        ? '请输出 JSON：{"loopSchemaVersion":"final-demo-v2","summary":"","courseName":"","concepts":[],"sourceEvidence":[{"type":"reflection|history|flashcard|task","summary":"","confidence":0.0}],"reflectionAnalysis":{"summary":"","blockers":[""],"emotion":{"label":"","intensity":0.0},"mastery":{"知识点":0.0},"forgettingRisk":"low|medium|high","nextActions":[""],"explanation":""},"actionCards":[{"title":"","steps":[""],"deadline":"ISO8601","reason":"","priority":"high|medium|low","durationMinutes":25,"successCriteria":"","source":""}],"reviewCards":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[]},"flashcards":[],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"task.add_direct","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":'
+        : '请输出 JSON：{"loopSchemaVersion":"final-demo-v2","summary":"","courseName":"","concepts":[""],"sourceEvidence":[{"type":"reflection|history|flashcard|task","summary":"","confidence":0.0}],"reflectionAnalysis":{"summary":"","blockers":[""],"emotion":{"label":"","intensity":0.0},"mastery":{"知识点":0.0},"forgettingRisk":"low|medium|high","nextActions":[""],"explanation":""},"actionCards":[{"title":"","steps":[""],"deadline":"ISO8601","reason":"","priority":"high|medium|low","durationMinutes":25,"successCriteria":"","source":""}],"reviewCards":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[{"type":"heading|text|bullet|todo","content":""}]},"flashcards":[{"question":"","answer":"","hint":"","courseName":""}],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"log.create|task.add_direct|note.save|flashcard.create_batch","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":';
     const outputConstraint =
       target === 'task'
-        ? '约束：taskDrafts 最多 2 个，每个 subTasks 最多 3 个；reviewPlan 最多 4 条；noteDraft.blocks 和 flashcards 必须返回空数组；如果信息不足，生成 2-4 个今天可执行的专注块。'
-        : '约束：taskDrafts 最多 3 个，每个 subTasks 最多 4 个；flashcards 最多 6 张；reviewPlan 最多 4 条；如果材料信息不足，仍给出保守、可编辑的草稿。';
+        ? '约束：loopSchemaVersion 固定为 final-demo-v2；sourceEvidence 最多 3 条，说明建议依据；reflectionAnalysis 必须解释卡点、情绪、掌握度、遗忘风险和原因；actionCards 最多 3 条，必须是明天或今天可执行的小行动，每条要有 priority、durationMinutes、successCriteria 和 source；taskDrafts 最多 2 个，每个 subTasks 最多 3 个；reviewPlan 和 reviewCards 最多 4 条且保持一致；noteDraft.blocks 和 flashcards 必须返回空数组；如果信息不足，生成 2-4 个今天可执行的专注块。'
+        : '约束：loopSchemaVersion 固定为 final-demo-v2；sourceEvidence 最多 3 条，说明建议依据；reflectionAnalysis 必须解释卡点、情绪、掌握度、遗忘风险和原因；actionCards 最多 3 条，必须是明天或今天可执行的小行动，每条要有 priority、durationMinutes、successCriteria 和 source；taskDrafts 最多 3 个，每个 subTasks 最多 4 个；flashcards 最多 6 张；reviewPlan 和 reviewCards 最多 4 条且保持一致；如果材料信息不足，仍给出保守、可编辑的草稿。';
     const prompt =
       `${context}来源类型：${sourceKind}\n生成目标：${target}\n${imageHint}\n今天：${new Date().toISOString()}\n学习材料：\n${sourceText}\n\n` +
       outputSchema +
@@ -166,7 +166,7 @@ export class AiService {
       {
         role: 'system',
         content:
-          `${systemJsonPrompt} 你是 StudyTrace 的 AI 学习操作层规划器。你要把学习材料转成可执行闭环，字段必须稳定，内容要能直接写入学习任务、日志、笔记和闪卡。`,
+          `${systemJsonPrompt} 你是 StudyTrace 的 AI 学习复盘与防遗忘规划助手。你要把学习材料转成结构化诊断、今日/明日行动卡、复习计划和可执行落地内容，字段必须稳定，内容要能直接写入学习任务、日志、笔记和闪卡。`,
       },
       {
         role: 'user',
@@ -395,37 +395,39 @@ export class AiService {
   }
 
   async submitImageTask(userId: string, dto: ImageTaskSubmitDto) {
-    const runtime = this.getBlueHeartAbilityRuntime('image-generation');
+    const imageModel = this.config.get<string>('VIVO_IMAGE_MODEL') ?? 'Doubao-Seedream-5.0-lite';
+    const runtime = this.getBlueHeartAbilityRuntime(imageModel);
     const requestId = randomUUID();
     const startedAt = Date.now();
-    const endpoint = this.config.get<string>('VIVO_IMAGE_SUBMIT_PATH') ?? '/api/v1/task_submit';
+    const endpoint = this.config.get<string>('VIVO_IMAGE_GENERATION_PATH') ?? '/api/v1/image_generation';
     await this.assertDailyLimit(userId);
     try {
-      const dataId = requestId.replace(/-/g, '');
-      const decoded = await this.vivo.postJson(endpoint, {
-        dataId,
-        businessCode: this.config.get<string>('VIVO_IMAGE_BUSINESS_CODE') ?? 'pc',
-        userAccount: userId,
-        prompt: dto.prompt.trim(),
-        width: dto.width ?? 768,
-        height: dto.height ?? 1024,
-        styleConfig: dto.styleConfig ?? this.config.get<string>('VIVO_IMAGE_STYLE_DEFAULT') ?? '7a0079b5571d5087825e52e26fc3518b',
-        ...(dto.initImageBase64
-          ? {
-              initImages: dto.initImageBase64.startsWith('data:')
-                ? dto.initImageBase64
-                : `data:image/png;base64,${dto.initImageBase64}`,
-              imageType: 0,
-            }
-          : {}),
-      });
-      const result = (decoded as any)?.result ?? (decoded as any)?.data ?? decoded;
-      const taskId = String(result?.task_id ?? result?.taskId ?? '');
-      if (!taskId) throw new Error('image task id missing');
-      await this.logUsage(userId, 'image-generation/submit', runtime, true, startedAt, dto.prompt.length, taskId.length);
+      const decoded = await this.vivo.postJson(
+        endpoint,
+        {
+          model: imageModel,
+          prompt: dto.prompt.trim(),
+          ...(dto.initImageBase64
+            ? {
+                image: dto.initImageBase64.startsWith('data:')
+                  ? dto.initImageBase64
+                  : `data:image/png;base64,${dto.initImageBase64}`,
+              }
+            : {}),
+          parameters: this.imageGenerationParameters(dto),
+        },
+        this.vivoTaskQuery(requestId),
+      );
+      const result = this.vivoData(decoded) as any;
+      const imagesUrl = this.extractImageUrls(result);
+      if (!imagesUrl.length) throw new Error('image generation returned no images');
+      const taskId = String((decoded as any)?.trace_id ?? result?.provider_request_id ?? requestId);
+      await this.logUsage(userId, 'image-generation/submit', runtime, true, startedAt, dto.prompt.length, imagesUrl.join('').length);
       return {
         taskId,
-        status: 'submitted',
+        status: 'succeeded',
+        imagesUrl,
+        auditStatus: result?.finish_reason,
         capabilityTraces: [
           this.vivo.trace('Image generation', endpoint, requestId, startedAt, true, {
             model: runtime.model,
@@ -442,16 +444,30 @@ export class AiService {
     const runtime = this.getBlueHeartAbilityRuntime('image-generation');
     const requestId = randomUUID();
     const startedAt = Date.now();
-    const endpoint = this.config.get<string>('VIVO_IMAGE_QUERY_PATH') ?? '/api/v1/task_progress';
+    const endpoint = this.config.get<string>('VIVO_IMAGE_QUERY_PATH');
     await this.assertDailyLimit(userId);
+    if (!endpoint || dto.taskId.startsWith('http')) {
+      const imagesUrl = dto.taskId.startsWith('http') ? [dto.taskId] : [];
+      return {
+        taskId: dto.taskId,
+        status: imagesUrl.length ? 'succeeded' : 'not_queryable',
+        imagesUrl,
+        capabilityTraces: [
+          this.vivo.trace('Image generation status', 'sync:image_generation', requestId, startedAt, true, {
+            model: runtime.model,
+            detail: 'Latest image_generation API returns images synchronously.',
+          }),
+        ],
+      };
+    }
     try {
       const decoded = await this.vivo.getJson(endpoint, { task_id: dto.taskId });
-      const result = (decoded as any)?.result ?? (decoded as any)?.data ?? decoded;
+      const result = this.vivoData(decoded) as any;
       await this.logUsage(userId, 'image-generation/query', runtime, true, startedAt, dto.taskId.length, JSON.stringify(decoded).length);
       return {
         taskId: dto.taskId,
         status: result?.status ?? 'processing',
-        imagesUrl: result?.images_url ?? result?.imagesUrl ?? [],
+        imagesUrl: this.extractImageUrls(result),
         auditStatus: result?.audit_status ?? result?.auditStatus,
         capabilityTraces: [
           this.vivo.trace('Image generation status', endpoint, requestId, startedAt, true, {
@@ -476,26 +492,11 @@ export class AiService {
     await this.assertDailyLimit(userId);
     try {
       const decoded = await this.vivo.postJson(endpoint, {
-        request_id: requestId,
-        task_id: requestId.replace(/-/g, ''),
-        user_id: userId,
-        prompt,
         model: dto.model ?? runtime.model,
-        ratio: dto.ratio ?? this.config.get<string>('VIVO_VIDEO_RATIO_DEFAULT') ?? '16:9',
-        resolution: dto.resolution ?? this.config.get<string>('VIVO_VIDEO_RESOLUTION_DEFAULT') ?? '720p',
-        duration: dto.duration ?? this.config.get<string>('VIVO_VIDEO_DURATION_DEFAULT') ?? '5',
-        ...(dto.imageBase64
-          ? {
-              image:
-                dto.imageBase64.startsWith('data:')
-                  ? dto.imageBase64
-                  : `data:image/png;base64,${dto.imageBase64}`,
-            }
-          : {}),
-        ...(dto.imageUrl ? { image_url: dto.imageUrl } : {}),
-      });
-      const result = (decoded as any)?.result ?? (decoded as any)?.data ?? decoded;
-      const taskId = String(result?.task_id ?? result?.taskId ?? result?.id ?? '');
+        content: this.videoGenerationContent(dto, prompt),
+      }, this.vivoTaskQuery(requestId));
+      const result = this.vivoData(decoded) as any;
+      const taskId = String(result?.id ?? result?.task_id ?? result?.taskId ?? '');
       if (!taskId) throw new Error('video task id missing');
       await this.logUsage(userId, 'video-generation/submit', runtime, true, startedAt, prompt.length, taskId.length);
       return {
@@ -520,13 +521,18 @@ export class AiService {
     const endpoint = this.config.get<string>('VIVO_VIDEO_QUERY_PATH') ?? '/api/v1/query_task';
     await this.assertDailyLimit(userId);
     try {
-      const decoded = await this.vivo.getJson(endpoint, { task_id: dto.taskId });
-      const result = (decoded as any)?.result ?? (decoded as any)?.data ?? decoded;
+      const decoded = await this.vivo.getJson(endpoint, {
+        task_id: dto.taskId,
+        ...this.vivoTaskQuery(requestId),
+      });
+      const result = this.vivoData(decoded) as any;
       const videosUrl = this.extractStringList(
         result?.videos_url ??
           result?.videosUrl ??
           result?.video_url ??
           result?.videoUrl ??
+          result?.content?.video_url ??
+          result?.content?.videoUrl ??
           result?.url,
       );
       await this.logUsage(userId, 'video-generation/query', runtime, true, startedAt, dto.taskId.length, JSON.stringify(decoded).length);
@@ -549,32 +555,56 @@ export class AiService {
   }
 
   async transcribeSpeech(userId: string, dto: SpeechTranscribeDto) {
-    const runtime = this.getBlueHeartAbilityRuntime(dto.mode === 'long' ? 'long-asr' : 'short-asr');
+    const runtime = this.getBlueHeartAbilityRuntime('long-audio-transcription');
     const requestId = randomUUID();
     const startedAt = Date.now();
     await this.assertDailyLimit(userId);
     try {
-      const decoded = await this.vivo.optionalPostJson('VIVO_ASR_ENDPOINT', {
-        audio: dto.audioBase64,
-        mime_type: dto.mimeType ?? 'audio/m4a',
-        mode: dto.mode ?? 'short',
-        engine_id: this.config.get<string>('VIVO_ASR_ENGINE_ID') ?? '',
-        request_id: requestId,
-      });
-      const text = this.extractTextResult(decoded);
+      const text = await this.transcribeByLasr(userId, dto, requestId);
       if (!text) throw new Error('empty ASR response');
       await this.logUsage(userId, 'speech-transcribe', runtime, true, startedAt, dto.audioBase64.length, text.length);
       return {
         text,
         capabilityTraces: [
-          this.vivo.trace('Cloud speech transcription', 'VIVO_ASR_ENDPOINT', requestId, startedAt, true, {
+          this.vivo.trace('Long audio transcription', '/lasr/create → /lasr/result', requestId, startedAt, true, {
             model: runtime.model,
           }),
         ],
       };
     } catch (error) {
-      await this.logUsage(userId, 'speech-transcribe', runtime, false, startedAt, dto.audioBase64.length, 0, error);
-      throw new ServiceUnavailableException(this.errorMessage(error));
+      const fallbackEndpoint = this.config.get<string>('VIVO_ASR_ENDPOINT');
+      if (!fallbackEndpoint) {
+        await this.logUsage(userId, 'speech-transcribe', runtime, false, startedAt, dto.audioBase64.length, 0, error);
+        throw new ServiceUnavailableException(this.errorMessage(error));
+      }
+      try {
+        const decoded = await this.vivo.optionalPostJson('VIVO_ASR_ENDPOINT', {
+          audio: dto.audioBase64,
+          mime_type: dto.mimeType ?? 'audio/m4a',
+          mode: dto.mode ?? 'short',
+          engine_id: this.config.get<string>('VIVO_ASR_ENGINE_ID') ?? '',
+          request_id: requestId,
+        });
+        const text = this.extractTextResult(decoded);
+        if (!text) throw new Error('empty ASR fallback response');
+        await this.logUsage(userId, 'speech-transcribe', runtime, true, startedAt, dto.audioBase64.length, text.length);
+        return {
+          text,
+          capabilityTraces: [
+            this.vivo.trace('Long audio transcription', '/lasr/create → /lasr/result', requestId, startedAt, false, {
+              model: runtime.model,
+              fallback: 'VIVO_ASR_ENDPOINT',
+              detail: this.errorMessage(error),
+            }),
+            this.vivo.trace('Cloud speech transcription', 'VIVO_ASR_ENDPOINT', randomUUID(), Date.now(), true, {
+              model: this.config.get<string>('VIVO_ASR_ENGINE_ID') ?? '',
+            }),
+          ],
+        };
+      } catch (fallbackError) {
+        await this.logUsage(userId, 'speech-transcribe', runtime, false, startedAt, dto.audioBase64.length, 0, fallbackError);
+        throw new ServiceUnavailableException(this.errorMessage(fallbackError));
+      }
     }
   }
 
@@ -634,11 +664,32 @@ export class AiService {
   }
 
   async poiSearch(userId: string, dto: PoiSearchDto) {
-    return this.poiCall(userId, 'poi-search', {
-      query: dto.query.trim(),
-      city: dto.city ?? '',
-      location: dto.location ?? '',
-    });
+    const runtime = this.getBlueHeartAbilityRuntime('poi-search');
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    const endpoint = this.config.get<string>('VIVO_POI_SEARCH_ENDPOINT') ?? '/search/geo';
+    await this.assertDailyLimit(userId);
+    try {
+      const decoded = await this.vivo.getJson(endpoint, {
+        keywords: dto.query.trim(),
+        city: dto.city ?? '',
+        page_num: '1',
+        page_size: '10',
+        requestId,
+      });
+      await this.logUsage(userId, 'poi-search', runtime, true, startedAt, dto.query.length, JSON.stringify(decoded).length);
+      return {
+        result: decoded,
+        capabilityTraces: [
+          this.vivo.trace('POI search', endpoint, requestId, startedAt, true, {
+            model: runtime.model,
+          }),
+        ],
+      };
+    } catch (error) {
+      await this.logUsage(userId, 'poi-search', runtime, false, startedAt, dto.query.length, 0, error);
+      throw new ServiceUnavailableException(this.errorMessage(error));
+    }
   }
 
   async reverseGeocode(userId: string, dto: ReverseGeocodeDto) {
@@ -703,8 +754,8 @@ export class AiService {
         badge('memory', providerLabel('text-embedding', '记忆检索'), endpointHas('embeddings') ? 1 : 0, 1, 'MemoryChunk'),
         badge('loop', 'AI 落地', activity('aiLoopApplied'), 1, 'StudyActivity'),
         badge('share', '学迹分享', activity('momentShared'), 1, 'StudyActivity'),
-        badge('package', '证据包', evidencePackageCount, 1, 'EvidencePackage'),
-        badge('challenge', '挑战证据', challengeEvidenceCount, 1, 'ChallengeEvidence'),
+        badge('package', '资料包', evidencePackageCount, 1, 'EvidencePackage'),
+        badge('challenge', '挑战记录', challengeEvidenceCount, 1, 'ChallengeEvidence'),
         badge('location', '地点打卡', locationCount, 1, 'LocationCheckIn'),
       ],
     };
@@ -715,8 +766,12 @@ export class AiService {
     const startedAt = Date.now();
     const requestId = randomUUID();
     try {
+      const rawContent = await this.callText(userId, 'chat', messages, dto);
       return {
-        content: await this.callText(userId, 'chat', messages, dto),
+        content:
+          dto.purpose === 'assistant_turn'
+            ? JSON.stringify(this.normalizeAssistantTurn(rawContent, dto.input))
+            : rawContent,
         capabilityTraces: [
           this.vivo.trace(
             dto.imageBase64 ? 'BlueLM vision chat' : 'BlueLM chat',
@@ -922,28 +977,25 @@ export class AiService {
 
   private async embeddingVector(userId: string, text: string) {
     const runtime = this.getBlueHeartAbilityRuntime(
-      this.config.get<string>('VIVO_VECTOR_MODEL') ?? 'text-embedding',
+      this.config.get<string>('VIVO_VECTOR_MODEL') ?? 'bge-base-zh-v1.5',
     );
     const requestId = randomUUID();
     const startedAt = Date.now();
+    const endpoint = this.config.get<string>('VIVO_EMBEDDING_ENDPOINT')
+      ?? '/embedding-model-api/predict/batch';
     await this.assertDailyLimit(userId);
     try {
-      const decoded = await this.vivo.optionalPostJson('VIVO_EMBEDDING_ENDPOINT', {
-        model: runtime.model,
-        input: text,
-        request_id: requestId,
-      });
-      const vector = this.numberArray(
-        (decoded as any)?.embedding ??
-          (decoded as any)?.data?.[0]?.embedding ??
-          (decoded as any)?.data?.embedding,
-      );
+      const decoded = await this.vivo.postJson(endpoint, {
+        model_name: runtime.model,
+        sentences: [this.embeddingInputForModel(runtime.model, text)],
+      }, { requestId });
+      const vector = this.extractEmbeddingVector(decoded);
       if (!vector.length) throw new Error('empty embedding response');
       await this.logUsage(userId, 'embeddings', runtime, true, startedAt, text.length, vector.length);
       return {
         vector,
         capabilityTraces: [
-          this.vivo.trace('Text embedding', 'VIVO_EMBEDDING_ENDPOINT', requestId, startedAt, true, {
+          this.vivo.trace('Text embedding', endpoint, requestId, startedAt, true, {
             model: runtime.model,
           }),
         ],
@@ -952,6 +1004,128 @@ export class AiService {
       await this.logUsage(userId, 'embeddings', runtime, false, startedAt, text.length, 0, error);
       throw new ServiceUnavailableException(this.errorMessage(error));
     }
+  }
+
+  private async transcribeByLasr(
+    userId: string,
+    dto: SpeechTranscribeDto,
+    requestId: string,
+  ) {
+    const audioBytes = this.audioBytesFromBase64(dto.audioBase64);
+    if (!audioBytes.length) throw new Error('empty audio');
+    const sessionId = randomUUID();
+    const sliceSize = 5 * 1024 * 1024;
+    const sliceNum = Math.max(1, Math.ceil(audioBytes.length / sliceSize));
+    if (sliceNum > 100) throw new Error('audio file is too large for LASR');
+    const query = this.lasrCommonQuery(userId, requestId);
+    const audioType = (dto.mimeType ?? '').toLowerCase().includes('pcm')
+      ? 'pcm'
+      : 'auto';
+
+    const created = await this.vivo.postJson('/lasr/create', {
+      audio_type: audioType,
+      'x-sessionId': sessionId,
+      slice_num: sliceNum,
+    }, query);
+    const audioId = String((this.vivoData(created) as any)?.audio_id ?? '');
+    if (!audioId) throw new Error('LASR audio_id missing');
+
+    for (let index = 0; index < sliceNum; index += 1) {
+      const start = index * sliceSize;
+      const chunk = audioBytes.subarray(start, Math.min(start + sliceSize, audioBytes.length));
+      const form = new FormData();
+      form.append(
+        'file',
+        new Blob([chunk], { type: dto.mimeType ?? 'audio/m4a' }),
+        `studytrace_${index}.${this.audioExtension(dto.mimeType)}`,
+      );
+      await this.vivo.postMultipart('/lasr/upload', form, {
+        ...query,
+        audio_id: audioId,
+        slice_index: String(index),
+        'x-sessionId': sessionId,
+      });
+    }
+
+    const run = await this.vivo.postJson('/lasr/run', {
+      audio_id: audioId,
+      'x-sessionId': sessionId,
+    }, query);
+    const taskId = String((this.vivoData(run) as any)?.task_id ?? '');
+    if (!taskId) throw new Error('LASR task_id missing');
+
+    const pollCount = Number(this.config.get<string>('VIVO_LASR_POLL_COUNT') ?? 10);
+    const pollIntervalMs = Number(this.config.get<string>('VIVO_LASR_POLL_INTERVAL_MS') ?? 1000);
+    for (let attempt = 0; attempt < pollCount; attempt += 1) {
+      const progressResponse = await this.vivo.postJson('/lasr/progress', {
+        task_id: taskId,
+        'x-sessionId': sessionId,
+      }, query);
+      const progress = Number((this.vivoData(progressResponse) as any)?.progress ?? 0);
+      if (progress >= 100) break;
+      await this.sleep(pollIntervalMs);
+    }
+
+    const result = await this.vivo.postJson('/lasr/result', {
+      task_id: taskId,
+      'x-sessionId': sessionId,
+    }, query);
+    return this.extractLasrText(result);
+  }
+
+  private lasrCommonQuery(userId: string, requestId: string) {
+    return {
+      client_version: this.config.get<string>('VIVO_LASR_CLIENT_VERSION') ?? '1.0.0',
+      package: this.config.get<string>('VIVO_LASR_PACKAGE') ?? 'com.studytrace.app',
+      user_id: this.lasrUserId(userId),
+      system_time: Date.now().toString(),
+      engineid: this.config.get<string>('VIVO_LASR_ENGINE_ID') ?? 'fileasrrecorder',
+      requestId,
+    };
+  }
+
+  private lasrUserId(userId: string) {
+    return createHash('md5').update(userId).digest('hex');
+  }
+
+  private audioBytesFromBase64(value: string) {
+    const raw = value.includes(',') ? value.split(',').pop() ?? '' : value;
+    return Buffer.from(raw, 'base64');
+  }
+
+  private audioExtension(mimeType = 'audio/m4a') {
+    if (mimeType.includes('wav')) return 'wav';
+    if (mimeType.includes('mp3')) return 'mp3';
+    if (mimeType.includes('aac')) return 'aac';
+    if (mimeType.includes('ogg')) return 'ogg';
+    if (mimeType.includes('pcm')) return 'pcm';
+    return 'm4a';
+  }
+
+  private vivoData(decoded: unknown) {
+    const data = decoded as any;
+    const code = data?.code ?? data?.retcode ?? data?.status_code;
+    if (code !== undefined && code !== null && String(code) !== '0') {
+      throw new Error(data?.desc ?? data?.message ?? 'vivo request failed');
+    }
+    return data?.data ?? data?.result ?? data;
+  }
+
+  private extractLasrText(decoded: unknown) {
+    const data = this.vivoData(decoded) as any;
+    const result = data?.result ?? data?.text ?? data?.onebest;
+    if (Array.isArray(result)) {
+      return result
+        .map((item) => String(item?.onebest ?? item?.text ?? item ?? '').trim())
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+    }
+    return String(result ?? '').trim();
+  }
+
+  private sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async poiCall(userId: string, ability: string, payload: Record<string, unknown>) {
@@ -1007,9 +1181,107 @@ export class AiService {
     return text ? [text] : [];
   }
 
+  private imageGenerationParameters(dto: ImageTaskSubmitDto) {
+    const parameters: Record<string, unknown> = {};
+    if (dto.width && dto.height) {
+      parameters.size = `${dto.width}x${dto.height}`;
+    } else {
+      parameters.size = this.config.get<string>('VIVO_IMAGE_SIZE_DEFAULT') ?? '2K';
+    }
+    return parameters;
+  }
+
+  private extractImageUrls(value: unknown): string[] {
+    if (!value || typeof value !== 'object') return this.extractStringList(value);
+    const data = value as Record<string, any>;
+    const urls = [
+      ...this.extractStringList(data.images_url ?? data.imagesUrl),
+      ...this.extractStringList(data.image),
+      ...this.extractStringList(data.url),
+      ...(Array.isArray(data.images)
+        ? data.images.flatMap((item) =>
+            this.extractStringList(
+              typeof item === 'object' && item !== null ? (item as any).url : item,
+            ),
+          )
+        : []),
+    ];
+    return urls.filter((url, index, all) => url && all.indexOf(url) === index);
+  }
+
+  private videoGenerationContent(dto: VideoTaskSubmitDto, prompt: string) {
+    const content: Record<string, unknown>[] = [
+      {
+        type: 'text',
+        text: this.videoPromptWithOptions(prompt, dto),
+      },
+    ];
+    const imageUrl = dto.imageUrl
+      ?? (dto.imageBase64
+        ? dto.imageBase64.startsWith('data:')
+          ? dto.imageBase64
+          : `data:image/png;base64,${dto.imageBase64}`
+        : '');
+    if (imageUrl) {
+      content.push({
+        type: 'image_url',
+        image_url: { url: imageUrl },
+      });
+    }
+    return content;
+  }
+
+  private videoPromptWithOptions(prompt: string, dto: VideoTaskSubmitDto) {
+    const parts = [prompt];
+    const ratio = dto.ratio ?? this.config.get<string>('VIVO_VIDEO_RATIO_DEFAULT') ?? '16:9';
+    const duration = dto.duration ?? this.config.get<string>('VIVO_VIDEO_DURATION_DEFAULT') ?? '5';
+    if (ratio && !prompt.includes('--ratio')) parts.push(`--ratio ${ratio}`);
+    if (duration && !prompt.includes('--dur')) parts.push(`--dur ${duration}`);
+    return parts.join(' ');
+  }
+
+  private vivoTaskQuery(requestId: string) {
+    return {
+      request_id: requestId,
+      system_time: Math.floor(Date.now() / 1000).toString(),
+      module: 'aigc',
+    };
+  }
+
   private numberArray(value: unknown): number[] {
     if (!Array.isArray(value)) return [];
     return value.map((item) => Number(item)).filter((item) => Number.isFinite(item));
+  }
+
+  private embeddingInputForModel(model: string, text: string) {
+    if (model === 'bge-base-zh-v1.5') {
+      const instruction = '为这个句子生成表示以用于检索相关文章：';
+      return text.startsWith(instruction) ? text : `${instruction}${text}`;
+    }
+    return text;
+  }
+
+  private extractEmbeddingVector(decoded: unknown) {
+    const data = decoded as any;
+    const candidates = [
+      data?.embedding,
+      data?.vector,
+      data?.data?.embedding,
+      data?.data?.vector,
+      Array.isArray(data?.data) ? data.data[0] : null,
+      Array.isArray(data?.result) ? data.result[0] : null,
+      data?.result?.embedding,
+      data?.result?.vector,
+    ];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate) && candidate.every((item) => typeof item !== 'object')) {
+        const vector = this.numberArray(candidate);
+        if (vector.length) return vector;
+      }
+      const nested = this.numberArray(candidate?.embedding ?? candidate?.vector);
+      if (nested.length) return nested;
+    }
+    return [];
   }
 
   private cosine(left: number[], right: number[]) {
@@ -1153,6 +1425,70 @@ export class AiService {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${runtime.apiKey}`,
     };
+  }
+
+  private normalizeAssistantTurn(raw: string, input: string) {
+    let decoded: Record<string, unknown> = {};
+    try {
+      decoded = this.decodeJsonObject(raw) as Record<string, unknown>;
+    } catch (_) {
+      decoded = {};
+    }
+
+    const parsedActions = Array.isArray(decoded.actions)
+      ? decoded.actions.filter(
+          (item): item is Record<string, unknown> =>
+            typeof item === 'object' && item !== null,
+        )
+      : [];
+    const inferredAction = parsedActions.length ? null : this.inferAssistantAction(input);
+    const reply = typeof decoded.reply === 'string' ? decoded.reply.trim() : '';
+
+    return {
+      schemaVersion: Number(decoded.schemaVersion ?? decoded.schema_version ?? 2) || 2,
+      reply:
+        inferredAction && (!reply || this.isGenericAssistantFallback(reply))
+          ? this.replyForAssistantAction(inferredAction.type)
+          : reply || '我来帮你处理。',
+      actions: inferredAction ? [inferredAction] : parsedActions,
+    };
+  }
+
+  private inferAssistantAction(input: string) {
+    const normalized = input.trim();
+    if (this.isImageGenerationIntent(normalized)) {
+      return {
+        actionId: 'act_1',
+        type: 'media.generate_image',
+        title: '生成学习配图',
+        sourceText: this.expandImagePrompt(normalized),
+      };
+    }
+    return null;
+  }
+
+  private isImageGenerationIntent(input: string) {
+    return /(生成图片|生成一张|画图|做图|图解|笔记图解|流程图|示意图|知识图谱|配图)/.test(
+      input,
+    );
+  }
+
+  private expandImagePrompt(input: string) {
+    if (/学习笔记|笔记|图解|流程图|示意图|配图/.test(input)) {
+      return `${input}，适合放进学习笔记，信息清晰，文字少而准，排版简洁。`;
+    }
+    return `${input}，适合大学生学习场景，信息清晰，文字少而准，排版简洁。`;
+  }
+
+  private isGenericAssistantFallback(reply: string) {
+    return /(无法识别|提供清晰的指令|具体需求|帮您操作StudyTrace App)/.test(reply);
+  }
+
+  private replyForAssistantAction(type: string) {
+    if (type === 'media.generate_image') {
+      return '好，我来先帮你生成这张学习配图。';
+    }
+    return '我来帮你处理。';
   }
 
   private decodeJsonObject(raw: string) {
