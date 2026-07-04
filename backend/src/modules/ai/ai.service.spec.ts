@@ -148,6 +148,43 @@ describe('AiService image integrations', () => {
     expect(content.actions).toHaveLength(0);
   });
 
+  it('repairs assistant_turn note requests when the model replies with a note but empty actions', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  schemaVersion: 2,
+                  reply:
+                    '# 牛顿第二定律\n\n- 核心公式：F = ma。\n- 适用条件：宏观低速情境。\n- 例题思路：先受力分析，再列方程。',
+                  actions: [],
+                }),
+              },
+            },
+          ],
+        }),
+    } as Response);
+    const { service } = createService();
+
+    const result = await service.chat('user-1', {
+      input: '帮我制作笔记：牛顿第二定律的公式、适用条件和例题思路',
+      purpose: 'assistant_turn',
+    });
+    const content = JSON.parse(result.content);
+
+    expect(content.actions).toHaveLength(1);
+    expect(content.actions[0]).toMatchObject({
+      actionId: 'act_1',
+      type: 'note.save',
+      content:
+        '# 牛顿第二定律\n\n- 核心公式：F = ma。\n- 适用条件：宏观低速情境。\n- 例题思路：先受力分析，再列方程。',
+    });
+    expect(content.actions[0].title).toContain('笔记');
+  });
+
   it('sends required vivo query params for sync image generation', async () => {
     const { service, vivo } = createService();
     vivo.postJson.mockResolvedValue({

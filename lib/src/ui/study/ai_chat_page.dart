@@ -19,6 +19,7 @@ import '../../models/study_log_item.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
 import '../../services/ai_app_context_builder.dart';
+import '../../services/ai_chat_action_guard.dart';
 import '../../services/ai_semantic_search_service.dart';
 import '../../services/ai_study_service.dart';
 import '../../services/ai_tool_registry.dart';
@@ -1595,10 +1596,16 @@ class _AiChatPageState extends State<AiChatPage> {
           _scrollToBottom();
         }
 
-        final turnActions = _uniqueAgentActions([
-          ...turn.actions,
-          ...legacyTurn.actions,
-        ]);
+        final turnActions = _uniqueAgentActions(
+          AiChatActionGuard.withFallbackNoteAction(
+            input: input,
+            assistantReply: finalReply,
+            actions: [
+              ...turn.actions,
+              ...legacyTurn.actions,
+            ],
+          ),
+        );
         final actions = _groupAgentActions(turnActions);
         final safeActions = _newSafeAgentActions(actions.safe, toolResults);
         if (safeActions.isNotEmpty) {
@@ -1834,43 +1841,19 @@ class _AiChatPageState extends State<AiChatPage> {
     List<AiActionResult> previousResults,
   ) {
     return previousResults.any(
-      (result) =>
-          result.success && _isEquivalentAgentAction(result.action, action),
+      (result) => AiChatActionGuard.isAlreadyHandledAgentAction(
+        action,
+        [result],
+      ),
     );
   }
 
   bool _isEquivalentAgentAction(AiAppAction left, AiAppAction right) {
-    return left.type == right.type &&
-        (left.targetId ?? '') == (right.targetId ?? '') &&
-        (left.targetTitle ?? '') == (right.targetTitle ?? '') &&
-        (left.status ?? '') == (right.status ?? '') &&
-        (left.title ?? '') == (right.title ?? '') &&
-        (left.content ?? '') == (right.content ?? '') &&
-        (left.sourceText ?? '') == (right.sourceText ?? '');
+    return AiChatActionGuard.areEquivalentAgentActions(left, right);
   }
 
   bool _shouldStopAfterSafeActions(List<AiActionResult> results) {
-    return results.any(
-      (result) => result.success && _isTerminalSafeAction(result.action.type),
-    );
-  }
-
-  bool _isTerminalSafeAction(AiAppActionType type) {
-    return switch (type) {
-      AiAppActionType.saveNote ||
-      AiAppActionType.noteFromLog ||
-      AiAppActionType.noteFromOcr ||
-      AiAppActionType.addTask ||
-      AiAppActionType.addTaskDirect ||
-      AiAppActionType.createLog ||
-      AiAppActionType.createLoopFromSource ||
-      AiAppActionType.createFlashcardBatch ||
-      AiAppActionType.generateTodayMission ||
-      AiAppActionType.generateTodayFlashcards ||
-      AiAppActionType.generateWeeklyPlan =>
-        true,
-      _ => false,
-    };
+    return AiChatActionGuard.shouldStopAfterSafeActions(results);
   }
 
   Future<List<AiActionResult>> _executeSafeAgentActions(
@@ -2093,7 +2076,7 @@ class _AiChatPageState extends State<AiChatPage> {
     } else if (trimmed.isEmpty &&
         runningText != null &&
         runningText.trim().isNotEmpty) {
-      parts.add('正在整理：$runningText');
+      parts.add('正在思考：$runningText');
     }
     final mediaMarkdown = _successfulMediaMarkdown(results, existing: trimmed);
     if (mediaMarkdown.isNotEmpty) parts.add(mediaMarkdown);
@@ -2175,7 +2158,7 @@ class _AiChatPageState extends State<AiChatPage> {
     for (final action in runningActions) {
       steps.add(_AgentStepView(
         title: _agentActionLabel(action),
-        detail: '正在整理',
+        detail: '正在思考',
         status: _AgentStepStatus.running,
       ));
     }
@@ -5189,7 +5172,7 @@ class _ChatBubble extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Text(
-              '正在整理...',
+              '正在思考...',
               style: TextStyle(
                 color: statusColor,
                 fontSize: 12,

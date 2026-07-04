@@ -1624,8 +1624,8 @@ export class AiService {
 
   private isNoteGenerationIntent(input: string) {
     return (
-      /(生成|整理|写|创建|保存|做|产出).{0,16}(笔记|学习笔记|课堂笔记|复习笔记)/.test(input) ||
-      /(笔记|学习笔记|课堂笔记|复习笔记).{0,16}(生成|整理|写|创建|保存|做|产出)/.test(input)
+      /(生成|制作|制作为|整理成|整理|写成|写|创建|保存|做成|做|产出|转成).{0,16}(笔记|学习笔记|课堂笔记|复习笔记)/.test(input) ||
+      /(笔记|学习笔记|课堂笔记|复习笔记).{0,16}(生成|制作|保存|创建|整理|写成|写|做成|做|产出|转成)/.test(input)
     );
   }
 
@@ -1639,7 +1639,7 @@ export class AiService {
 
   private noteTitleFromInput(input: string) {
     const topic = input
-      .replace(/帮我|请|生成|整理|写|创建|保存|做|产出/g, '')
+      .replace(/帮我|请|生成|制作|制作为|整理成|整理|写成|写|创建|保存|做成|做|产出|转成/g, '')
       .replace(/一个|一份|一篇|详细的|详细|完整的|完整|学习笔记|课堂笔记|复习笔记|笔记/g, '')
       .replace(/[，。！？!?：:\s]+/g, '')
       .trim();
