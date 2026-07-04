@@ -38,12 +38,11 @@ class ApiException implements Exception {
 
 class ApiClient {
   ApiClient({
-    required String baseUrl,
+    required this.baseUrl,
     AiCredentialService? credentials,
     http.Client? httpClient,
     Future<void> Function()? onUnauthorized,
-  })  : _baseUrl = baseUrl,
-        _credentials = credentials ?? AiCredentialService(),
+  })  : _credentials = credentials ?? AiCredentialService(),
         _httpClient = httpClient ?? http.Client(),
         _onUnauthorized = onUnauthorized;
 
@@ -52,13 +51,7 @@ class ApiClient {
   final Future<void> Function()? _onUnauthorized;
   final Duration _timeout = const Duration(seconds: 12);
 
-  String _baseUrl;
-
-  String get baseUrl => _baseUrl;
-
-  set baseUrl(String value) {
-    _baseUrl = value;
-  }
+  String baseUrl;
 
   Future<http.Response> get(String path, {Map<String, String>? query}) {
     return _send(() async {
@@ -164,9 +157,9 @@ class ApiClient {
       final decoded = jsonDecode(response.body);
       if (decoded is List) return decoded;
     } catch (_) {
-      throw const ApiException('服务器返回格式异常');
+      throw const ApiException('这次返回内容没有整理好，请稍后再试');
     }
-    throw const ApiException('服务器返回格式异常');
+    throw const ApiException('这次返回内容没有整理好，请稍后再试');
   }
 
   Future<http.Response> _send(
@@ -208,19 +201,19 @@ class ApiClient {
       return response;
     } on TimeoutException {
       throw const ApiException(
-        '请求超时，请检查网络',
+        '网络等待时间较长，请稍后再试',
         isNetworkError: true,
       );
     } on http.ClientException {
       throw const ApiException(
-        '无法连接到服务器，请检查网络或服务地址',
+        '现在暂时连不上，请检查网络后再试',
         isNetworkError: true,
       );
     } on ApiException {
       rethrow;
     } catch (_) {
       throw const ApiException(
-        '网络异常，请稍后重试',
+        '网络暂时不太稳定，请稍后再试',
         isNetworkError: true,
       );
     }
@@ -287,7 +280,7 @@ class ApiClient {
   }
 
   Uri _buildUri(String path, Map<String, String>? query) {
-    final base = ApiEndpointConfig.normalizeBaseUrl(_baseUrl);
+    final base = ApiEndpointConfig.normalizeBaseUrl(baseUrl);
     final normalizedPath = path.startsWith('/') ? path : '/$path';
     final uri = Uri.parse('$base$normalizedPath');
     if (query == null || query.isEmpty) return uri;
@@ -330,9 +323,9 @@ class ApiClient {
       if (decoded is Map<String, dynamic>) return decoded;
       if (decoded is Map) return decoded.cast<String, dynamic>();
     } catch (_) {
-      throw const ApiException('服务器返回格式异常');
+      throw const ApiException('这次返回内容没有整理好，请稍后再试');
     }
-    throw const ApiException('服务器返回格式异常');
+    throw const ApiException('这次返回内容没有整理好，请稍后再试');
   }
 
   String _extractErrorMessage(String body) {
@@ -375,53 +368,64 @@ class ApiClient {
   }
 
   String _humanizeErrorDetail(String detail) {
-    if (detail.contains('identifier') && detail.contains('string')) {
+    final lower = detail.toLowerCase();
+    if (lower.contains('identifier') && lower.contains('string')) {
       return '请输入用户名或邮箱';
     }
-    if (detail.contains('username')) {
-      if (detail.contains('longer than or equal to 3') ||
-          detail.contains('shorter than or equal to 32') ||
-          detail.contains('Length')) {
+    if (lower.contains('invalid credentials') ||
+        lower.contains('unauthorized')) {
+      return '账号或密码错误，请检查后重试';
+    }
+    if (lower.contains('already exists') ||
+        lower.contains('duplicate') ||
+        lower.contains('conflict') ||
+        detail.contains('已被注册')) {
+      return '用户名或邮箱已被注册，请换一个试试';
+    }
+    if (lower.contains('username')) {
+      if (lower.contains('longer than or equal to 3') ||
+          lower.contains('shorter than or equal to 32') ||
+          lower.contains('length')) {
         return '用户名需要 3-32 位';
       }
       return '请输入有效的用户名';
     }
-    if (detail.contains('password')) {
-      if (detail.contains('8') || detail.contains('MinLength')) {
+    if (lower.contains('password')) {
+      if (lower.contains('8') || lower.contains('minlength')) {
         return '密码至少需要 8 位';
       }
       return '请输入有效的密码';
     }
-    if (detail.contains('email')) {
+    if (lower.contains('email')) {
       return '请输入有效的邮箱地址';
     }
-    return detail;
+    return '';
   }
 
   String _messageForStatusCode(int statusCode) {
     switch (statusCode) {
       case 400:
-        return '请求参数不正确（用户名3-32位，密码至少8位）';
+        return '填写内容有误，请检查后再试';
       case 401:
         return '登录已过期，请重新登录';
       case 403:
         return '没有权限执行此操作';
       case 404:
-        return '请求的资源不存在';
+        return '没有找到对应内容';
       case 409:
-        return '数据已存在或发生冲突';
+        return '内容已存在，请换一个名称再试';
       case 422:
-        return '请求参数校验失败';
+        return '填写内容有误，请检查后再试';
       case 429:
-        return '请求过于频繁，请稍后重试';
+        return '操作有点频繁，请稍后再试';
       case 500:
-        return '服务器内部错误';
+        return '这次没有连接成功，请稍后再试';
       case 502:
-        return '服务器网关异常';
+        return '网络连接不太稳定，请稍后再试';
       case 503:
-        return '服务暂不可用，请稍后重试';
+        return '学习助手暂时忙不过来，请稍后再试';
       default:
-        return '请求失败（HTTP $statusCode）';
+        return '这次没有连接成功，请稍后再试';
     }
   }
 }

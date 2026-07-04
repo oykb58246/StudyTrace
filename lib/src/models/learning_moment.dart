@@ -254,6 +254,7 @@ enum LearningTraceEventType {
   taskCompleted,
   noteCreated,
   flashcardCreated,
+  focusCompleted,
   aiAction,
 }
 
@@ -294,6 +295,8 @@ class LearningTraceEvent {
         return '笔记沉淀';
       case LearningTraceEventType.flashcardCreated:
         return '闪卡复习';
+      case LearningTraceEventType.focusCompleted:
+        return '专注完成';
       case LearningTraceEventType.aiAction:
         return '助手整理';
     }

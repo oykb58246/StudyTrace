@@ -11,6 +11,7 @@ import '../../services/api_client.dart';
 import '../../services/group_service.dart';
 import '../../services/picked_image_store.dart';
 import '../../theme/app_theme.dart';
+import '../../config/ui_review_config.dart';
 import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 import '../shared/local_image.dart';
@@ -20,16 +21,20 @@ class LearningMomentsPage extends StatefulWidget {
     super.key,
     required this.isDarkMode,
     required this.controller,
+    this.onOpenStudyGroup,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
+  final VoidCallback? onOpenStudyGroup;
 
   @override
   State<LearningMomentsPage> createState() => _LearningMomentsPageState();
 }
 
 class _LearningMomentsPageState extends State<LearningMomentsPage> {
+  static const String _localPrivateMomentSourceType = 'local_private_moment';
+
   final _contentController = TextEditingController();
   final _picker = ImagePicker();
   final List<String> _imagePaths = [];
@@ -52,6 +57,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   final List<cloud.LocationCheckIn> _locationCheckIns = [];
   List<_CapabilityBadge> _cloudCapabilityBadges = const [];
   List<AiCapabilityTrace> _lastCapabilityTraces = const [];
+  bool _didOpenReviewSurface = false;
 
   @override
   void initState() {
@@ -63,6 +69,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     unawaited(_loadCloudPackages());
     unawaited(_loadLocationCheckIns());
     unawaited(_loadCapabilityBadges());
+    _scheduleUiReviewSurface();
   }
 
   @override
@@ -95,6 +102,32 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     }
   }
 
+  void _scheduleUiReviewSurface() {
+    if (!UiReviewConfig.enabled || _didOpenReviewSurface) return;
+    final target = UiReviewConfig.target.trim();
+    if (target != 'learning-moments-tools' &&
+        target != 'learning-moments-composer' &&
+        target != 'learning-moments-course-selector') {
+      return;
+    }
+    _didOpenReviewSurface = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (!mounted) return;
+      switch (target) {
+        case 'learning-moments-tools':
+          await _showMomentsTools();
+          break;
+        case 'learning-moments-composer':
+          await _openComposerSheet();
+          break;
+        case 'learning-moments-course-selector':
+          await _showCourseSelectorReviewSheet();
+          break;
+      }
+    });
+  }
+
   Future<void> _loadMomentFeed() async {
     if (!widget.controller.isLoggedIn || _isLoadingFeed) return;
     setState(() {
@@ -103,16 +136,17 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     });
     try {
       final moments = await widget.controller.learningMomentService.feed();
+      final syncedMoments = await _syncLocalPrivateMomentsToCloud(moments);
       if (!mounted) return;
       setState(() {
         _cloudMoments
           ..clear()
-          ..addAll(moments);
+          ..addAll(syncedMoments);
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _feedError = _friendlyCloudError(error, '动态加载失败，下拉可重试');
+        _feedError = _friendlyCloudError(error, '学迹加载失败，下拉可重试');
       });
     } finally {
       if (mounted) setState(() => _isLoadingFeed = false);
@@ -223,30 +257,22 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.controller.primaryColor;
-    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
     return Scaffold(
-      backgroundColor:
-          widget.isDarkMode ? const Color(0xFF111827) : const Color(0xFFF5F7FF),
+      backgroundColor: StudyUi.background(widget.isDarkMode),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: titleColor,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: StudyUi.chipBackground(accent, widget.isDarkMode),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.dynamic_feed_rounded,
-                color: StudyUi.primary,
-                size: 17,
-              ),
+            StudyGlassIconNode(
+              icon: Icons.dynamic_feed_rounded,
+              accent: StudyUi.pathViolet,
+              size: 32,
+              iconSize: 16,
+              isDarkMode: widget.isDarkMode,
             ),
             const SizedBox(width: 10),
             const Flexible(
@@ -254,39 +280,67 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                 '学迹动态',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: FontWeight.w800),
+                style: TextStyle(fontWeight: AppTypography.title),
               ),
             ),
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: '学迹工具',
+          _MomentToolbarAction(
+            tooltip: '学迹整理',
+            icon: Icons.more_horiz_rounded,
+            accent: StudyUi.pathViolet,
+            isDarkMode: widget.isDarkMode,
             onPressed: _showMomentsTools,
-            icon: const Icon(Icons.more_horiz_rounded),
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: AnimatedBuilder(
-        animation: widget.controller,
-        builder: (context, _) {
-          final moments = widget.controller.isLoggedIn
-              ? _cloudMoments
-              : widget.controller.learningMoments;
-          final listView = ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
-            children: [
-              _PostEntryCard(
-                isDarkMode: widget.isDarkMode,
-                accent: accent,
-                titleColor: titleColor,
-                bodyColor: bodyColor,
-                onTap: _openComposerSheet,
-              ),
-              const SizedBox(height: 10),
-              if (moments.isEmpty)
-                _isLoadingFeed
+      body: StudyScreenBackground(
+        isDarkMode: widget.isDarkMode,
+        accent: StudyUi.pathViolet,
+        child: AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, _) {
+            final moments = _displayMoments();
+            final learningLoopMoments = moments
+                .where((moment) => (moment.sourceType ?? '').trim() == 'learning_loop')
+                .toList(growable: false);
+            final latestLearningLoopMoment =
+                learningLoopMoments.isEmpty ? null : learningLoopMoments.first;
+            final listView = ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
+              children: [
+                _HeaderPanel(
+                  isDarkMode: widget.isDarkMode,
+                  eventCount: widget.controller.studyLogs.length,
+                  momentCount: moments.length,
+                  packageCount: widget.controller.weeklyReports.length,
+                  learningLoopCount: learningLoopMoments.length,
+                  latestLearningLoopLabel: latestLearningLoopMoment == null
+                      ? null
+                      : _formatLearningLoopTime(latestLearningLoopMoment.createdAt),
+                  onRecord: _openComposerSheet,
+                  onReview: _showMomentsTools,
+                  onRefresh: widget.controller.isLoggedIn
+                      ? () => unawaited(_loadMomentFeed())
+                      : null,
+                ),
+                const SizedBox(height: 10),
+                _PostEntryCard(
+                  isDarkMode: widget.isDarkMode,
+                  accent: accent,
+                  titleColor: titleColor,
+                  bodyColor: bodyColor,
+                  avatarImagePath:
+                      widget.controller.userProfile.avatarImagePath,
+                  avatarEmoji: widget.controller.userProfile.avatarEmoji,
+                  onTap: _openComposerSheet,
+                ),
+                const SizedBox(height: 10),
+                if (moments.isEmpty)
+                  _isLoadingFeed
                     ? const Center(
                         child: Padding(
                           padding: EdgeInsets.all(28),
@@ -298,38 +352,168 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                         accent: accent,
                         bodyColor: bodyColor,
                         message: widget.controller.isLoggedIn ? _feedError : null,
+                        onRecord: _openComposerSheet,
+                        onReview: _showMomentsTools,
                       )
-              else
-                ...moments.map(
-                  (moment) => _MomentCard(
-                    moment: moment,
-                    groups: _groups,
-                    isDarkMode: widget.isDarkMode,
-                    accent: accent,
-                    titleColor: titleColor,
-                    bodyColor: bodyColor,
-                    onLike: () => _toggleMomentLike(moment),
-                    onComment: () => _commentMoment(moment),
-                    onDelete: moment.isMine
-                        ? () => _deleteMoment(moment.id)
-                        : null,
-                    onEditVisibility: widget.controller.isLoggedIn && moment.isMine
-                        ? () => _editMomentVisibility(moment)
-                        : null,
-                    onDeleteComment: (comment) =>
-                        _deleteMomentComment(moment, comment),
-                  ),
+                else
+                  ...moments.map(
+                  (moment) {
+                    final isLocalOnly = _isLocalOnlyMoment(moment);
+                    return _MomentCard(
+                      moment: moment,
+                      groups: _groups,
+                      isDarkMode: widget.isDarkMode,
+                      accent: accent,
+                      titleColor: titleColor,
+                      bodyColor: bodyColor,
+                      onLike: isLocalOnly
+                          ? () => _showTip('这条私密记录保存在本机，暂不能标记有帮助')
+                          : () => _toggleMomentLike(moment),
+                      onComment: isLocalOnly
+                          ? () => _showTip('这条私密记录保存在本机，暂不能留下回看备注')
+                          : () => _commentMoment(moment),
+                      onDelete: moment.isMine || isLocalOnly
+                          ? () => _deleteMoment(moment.id)
+                          : null,
+                      onEditVisibility:
+                          widget.controller.isLoggedIn && moment.isMine && !isLocalOnly
+                              ? () => _editMomentVisibility(moment)
+                              : null,
+                      onDeleteComment: (comment) =>
+                          _deleteMomentComment(moment, comment),
+                    );
+                  },
                 ),
-            ],
-          );
-          if (!widget.controller.isLoggedIn) return listView;
-          return RefreshIndicator(
-            onRefresh: _loadMomentFeed,
-            child: listView,
-          );
-        },
+              ],
+            );
+            if (!widget.controller.isLoggedIn) return listView;
+            return RefreshIndicator(
+              onRefresh: _loadMomentFeed,
+              child: listView,
+            );
+          },
+        ),
       ),
     );
+  }
+
+  List<LearningMoment> _displayMoments() {
+    if (!widget.controller.isLoggedIn) return widget.controller.learningMoments;
+    final byId = <String, LearningMoment>{};
+    final syncedLocalMomentIds = <String>{};
+    for (final moment in _cloudMoments) {
+      byId[moment.id] = moment;
+      final localSourceId = _localPrivateMomentSourceId(moment);
+      if (localSourceId != null) syncedLocalMomentIds.add(localSourceId);
+    }
+    for (final moment in widget.controller.learningMoments) {
+      if (moment.visibility != LearningMomentVisibility.private) continue;
+      if (syncedLocalMomentIds.contains(moment.id)) continue;
+      byId.putIfAbsent(moment.id, () => moment);
+    }
+    final moments = byId.values.toList(growable: false)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return moments;
+  }
+
+  String _formatLearningLoopTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    if (diff.inMinutes < 1) return '刚刚整理';
+    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前整理';
+    if (diff.inDays < 1) return '${diff.inHours} 小时前整理';
+    if (diff.inDays < 7) return '${diff.inDays} 天前整理';
+    return '${time.month}/${time.day} 整理';
+  }
+
+  bool _isLocalOnlyMoment(LearningMoment moment) =>
+      _isLocalOnlyMomentId(moment.id);
+
+  bool _isLocalOnlyMomentId(String momentId) {
+    final existsLocally =
+        widget.controller.learningMoments.any((moment) => moment.id == momentId);
+    if (!existsLocally) return false;
+    return !_cloudMoments.any(
+      (moment) =>
+          moment.id == momentId ||
+          _localPrivateMomentSourceId(moment) == momentId,
+    );
+  }
+
+  Future<List<LearningMoment>> _syncLocalPrivateMomentsToCloud(
+    List<LearningMoment> cloudMoments,
+  ) async {
+    if (!widget.controller.isLoggedIn) return cloudMoments;
+    final merged = List<LearningMoment>.of(cloudMoments);
+    final cloudIds = merged.map((moment) => moment.id).toSet();
+    final syncedLocalMomentIds = <String>{};
+    for (final moment in merged) {
+      final sourceId = _localPrivateMomentSourceId(moment);
+      if (sourceId != null) syncedLocalMomentIds.add(sourceId);
+    }
+    final localPrivateMoments = widget.controller.learningMoments
+        .where((moment) => moment.visibility == LearningMomentVisibility.private)
+        .toList(growable: false);
+
+    for (final localMoment in localPrivateMoments) {
+      final localId = localMoment.id.trim();
+      if (localId.isEmpty) continue;
+      if (cloudIds.contains(localId) ||
+          syncedLocalMomentIds.contains(localId)) {
+        continue;
+      }
+      if (!widget.controller.isLoggedIn) break;
+      try {
+        final uploaded = await widget.controller.learningMomentService.create(
+          content: localMoment.content,
+          courseName: localMoment.courseName,
+          imagePaths: localMoment.imagePaths,
+          visibility: LearningMomentVisibility.private,
+          sourceType: _syncedLocalSourceType(localMoment),
+          sourceId: localId,
+        );
+        final uploadedSourceId = _localPrivateMomentSourceId(uploaded);
+        final index = merged.indexWhere(
+          (moment) =>
+              moment.id == uploaded.id ||
+              (uploadedSourceId != null &&
+                  _localPrivateMomentSourceId(moment) == uploadedSourceId),
+        );
+        if (index >= 0) {
+          merged[index] = uploaded;
+        } else {
+          merged.add(uploaded);
+        }
+        cloudIds.add(uploaded.id);
+        if (uploadedSourceId != null) {
+          syncedLocalMomentIds.add(uploadedSourceId);
+        }
+      } catch (_) {
+        // Keep the local private record visible; try again on the next refresh.
+      }
+    }
+    return merged;
+  }
+
+  String? _localPrivateMomentSourceId(LearningMoment moment) {
+    if (!_isSyncedLocalPrivateMoment(moment)) return null;
+    final sourceId = moment.sourceId?.trim();
+    return sourceId == null || sourceId.isEmpty ? null : sourceId;
+  }
+
+  bool _isSyncedLocalPrivateMoment(LearningMoment moment) {
+    final sourceType = (moment.sourceType ?? '').trim();
+    return sourceType == _localPrivateMomentSourceType ||
+        sourceType == 'synced_learning_loop' ||
+        sourceType == 'synced_task_progress';
+  }
+
+  String _syncedLocalSourceType(LearningMoment moment) {
+    return switch ((moment.sourceType ?? '').trim()) {
+      'learning_loop' => 'synced_learning_loop',
+      'task_progress' => 'synced_task_progress',
+      _ => _localPrivateMomentSourceType,
+    };
   }
 
   List<_EvidencePackage> _buildEvidencePackages(
@@ -377,7 +561,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         current: (events.length + records.length).clamp(0, 6).toInt(),
         target: 6,
         source: '把记录、任务、笔记沉淀进学迹',
-        nextStep: '再完成一次学习记录或助手整理',
+        nextStep: '再完成一次学习记录或学习整理',
         iconAsset: AppAssets.aiBadgeOrganize,
       ),
       _CapabilityBadge(
@@ -388,8 +572,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
             .clamp(0, 3)
             .toInt(),
         target: 3,
-        source: '用图片材料生成学习轨迹',
-        nextStep: '发布一条带图片的学迹动态',
+        source: '用图片材料整理学习记录',
+        nextStep: '保存一条带图片的学迹',
         iconAsset: AppAssets.aiBadgeVision,
       ),
       _CapabilityBadge(
@@ -397,8 +581,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         hasAiAction || records.isNotEmpty,
         current: records.where((record) => record.statusLabel == '已完成').length.clamp(0, 5).toInt(),
         target: 5,
-        source: '让蓝心模型执行可落地学习动作',
-        nextStep: '用蓝心模型创建任务、笔记或今日安排',
+        source: '用学习整理台梳理可落地的下一步',
+        nextStep: '用学习整理台创建任务、笔记或今日安排',
         iconAsset: AppAssets.aiBadgeAssistant,
       ),
       _CapabilityBadge(
@@ -406,7 +590,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         hasMemory,
         current: records.where((record) => record.toolId.contains('memory')).length.clamp(0, 3).toInt(),
         target: 3,
-        source: '从个人学习资料中召回证据',
+        source: '从个人学习资料中找回线索',
         nextStep: '在学习对话里追问过去的任务或笔记',
         iconAsset: AppAssets.aiBadgeMemory,
       ),
@@ -415,17 +599,17 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         hasLoop || events.length >= 3,
         current: events.where((event) => event.isAiGenerated).length.clamp(0, 4).toInt(),
         target: 4,
-        source: '形成可复盘的学习闭环',
+        source: '形成可回看的学习过程',
         nextStep: '保存一次计划并启动专注',
         iconAsset: AppAssets.aiBadgeReview,
       ),
       _CapabilityBadge(
-        '学迹分享',
+        '学迹沉淀',
         moments.isNotEmpty,
         current: moments.length.clamp(0, 3).toInt(),
         target: 3,
-        source: '把学习成果发布成动态',
-        nextStep: '发布或转发一条学迹动态',
+        source: '把学习记录保存到学迹',
+        nextStep: '保存或同步一条学迹记录',
         iconAsset: AppAssets.aiBadgeShare,
       ),
     ];
@@ -452,7 +636,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
 
   static String _badgeNextStepForLabel(String label) {
     if (label.contains('OCR') || label.contains('图片')) {
-      return '发布一条带图片的学迹动态';
+      return '保存一条带图片的学迹';
     }
     if (label.contains('记忆') || label.contains('检索')) {
       return '在学习对话里追问过去的任务或笔记';
@@ -461,12 +645,28 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       return '保存一次计划并启动专注';
     }
     if (label.contains('分享') || label.contains('动态')) {
-      return '发布或转发一条学迹动态';
+      return '保存或同步一条学迹';
     }
     if (label.contains('助手') || label.contains('大模型') || label.contains('AI')) {
       return '用助手创建任务、笔记或今日安排';
     }
-    return '再完成一次学习记录或助手整理';
+    return '再完成一次学习记录或学习整理';
+  }
+
+  InputDecoration _momentInputDecoration({
+    String? labelText,
+    String? hintText,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      filled: true,
+      fillColor: StudyUi.surfaceAlt(widget.isDarkMode),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+    );
   }
 
   Future<void> _openComposerSheet() async {
@@ -500,6 +700,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                 controller: _contentController,
                 courses: widget.controller.courseNames,
                 groups: _groups,
+                onOpenStudyGroup: widget.onOpenStudyGroup,
                 selectedCourse: _selectedCourse,
                 visibility: _visibility,
                 selectedAllowedGroupIds: _selectedAllowedGroupIds,
@@ -513,7 +714,12 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                 onVisibilityChanged: (value) {
                   if (!widget.controller.isLoggedIn &&
                       value != LearningMomentVisibility.private) {
-                    _showTip('请先登录，再发布公开或小组动态');
+                    _showTip('登录后可同步到小组，当前可先保存给自己');
+                    return;
+                  }
+                  if (_groups.isEmpty &&
+                      value != LearningMomentVisibility.private) {
+                    unawaited(_showNoGroupNextStep());
                     return;
                   }
                   setState(() {
@@ -560,14 +766,68 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                   setSheetState(() {});
                 },
                 onPost: () async {
+                  final navigator = Navigator.of(sheetContext);
                   final posted = await _publishMoment();
-                  if (posted && mounted) Navigator.of(sheetContext).pop();
+                  if (posted && mounted) navigator.pop();
                 },
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showCourseSelectorReviewSheet() {
+    final options = {
+      for (final course in widget.controller.courseNames)
+        if (course.trim().isNotEmpty) course.trim(),
+    }.toList(growable: false);
+    final accent = widget.controller.primaryColor;
+    final currentCourse = _selectedCourse.trim();
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _MomentsSheetSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: accent,
+        icon: Icons.school_rounded,
+        title: '关联课程',
+              subtitle: '选择这条学迹属于哪门课，或保持不关联。',
+        child: Column(
+          children: [
+            _MomentGroupCheckTile(
+              title: '不关联课程',
+              subtitle: '保存为通用学习现场，之后仍可整理进回顾。',
+              selected: currentCourse.isEmpty,
+              accent: accent,
+              isDarkMode: widget.isDarkMode,
+              onTap: () => Navigator.of(sheetContext).pop(),
+            ),
+            for (final course in options)
+              _MomentGroupCheckTile(
+                title: course,
+                subtitle: '归入「$course」的学习路径和学习回顾。',
+                selected: currentCourse == course,
+                accent: accent,
+                isDarkMode: widget.isDarkMode,
+                onTap: () => Navigator.of(sheetContext).pop(),
+              ),
+            if (options.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '还没有课程记录，先保存为通用学迹也没问题。',
+                  style: TextStyle(
+                    color: StudyUi.body(widget.isDarkMode),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -583,30 +843,15 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
         final bodyColor =
             widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
-        return DraggableScrollableSheet(
-          initialChildSize: 0.82,
-          minChildSize: 0.42,
-          maxChildSize: 0.94,
-          builder: (context, scrollController) => Container(
-            decoration: BoxDecoration(
-              color: widget.isDarkMode ? const Color(0xFF111827) : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: bodyColor.withValues(alpha: 0.28),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+        return _MomentsSheetSurface(
+          isDarkMode: widget.isDarkMode,
+          accent: accent,
+          icon: Icons.auto_awesome_rounded,
+          title: '学迹整理',
+          subtitle: '整理能力线索、校园足迹、学习回顾和常看记录。',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
                 _CapabilityBadgePanel(
                   isDarkMode: widget.isDarkMode,
                   accent: accent,
@@ -655,8 +900,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                   events: allEvents.where((event) => event.isShareable).take(4),
                   onShare: _shareTraceEvent,
                 ),
-              ],
-            ),
+            ],
           ),
         );
       },
@@ -693,10 +937,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         .toList();
     try {
       final saved = await widget.controller.communityEvidenceService.createPackage(
-        title: '${package.courseName} 学习成果包',
+        title: '${package.courseName} 学习回顾',
         courseName: package.courseName == '未归课程' ? '' : package.courseName,
         description:
-            '${package.eventCount} 条轨迹，${package.aiCount} 次助手整理，${package.shareableCount} 项可分享成果。',
+            '${package.eventCount} 条记录，${package.aiCount} 次学习整理，${package.shareableCount} 条可回看记录。',
         sourceRefs: events
             .map((event) => {
                   'type': event.type.name,
@@ -712,10 +956,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       );
       if (!mounted) return;
       setState(() => _cloudPackages.insert(0, saved));
-      _showSnack('成果包已保存，可继续生成封面或分享至小组');
+      _showSnack('学习回顾已保存，可在已保存回顾里继续查看或同步到小组');
     } catch (_) {
       _useEvidencePackage(package);
-      _showSnack('云端成果包暂不可用，已转为本地动态文案');
+      _showSnack('学习回顾暂时无法同步，已先保存为本地学迹文案');
     } finally {
       if (mounted) setState(() => _isSavingPackage = false);
     }
@@ -742,18 +986,21 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         setState(() {
           if (index >= 0) _cloudPackages[index] = updated;
         });
-        _showSnack('成果封面已回填到成果包');
+        _showSnack('回顾封面已保存');
         return;
       }
       final task = await widget.controller.vivoCapabilityService.createCover(
         prompt:
-            '为大学生学习成果制作清晰、积极、可展示的封面。主题：${package.title}。内容：${package.description}',
-        purpose: 'evidence_cover',
+            '为大学生学习回顾制作清晰、积极、方便回看的封面。主题：${package.title}。内容：${package.description}',
+        purpose: 'learning_review_cover',
       );
       if (!mounted) return;
+      final coverImageUrl = task.imagesUrl.isNotEmpty
+          ? task.imagesUrl.first
+          : 'vivo-task:${task.taskId}';
       final updated = await widget.controller.communityEvidenceService.updatePackage(
         package.id,
-        coverImageUrl: 'vivo-task:${task.taskId}',
+        coverImageUrl: coverImageUrl,
       );
       if (!mounted) return;
       final index = _cloudPackages.indexWhere((item) => item.id == package.id);
@@ -765,39 +1012,149 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         widget.controller.activityService
             .create(
               type: 'imageGenerated',
-              title: '学习成果封面已提交生成',
+              title: task.imagesUrl.isNotEmpty ? '学习回顾封面已生成' : '学习回顾封面生成中',
               summary: package.title,
               sourceType: 'evidence_package',
               sourceId: package.id,
-              payloadJson: {'taskId': task.taskId, 'purpose': 'evidence_cover'},
+              payloadJson: {
+                'taskId': task.taskId,
+                'imageUrl': task.imagesUrl.isNotEmpty ? task.imagesUrl.first : '',
+                'purpose': 'learning_review_cover',
+              },
             )
             .catchError((_) {}),
       );
-      _showSnack('成果封面已提交生成，稍后刷新查看');
+      _showSnack('回顾封面生成中，稍后刷新查看');
     } catch (_) {
-      _showSnack('图片生成能力暂不可用，成果包内容不受影响');
+      _showSnack('图片生成能力暂不可用，学习回顾内容不受影响');
+    }
+  }
+
+  Future<void> _showNoGroupNextStep() async {
+    final openStudyGroup = widget.onOpenStudyGroup;
+    if (openStudyGroup == null) {
+      _showSnack('先创建或加入学习小组，再同步给同伴');
+      return;
+    }
+    final shouldOpen = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _MomentsDialogSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: widget.controller.primaryColor,
+        icon: Icons.group_add_rounded,
+        title: '还没有学习小组',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '先创建或加入小组，再把学习回顾放进小组复盘空间。',
+              style: TextStyle(
+                color: StudyUi.body(widget.isDarkMode),
+                fontSize: 13,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _MomentActionPill(
+                  icon: Icons.lock_rounded,
+                  label: '先留在这里',
+                  accent: StudyUi.muted(widget.isDarkMode),
+                  isDarkMode: widget.isDarkMode,
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                const Spacer(),
+                _MomentActionPill(
+                  icon: Icons.group_add_rounded,
+                  label: '去创建或加入',
+                  accent: widget.controller.primaryColor,
+                  isDarkMode: widget.isDarkMode,
+                  isFilled: true,
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    if (shouldOpen == true && mounted) {
+      openStudyGroup();
     }
   }
 
   Future<void> _sharePackageToGroup(cloud.EvidencePackage package) async {
     if (_groups.isEmpty) {
-      _showSnack('请先创建或加入学习小组');
+      await _showNoGroupNextStep();
       return;
     }
+    final accent = widget.controller.primaryColor;
     final group = await showDialog<GroupInfo>(
       context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('分享到小组'),
-        children: [
-          for (final group in _groups)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(dialogContext).pop(group),
-              child: Text(group.name),
+      builder: (dialogContext) => _MomentsDialogSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: accent,
+        icon: Icons.groups_rounded,
+        title: '同步到小组',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '选择一个小组一起回看这份学习回顾，稍后仍会确认可见范围。',
+              style: TextStyle(
+                color: StudyUi.body(widget.isDarkMode),
+                fontSize: 13,
+                height: 1.45,
+              ),
             ),
-        ],
+            const SizedBox(height: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final group in _groups)
+                      _MomentGroupCheckTile(
+                        title: group.name,
+                        subtitle: group.memberCount > 0
+                            ? '${group.memberCount} 位成员 · 小组复盘空间'
+                            : '小组复盘空间',
+                        selected: false,
+                        accent: accent,
+                        isDarkMode: widget.isDarkMode,
+                        onTap: () => Navigator.of(dialogContext).pop(group),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _MomentActionPill(
+                icon: Icons.close_rounded,
+                label: '取消',
+                accent: accent,
+                isDarkMode: widget.isDarkMode,
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
     if (group == null) return;
+    final confirmed = await _confirmShareScope(
+      title: '确认同步到小组',
+      targetLabel: _trimConfirmText(package.title),
+      visibility: LearningMomentVisibility.includeGroups,
+      allowedGroupIds: [group.id],
+      confirmText: '确认同步',
+    );
+    if (!confirmed) return;
     try {
       final updated = await widget.controller.communityEvidenceService.updatePackage(
         package.id,
@@ -809,9 +1166,9 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       setState(() {
         if (index >= 0) _cloudPackages[index] = updated;
       });
-      _showSnack('成果包已分享到 ${group.name}');
+      _showSnack('学习回顾已同步到 ${group.name}');
     } catch (_) {
-      _showSnack('成果包分享失败，请稍后重试');
+      _showSnack('学习回顾同步失败，请稍后重试');
     }
   }
 
@@ -826,21 +1183,32 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       setState(() {
         if (index >= 0) _cloudPackages[index] = updated;
       });
-      _showSnack(updated.featured ? '已加入精选成果墙' : '已取消精选');
+      _showSnack(updated.featured ? '已放到常看回顾' : '已移出常看回顾');
     } catch (_) {
-      _showSnack('精选状态更新失败，请稍后重试');
+      _showSnack('常看状态更新失败，请稍后重试');
     }
   }
 
   Future<void> _createLocationCheckIn() async {
     if (_isCheckingLocation) return;
     if (!widget.controller.isLoggedIn) {
-      _showTip('请先登录，再保存校园地点');
+      _showTip('登录后可保存校园地点，当前可先记录文字学迹');
       return;
     }
     final draft = await _showLocationCheckInDialog();
     if (draft == null || draft.title.isEmpty) return;
     if (!mounted) return;
+    final confirmed = await _confirmShareScope(
+      title: '确认地点记录范围',
+      targetLabel: _trimConfirmText(draft.title),
+      visibility: draft.shareToGroup
+          ? LearningMomentVisibility.includeGroups
+          : LearningMomentVisibility.private,
+      allowedGroupIds:
+          draft.shareToGroup && draft.groupId != null ? [draft.groupId!] : const [],
+      confirmText: draft.shareToGroup ? '保存并同步' : '保存',
+    );
+    if (!confirmed || !mounted) return;
     setState(() => _isCheckingLocation = true);
     try {
       final checkIn =
@@ -858,7 +1226,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       if (!mounted) return;
       setState(() => _locationCheckIns.insert(0, checkIn));
       unawaited(_loadCapabilityBadges());
-      _showTip(draft.shareToGroup ? '地点已分享到小组学习轨迹' : '地点已保存为私密学习记录');
+      _showTip(draft.shareToGroup ? '地点已同步到小组学习记录' : '地点已保存为私密学习记录');
     } catch (_) {
       await _showDialogNotice(
         title: '地点保存失败',
@@ -878,91 +1246,105 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     var selectedGroupId = _selectedGroupId ??
         (_groups.isNotEmpty ? _groups.first.id : null);
     try {
-      return await showDialog<_LocationCheckInDraft>(
-        context: context,
-        builder: (dialogContext) {
-          return StatefulBuilder(
-            builder: (context, setDialogState) => AlertDialog(
-              title: const Text('手动地点记录'),
-              content: SizedBox(
-                width: 460,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: titleController,
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          labelText: '学习地点',
-                          hintText: '图书馆三楼 / 信息楼自习室',
-                        ),
-                        onSubmitted: (_) => _popLocationDraft(
-                          dialogContext,
-                          titleController,
-                          cityController,
-                          shareToGroup,
-                          selectedGroupId,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: cityController,
-                        decoration: const InputDecoration(
-                          labelText: '校区或备注',
-                          hintText: '可选，如主校区 / 靠窗座位',
-                        ),
-                      ),
-                      if (_groups.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: shareToGroup,
-                          title: const Text('分享到小组'),
-                          onChanged: (value) => setDialogState(
-                            () => shareToGroup = value,
+	      return await showDialog<_LocationCheckInDraft>(
+	        context: context,
+	        builder: (dialogContext) {
+	          return StatefulBuilder(
+	            builder: (context, setDialogState) => _MomentsDialogSurface(
+	              isDarkMode: widget.isDarkMode,
+	              accent: StudyUi.pathCyan,
+	              icon: Icons.location_on_rounded,
+	              title: '手动地点记录',
+	              child: Column(
+	                mainAxisSize: MainAxisSize.min,
+	                children: [
+	                  TextField(
+	                    controller: titleController,
+	                    autofocus: true,
+	                    style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+	                    decoration: _momentInputDecoration(
+	                      labelText: '学习地点',
+	                      hintText: '图书馆三楼 / 信息楼自习室',
+	                    ),
+	                    onSubmitted: (_) => _popLocationDraft(
+	                      dialogContext,
+	                      titleController,
+	                      cityController,
+	                      shareToGroup,
+	                      selectedGroupId,
+	                    ),
+	                  ),
+	                  const SizedBox(height: 12),
+	                  TextField(
+	                    controller: cityController,
+	                    style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+	                    decoration: _momentInputDecoration(
+	                      labelText: '校区或备注',
+	                      hintText: '可选，如主校区 / 靠窗座位',
+	                    ),
+	                  ),
+	                  if (_groups.isNotEmpty) ...[
+	                    const SizedBox(height: 12),
+	                    _MomentGroupCheckTile(
+                      title: '同步到小组',
+	                      subtitle: shareToGroup
+	                          ? '这条地点记录会进入小组学迹'
+	                          : '默认保存为私密学习记录',
+	                      selected: shareToGroup,
+	                      accent: StudyUi.pathCyan,
+	                      isDarkMode: widget.isDarkMode,
+	                      onTap: () => setDialogState(
+	                        () => shareToGroup = !shareToGroup,
+	                      ),
+	                    ),
+                    if (shareToGroup) ...[
+                      const SizedBox(height: 8),
+                      ..._groups.map(
+                        (group) => _MomentGroupCheckTile(
+                          title: group.name,
+                          subtitle: '${group.memberCount} 人一起学习',
+                          selected: selectedGroupId == group.id,
+                          accent: StudyUi.pathCyan,
+                          isDarkMode: widget.isDarkMode,
+                          onTap: () => setDialogState(
+                            () => selectedGroupId = group.id,
                           ),
                         ),
-                        if (shareToGroup)
-                          DropdownButtonFormField<String>(
-                            value: selectedGroupId,
-                            items: _groups
-                                .map(
-                                  (group) => DropdownMenuItem(
-                                    value: group.id,
-                                    child: Text(group.name),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) => setDialogState(
-                              () => selectedGroupId = value,
-                            ),
-                            decoration: const InputDecoration(labelText: '小组'),
-                          ),
-                      ],
+                      ),
                     ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => _popLocationDraft(
-                    dialogContext,
-                    titleController,
-                    cityController,
-                    shareToGroup,
-                    selectedGroupId,
-                  ),
-                  child: Text(shareToGroup ? '保存并分享' : '保存'),
-                ),
-              ],
-            ),
-          );
-        },
+	                  ],
+	                  const SizedBox(height: 16),
+	                  Row(
+	                    children: [
+	                      _MomentActionPill(
+	                        icon: Icons.close_rounded,
+	                        label: '取消',
+	                        accent: StudyUi.muted(widget.isDarkMode),
+	                        isDarkMode: widget.isDarkMode,
+	                        onPressed: () => Navigator.of(dialogContext).pop(),
+	                      ),
+	                      const Spacer(),
+	                      _MomentActionPill(
+	                        icon: Icons.check_rounded,
+                        label: shareToGroup ? '保存并同步' : '保存',
+	                        accent: StudyUi.pathCyan,
+	                        isDarkMode: widget.isDarkMode,
+	                        isFilled: true,
+	                        onPressed: () => _popLocationDraft(
+	                          dialogContext,
+	                          titleController,
+	                          cityController,
+	                          shareToGroup,
+	                          selectedGroupId,
+	                        ),
+	                      ),
+	                    ],
+	                  ),
+	                ],
+	              ),
+	            ),
+	          );
+	        },
       );
     } finally {
       titleController.dispose();
@@ -1003,23 +1385,37 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     }
     if (_visibility != LearningMomentVisibility.private &&
         !widget.controller.isLoggedIn) {
-      _showTip('请先登录后发布公开或小组动态');
+      _showTip('登录后可同步到小组，当前可先保存给自己');
+      return false;
+    }
+    if (_visibility != LearningMomentVisibility.private && _groups.isEmpty) {
+      await _showNoGroupNextStep();
       return false;
     }
     if (_visibility == LearningMomentVisibility.includeGroups &&
         _selectedAllowedGroupIds.isEmpty) {
-      _showTip('请选择允许查看的小组，或切回公开/私密');
+      _showTip('请选择允许查看的小组，或切回私密');
       return false;
     }
     if (_visibility == LearningMomentVisibility.excludeGroups &&
         _selectedDeniedGroupIds.isEmpty) {
-      _showTip('请选择不允许查看的小组，或切回公开/私密');
+      _showTip('请选择不允许查看的小组，或切回私密');
       return false;
     }
+    final confirmed = await _confirmShareScope(
+      title: '确认可见范围',
+      targetLabel: content.isEmpty ? '学习图片记录' : _trimConfirmText(content),
+      visibility: _visibility,
+      allowedGroupIds: _selectedAllowedGroupIds,
+      deniedGroupIds: _selectedDeniedGroupIds,
+      confirmText:
+          _visibility == LearningMomentVisibility.private ? '保存' : '保存到小组',
+    );
+    if (!confirmed || !mounted) return false;
     setState(() => _isPosting = true);
     final publishedVisibility = _visibility;
     try {
-      final text = content.isEmpty ? '分享了一组学习图片' : content;
+      final text = content.isEmpty ? '记录了一组学习图片' : content;
       if (widget.controller.isLoggedIn) {
         final moment = await widget.controller.learningMomentService.create(
           content: text,
@@ -1049,11 +1445,11 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         _visibility = LearningMomentVisibility.private;
       });
       _showTip(publishedVisibility == LearningMomentVisibility.private
-          ? '已保存私密动态'
-          : '已发布动态');
+          ? '已保存私密学迹，可在时间线回看，也可整理成学习回顾'
+          : '已保存到小组学迹，可一起回看，也可整理成学习回顾');
       return true;
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '动态发布失败，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '学习记录保存失败，请稍后重试'));
       return false;
     } finally {
       if (mounted) setState(() => _isPosting = false);
@@ -1061,8 +1457,18 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   }
 
   Future<void> _shareTraceEvent(LearningTraceEvent event) async {
+    final confirmed = await _confirmShareScope(
+      title: '确认保存范围',
+      targetLabel: _trimConfirmText(event.title),
+      visibility: LearningMomentVisibility.private,
+      confirmText: '保存',
+    );
+    if (!confirmed) return;
     await widget.controller.shareTraceEvent(event);
-    _showTip('已转发到私密学迹动态');
+    if (widget.controller.isLoggedIn) {
+      unawaited(_loadMomentFeed());
+    }
+    _showTip('已保存到私密学迹，可在时间线回看，也可整理成学习回顾');
   }
 
   void _useEvidencePackage(_EvidencePackage package) {
@@ -1072,32 +1478,50 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     setState(() {
       _selectedCourse = validCourse;
       _contentController.text =
-          '整理了「${package.courseName}」的学习成果包：${package.eventCount} 条轨迹、'
-          '${package.aiCount} 次助手整理、${package.shareableCount} 条可分享成果。'
-          '这些记录把任务执行、笔记沉淀和复盘材料串成了可追溯的学习过程。';
+          '整理了「${package.courseName}」的学习回顾：${package.eventCount} 条记录、'
+          '${package.aiCount} 次学习整理、${package.shareableCount} 条可回看记录。'
+          '这些内容放在一起，方便回看最近怎么学、下一步做什么。';
     });
   }
 
   Future<void> _deleteMoment(String momentId) async {
     try {
-      if (widget.controller.isLoggedIn) {
+      if (widget.controller.isLoggedIn && !_isLocalOnlyMomentId(momentId)) {
+        LearningMoment? cloudMoment;
+        for (final moment in _cloudMoments) {
+          if (moment.id == momentId) {
+            cloudMoment = moment;
+            break;
+          }
+        }
+        final syncedLocalId = cloudMoment == null
+            ? null
+            : _localPrivateMomentSourceId(cloudMoment);
         await widget.controller.learningMomentService.delete(momentId);
+        if (syncedLocalId != null) {
+          await widget.controller.deleteLearningMoment(syncedLocalId);
+        }
         if (!mounted) return;
-        setState(
-          () => _cloudMoments.removeWhere((moment) => moment.id == momentId),
-        );
+        setState(() {
+          _cloudMoments.removeWhere(
+            (moment) =>
+                moment.id == momentId ||
+                (syncedLocalId != null &&
+                    _localPrivateMomentSourceId(moment) == syncedLocalId),
+          );
+        });
       } else {
         await widget.controller.deleteLearningMoment(momentId);
       }
-      _showTip('已删除动态');
+      _showTip('已删除学迹');
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '动态删除失败，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '学迹删除失败，请稍后重试'));
     }
   }
 
   Future<void> _toggleMomentLike(LearningMoment moment) async {
     if (!widget.controller.isLoggedIn) {
-      _showTip('请先登录后点赞');
+      _showTip('登录后可标记有帮助');
       return;
     }
     try {
@@ -1106,48 +1530,68 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
           : await widget.controller.learningMomentService.like(moment.id);
       _upsertCloudMoment(updated);
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '点赞失败，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '这次没有标记成功，请稍后重试'));
     }
   }
 
   Future<void> _commentMoment(LearningMoment moment) async {
     if (!widget.controller.isLoggedIn) {
-      _showTip('请先登录后评论');
+      _showTip('登录后可留下回看备注');
       return;
     }
     final controller = TextEditingController();
-    try {
-      final text = await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('写评论'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLength: 500,
-            minLines: 2,
-            maxLines: 4,
-            decoration: const InputDecoration(hintText: '说点什么...'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text('发送'),
-            ),
-          ],
-        ),
-      );
+	    try {
+	      final text = await showDialog<String>(
+	        context: context,
+	        builder: (dialogContext) => _MomentsDialogSurface(
+	          isDarkMode: widget.isDarkMode,
+	          accent: widget.controller.primaryColor,
+	          icon: Icons.mode_comment_rounded,
+	          title: '写回看备注',
+	          child: Column(
+	            mainAxisSize: MainAxisSize.min,
+	            children: [
+	              TextField(
+	                controller: controller,
+	                autofocus: true,
+	                maxLength: 500,
+	                minLines: 2,
+	                maxLines: 4,
+	                style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+	                decoration: _momentInputDecoration(hintText: '留下这次回看的想法...'),
+	              ),
+	              const SizedBox(height: 8),
+	              Row(
+	                children: [
+	                  _MomentActionPill(
+	                    icon: Icons.close_rounded,
+	                    label: '取消',
+	                    accent: StudyUi.muted(widget.isDarkMode),
+	                    isDarkMode: widget.isDarkMode,
+	                    onPressed: () => Navigator.of(dialogContext).pop(),
+	                  ),
+	                  const Spacer(),
+	                  _MomentActionPill(
+	                    icon: Icons.send_rounded,
+	                    label: '发送',
+	                    accent: widget.controller.primaryColor,
+	                    isDarkMode: widget.isDarkMode,
+	                    isFilled: true,
+	                    onPressed: () => Navigator.of(dialogContext)
+	                        .pop(controller.text.trim()),
+	                  ),
+	                ],
+	              ),
+	            ],
+	          ),
+	        ),
+	      );
       if (text == null || text.isEmpty) return;
       final updated =
           await widget.controller.learningMomentService.comment(moment.id, text);
       _upsertCloudMoment(updated);
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '评论失败，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '回看备注暂时没有保存成功，请稍后重试'));
     } finally {
       controller.dispose();
     }
@@ -1163,13 +1607,13 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
           .deleteComment(moment.id, comment.id);
       _upsertCloudMoment(updated);
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '评论删除失败，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '回看备注暂时没有删除成功，请稍后重试'));
     }
   }
 
   Future<void> _editMomentVisibility(LearningMoment moment) async {
     if (!widget.controller.isLoggedIn) {
-      _showTip('请先登录，再修改可见范围');
+      _showTip('登录后可修改小组可见范围');
       return;
     }
     final result = await _showVisibilityEditor(
@@ -1178,6 +1622,15 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       initialDeniedIds: moment.deniedGroupIds,
     );
     if (result == null) return;
+    final confirmed = await _confirmShareScope(
+      title: '确认新的可见范围',
+      targetLabel: _trimConfirmText(moment.content),
+      visibility: result.visibility,
+      allowedGroupIds: result.allowedGroupIds,
+      deniedGroupIds: result.deniedGroupIds,
+      confirmText: '保存',
+    );
+    if (!confirmed) return;
     try {
       final updated = await widget.controller.learningMomentService.updateVisibility(
         momentId: moment.id,
@@ -1195,13 +1648,168 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   void _upsertCloudMoment(LearningMoment moment) {
     if (!mounted) return;
     setState(() {
-      final index = _cloudMoments.indexWhere((item) => item.id == moment.id);
+      final sourceId = _localPrivateMomentSourceId(moment);
+      final index = _cloudMoments.indexWhere(
+        (item) =>
+            item.id == moment.id ||
+            (sourceId != null && _localPrivateMomentSourceId(item) == sourceId),
+      );
       if (index >= 0) {
         _cloudMoments[index] = moment;
       } else {
         _cloudMoments.insert(0, moment);
       }
     });
+  }
+
+  Future<bool> _confirmShareScope({
+    required String title,
+    required String targetLabel,
+    required LearningMomentVisibility visibility,
+    List<String> allowedGroupIds = const [],
+    List<String> deniedGroupIds = const [],
+    required String confirmText,
+  }) async {
+    if (!mounted) return false;
+    final scopeText = _visibilityScopeText(
+      visibility,
+      allowedGroupIds: allowedGroupIds,
+      deniedGroupIds: deniedGroupIds,
+    );
+    final note = _visibilityScopeNote(visibility);
+    final icon = _visibilityScopeIcon(visibility);
+	    final confirmed = await showDialog<bool>(
+	      context: context,
+	      builder: (dialogContext) => _MomentsDialogSurface(
+	        isDarkMode: widget.isDarkMode,
+	        accent: widget.controller.primaryColor,
+	        icon: icon,
+	        title: title,
+	        child: Column(
+	          mainAxisSize: MainAxisSize.min,
+	          crossAxisAlignment: CrossAxisAlignment.start,
+	          children: [
+	            Text(
+	              targetLabel.isEmpty ? '这条学习内容' : targetLabel,
+	              maxLines: 2,
+	              overflow: TextOverflow.ellipsis,
+	              style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+	            ),
+	            const SizedBox(height: 14),
+	            Container(
+	              padding: const EdgeInsets.all(12),
+	              decoration: BoxDecoration(
+	                color: StudyUi.surfaceAlt(widget.isDarkMode),
+	                borderRadius: BorderRadius.circular(16),
+	                border: Border.all(color: StudyUi.border(widget.isDarkMode)),
+	              ),
+	              child: Row(
+	                crossAxisAlignment: CrossAxisAlignment.start,
+	                children: [
+	                  StudyGlassIconNode(
+	                    icon: icon,
+	                    accent: widget.controller.primaryColor,
+	                    size: 34,
+	                    iconSize: 16,
+	                    isDarkMode: widget.isDarkMode,
+	                  ),
+	                  const SizedBox(width: 10),
+	                  Expanded(
+	                    child: Column(
+	                      crossAxisAlignment: CrossAxisAlignment.start,
+	                      children: [
+	                        Text(
+	                          scopeText,
+	                          style: TextStyle(
+	                            color: StudyUi.title(widget.isDarkMode),
+	                            fontWeight: AppTypography.title,
+	                          ),
+	                        ),
+	                        const SizedBox(height: 4),
+	                        Text(
+	                          note,
+	                          style: TextStyle(
+	                            color: StudyUi.body(widget.isDarkMode),
+	                            fontSize: 12,
+	                            height: 1.35,
+	                          ),
+	                        ),
+	                      ],
+	                    ),
+	                  ),
+	                ],
+	              ),
+	            ),
+	            const SizedBox(height: 16),
+	            Row(
+	              children: [
+	                _MomentActionPill(
+	                  icon: Icons.close_rounded,
+	                  label: '取消',
+	                  accent: StudyUi.muted(widget.isDarkMode),
+	                  isDarkMode: widget.isDarkMode,
+	                  onPressed: () => Navigator.of(dialogContext).pop(false),
+	                ),
+	                const Spacer(),
+	                _MomentActionPill(
+	                  icon: Icons.check_rounded,
+	                  label: confirmText,
+	                  accent: widget.controller.primaryColor,
+	                  isDarkMode: widget.isDarkMode,
+	                  isFilled: true,
+	                  onPressed: () => Navigator.of(dialogContext).pop(true),
+	                ),
+	              ],
+	            ),
+	          ],
+	        ),
+	      ),
+	    );
+    return confirmed == true;
+  }
+
+  String _visibilityScopeText(
+    LearningMomentVisibility visibility, {
+    List<String> allowedGroupIds = const [],
+    List<String> deniedGroupIds = const [],
+  }) {
+    return switch (visibility) {
+      LearningMomentVisibility.private => '仅自己可见',
+      LearningMomentVisibility.public => '我的小组成员可见',
+      LearningMomentVisibility.includeGroups =>
+        '仅 ${_groupNames(allowedGroupIds)} 可见',
+      LearningMomentVisibility.excludeGroups =>
+        '除 ${_groupNames(deniedGroupIds)} 外的小组成员可见',
+    };
+  }
+
+  String _visibilityScopeNote(LearningMomentVisibility visibility) {
+    return switch (visibility) {
+      LearningMomentVisibility.private => '默认留在自己的学习记录里。',
+      LearningMomentVisibility.public => '保存后，可在小组复盘空间共同回看。',
+      LearningMomentVisibility.includeGroups => '只有选中的小组成员能看到。',
+      LearningMomentVisibility.excludeGroups => '选中的小组不会看到这条内容。',
+    };
+  }
+
+  IconData _visibilityScopeIcon(LearningMomentVisibility visibility) {
+    return switch (visibility) {
+      LearningMomentVisibility.private => Icons.lock_rounded,
+      LearningMomentVisibility.public => Icons.groups_rounded,
+      LearningMomentVisibility.includeGroups => Icons.visibility_rounded,
+      LearningMomentVisibility.excludeGroups => Icons.visibility_off_rounded,
+    };
+  }
+
+  String _groupNames(List<String> ids) {
+    if (ids.isEmpty) return '未选择小组';
+    return ids.map((id) => _VisibilityPicker._groupName(_groups, id)).join('、');
+  }
+
+  String _trimConfirmText(String value) {
+    final normalized = value.trim().replaceAll('\n', ' ');
+    if (normalized.length <= 36) return normalized;
+    return '${normalized.substring(0, 36)}...';
   }
 
   Future<List<String>?> _showGroupMultiSelect({
@@ -1212,71 +1820,107 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     return showModalBottomSheet<List<String>>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-            decoration: BoxDecoration(
-              color: widget.isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(22)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: widget.isDarkMode ? Colors.white : AppColors.ink,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+        builder: (context, setSheetState) => _MomentsSheetSurface(
+          isDarkMode: widget.isDarkMode,
+          accent: widget.controller.primaryColor,
+          icon: Icons.groups_rounded,
+          title: title,
+          subtitle: '选择后，这条学迹会放入对应小组的复盘空间。',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_groups.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: StudyUi.surfaceAlt(widget.isDarkMode),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: StudyUi.border(widget.isDarkMode)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '还没有学习小组',
+                        style: TextStyle(
+                          color: StudyUi.title(widget.isDarkMode),
+                          fontWeight: AppTypography.title,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '先创建或加入小组，再把这条学迹放进小组复盘空间。',
+                        style: TextStyle(
+                          color: StudyUi.body(widget.isDarkMode),
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                      if (widget.onOpenStudyGroup != null) ...[
+                        const SizedBox(height: 12),
+                        _MomentActionPill(
+                          icon: Icons.group_add_rounded,
+                          label: '去创建或加入',
+                          accent: widget.controller.primaryColor,
+                          isDarkMode: widget.isDarkMode,
+                          isFilled: true,
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            widget.onOpenStudyGroup?.call();
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                )
+              else
+                ..._groups.map(
+                  (group) => _MomentGroupCheckTile(
+                    title: group.name,
+                    subtitle: '${group.memberCount} 人一起学习',
+                    selected: selected.contains(group.id),
+                    accent: widget.controller.primaryColor,
+                    isDarkMode: widget.isDarkMode,
+                    onTap: () {
+                      setSheetState(() {
+                        if (selected.contains(group.id)) {
+                          selected.remove(group.id);
+                        } else {
+                          selected.add(group.id);
+                        }
+                      });
+                    },
                   ),
                 ),
-                const SizedBox(height: 12),
-                if (_groups.isEmpty)
-                  Text(
-                    '暂无可选小组',
-                    style: TextStyle(
-                      color: widget.isDarkMode
-                          ? const Color(0xFFC2C8D6)
-                          : AppColors.body,
-                    ),
-                  )
-                else
-                  ..._groups.map(
-                    (group) => CheckboxListTile(
-                      value: selected.contains(group.id),
-                      title: Text(group.name),
-                      subtitle: Text('${group.memberCount} 人'),
-                      onChanged: (checked) {
-                        setSheetState(() {
-                          if (checked == true) {
-                            selected.add(group.id);
-                          } else {
-                            selected.remove(group.id);
-                          }
-                        });
-                      },
-                    ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _MomentActionPill(
+                    icon: Icons.close_rounded,
+                    label: '取消',
+                    accent: StudyUi.muted(widget.isDarkMode),
+                    isDarkMode: widget.isDarkMode,
+                    onPressed: () => Navigator.of(sheetContext).pop(),
                   ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      child: const Text('取消'),
-                    ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: () =>
-                          Navigator.of(sheetContext).pop(selected.toList()),
-                      child: const Text('确定'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                  const Spacer(),
+                  _MomentActionPill(
+                    icon: Icons.check_rounded,
+                    label: '确定',
+                    accent: widget.controller.primaryColor,
+                    isDarkMode: widget.isDarkMode,
+                    isFilled: true,
+                    onPressed: _groups.isEmpty
+                        ? null
+                        : () =>
+                            Navigator.of(sheetContext).pop(selected.toList()),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -1294,90 +1938,97 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     return showModalBottomSheet<_VisibilityDraft>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-            decoration: BoxDecoration(
-              color: widget.isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(22)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _VisibilityPicker(
-                  isDarkMode: widget.isDarkMode,
-                  groups: _groups,
-                  visibility: visibility,
-                  allowedGroupIds: allowed,
-                  deniedGroupIds: denied,
-                  onVisibilityChanged: (value) {
-                    setSheetState(() {
-                      visibility = value;
-                      if (value != LearningMomentVisibility.includeGroups) {
-                        allowed.clear();
+        builder: (context, setSheetState) => _MomentsSheetSurface(
+          isDarkMode: widget.isDarkMode,
+          accent: widget.controller.primaryColor,
+          icon: Icons.visibility_rounded,
+          title: '可见范围',
+          subtitle: '决定这条学迹是私密记录，还是进入指定小组学迹。',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _VisibilityPicker(
+                isDarkMode: widget.isDarkMode,
+                accent: widget.controller.primaryColor,
+                groups: _groups,
+                onOpenStudyGroup: widget.onOpenStudyGroup,
+                visibility: visibility,
+                allowedGroupIds: allowed,
+                deniedGroupIds: denied,
+                onVisibilityChanged: (value) {
+                  setSheetState(() {
+                    visibility = value;
+                    if (value != LearningMomentVisibility.includeGroups) {
+                      allowed.clear();
+                    }
+                    if (value != LearningMomentVisibility.excludeGroups) {
+                      denied.clear();
+                    }
+                  });
+                },
+                onChooseGroups: (mode) async {
+                  final selected = await _showGroupMultiSelect(
+                    title: mode == LearningMomentVisibility.includeGroups
+                        ? '指定小组可以看'
+                        : '指定小组不可看',
+                    initialIds: mode == LearningMomentVisibility.includeGroups
+                        ? allowed
+                        : denied,
+                  );
+                  if (selected == null) return;
+                  setSheetState(() {
+                    if (mode == LearningMomentVisibility.includeGroups) {
+                      allowed
+                        ..clear()
+                        ..addAll(selected);
+                    } else {
+                      denied
+                        ..clear()
+                        ..addAll(selected);
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  _MomentActionPill(
+                    icon: Icons.close_rounded,
+                    label: '取消',
+                    accent: StudyUi.muted(widget.isDarkMode),
+                    isDarkMode: widget.isDarkMode,
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                  ),
+                  const Spacer(),
+                  _MomentActionPill(
+                    icon: Icons.check_rounded,
+                    label: '保存',
+                    accent: widget.controller.primaryColor,
+                    isDarkMode: widget.isDarkMode,
+                    isFilled: true,
+                    onPressed: () {
+                      if (visibility == LearningMomentVisibility.includeGroups &&
+                          allowed.isEmpty) {
+                        _showTip('请选择允许查看的小组');
+                        return;
                       }
-                      if (value != LearningMomentVisibility.excludeGroups) {
-                        denied.clear();
+                      if (visibility == LearningMomentVisibility.excludeGroups &&
+                          denied.isEmpty) {
+                        _showTip('请选择不允许查看的小组');
+                        return;
                       }
-                    });
-                  },
-                  onChooseGroups: (mode) async {
-                    final selected = await _showGroupMultiSelect(
-                      title: mode == LearningMomentVisibility.includeGroups
-                          ? '指定小组可以看'
-                          : '指定小组不可看',
-                      initialIds: mode == LearningMomentVisibility.includeGroups
-                          ? allowed
-                          : denied,
-                    );
-                    if (selected == null) return;
-                    setSheetState(() {
-                      if (mode == LearningMomentVisibility.includeGroups) {
-                        allowed
-                          ..clear()
-                          ..addAll(selected);
-                      } else {
-                        denied
-                          ..clear()
-                          ..addAll(selected);
-                      }
-                    });
-                  },
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      child: const Text('取消'),
-                    ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: () {
-                        if (visibility == LearningMomentVisibility.includeGroups &&
-                            allowed.isEmpty) {
-                          _showTip('请选择允许查看的小组');
-                          return;
-                        }
-                        if (visibility == LearningMomentVisibility.excludeGroups &&
-                            denied.isEmpty) {
-                          _showTip('请选择不允许查看的小组');
-                          return;
-                        }
-                        Navigator.of(sheetContext).pop(_VisibilityDraft(
-                          visibility,
-                          allowed,
-                          denied,
-                        ));
-                      },
-                      child: const Text('保存'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                      Navigator.of(sheetContext).pop(_VisibilityDraft(
+                        visibility,
+                        allowed,
+                        denied,
+                      ));
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -1413,57 +2064,42 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
 class _HeaderPanel extends StatelessWidget {
   const _HeaderPanel({
     required this.isDarkMode,
-    required this.accent,
-    required this.titleColor,
-    required this.bodyColor,
     required this.eventCount,
     required this.momentCount,
     required this.packageCount,
+    required this.learningLoopCount,
+    required this.latestLearningLoopLabel,
+    required this.onRecord,
+    required this.onReview,
+    required this.onRefresh,
   });
 
   final bool isDarkMode;
-  final Color accent;
-  final Color titleColor;
-  final Color bodyColor;
   final int eventCount;
   final int momentCount;
   final int packageCount;
+  final int learningLoopCount;
+  final String? latestLearningLoopLabel;
+  final VoidCallback onRecord;
+  final VoidCallback onReview;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          if (!isDarkMode)
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 14,
-              offset: const Offset(0, 8),
-            ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: StudyAssetIcon(
-                  asset: AppAssets.sideMomentsIcon,
-                  color: accent,
-                  size: 24,
-                  fallbackIcon: Icons.auto_stories_rounded,
-                ),
+              StudyGlassIconNode(
+                icon: Icons.dynamic_feed_rounded,
+                accent: StudyUi.pathViolet,
+                size: 42,
+                iconSize: 20,
+                isDarkMode: isDarkMode,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1471,48 +2107,144 @@ class _HeaderPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '学习轨迹社区',
+                      '学迹',
                       style: TextStyle(
-                        color: titleColor,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                        color: StudyUi.title(isDarkMode),
+                        fontSize: 24,
+                        fontWeight: AppTypography.hero,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
-                      '把学习行为、复盘和成果沉淀成清楚的学习轨迹',
-                      style: TextStyle(color: bodyColor, fontSize: 12),
+                      _summaryText,
+                      style: TextStyle(
+                        color: StudyUi.body(isDarkMode),
+                        fontSize: 13,
+                        height: 1.42,
+                      ),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _MetricPill(
-                label: '轨迹事件',
-                value: '$eventCount',
-                accent: accent,
+              _MomentHeaderChip(
+                label: '记录 $eventCount',
+                icon: Icons.edit_note_rounded,
+                color: StudyUi.pathBlue,
                 isDarkMode: isDarkMode,
               ),
-              _MetricPill(
-                label: '主动分享',
-                value: '$momentCount',
-                accent: const Color(0xFF19A974),
+              _MomentHeaderChip(
+                label: '学迹 $momentCount',
+                icon: Icons.dynamic_feed_rounded,
+                color: StudyUi.pathMint,
                 isDarkMode: isDarkMode,
               ),
-              _MetricPill(
-                label: '成果包',
-                value: '$packageCount',
-                accent: const Color(0xFFF59E0B),
+              _MomentHeaderChip(
+                label: '回顾 $packageCount',
+                icon: Icons.auto_stories_rounded,
+                color: StudyUi.pathViolet,
                 isDarkMode: isDarkMode,
+              ),
+              if (learningLoopCount > 0)
+                _MomentHeaderChip(
+                  label: '整理 $learningLoopCount',
+                  icon: Icons.auto_awesome_rounded,
+                  color: StudyUi.secondary,
+                  isDarkMode: isDarkMode,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _MomentActionPill(
+                icon: Icons.add_rounded,
+                label: '记录学迹',
+                accent: StudyUi.pathViolet,
+                isDarkMode: isDarkMode,
+                onPressed: onRecord,
+              ),
+              _MomentActionPill(
+                icon: Icons.auto_stories_rounded,
+                label: '整理回顾',
+                accent: StudyUi.pathBlue,
+                isDarkMode: isDarkMode,
+                onPressed: onReview,
+              ),
+              _MomentActionPill(
+                icon: Icons.refresh_rounded,
+                label: '刷新',
+                accent: StudyUi.pathMint,
+                isDarkMode: isDarkMode,
+                onPressed: onRefresh,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String get _summaryText {
+    if (learningLoopCount > 0) {
+      final latest = latestLearningLoopLabel;
+      if (latest != null && latest.isNotEmpty) {
+        return '最近已有 $learningLoopCount 条学习整理沉淀进学迹，$latest，适合顺着下一步继续学。';
+      }
+      return '最近已有 $learningLoopCount 条学习整理沉淀进学迹，适合顺着下一步继续学。';
+    }
+    if (momentCount == 0 && eventCount == 0) {
+      return '先记录一条学习瞬间，后面再慢慢整理回顾。';
+    }
+    if (momentCount == 0) {
+      return '已有学习记录，可以挑一条写成学迹。';
+    }
+    return '最近有 $momentCount 条学迹，适合回看学习过程。';
+  }
+}
+
+class _MomentHeaderChip extends StatelessWidget {
+  const _MomentHeaderChip({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.isDarkMode,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: isDarkMode ? 0.05 : 0.54),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: StudyUi.body(isDarkMode),
+              fontSize: 12,
+              fontWeight: AppTypography.emphasis,
+            ),
           ),
         ],
       ),
@@ -1526,6 +2258,8 @@ class _PostEntryCard extends StatelessWidget {
     required this.accent,
     required this.titleColor,
     required this.bodyColor,
+    required this.avatarImagePath,
+    required this.avatarEmoji,
     required this.onTap,
   });
 
@@ -1533,39 +2267,84 @@ class _PostEntryCard extends StatelessWidget {
   final Color accent;
   final Color titleColor;
   final Color bodyColor;
+  final String? avatarImagePath;
+  final String avatarEmoji;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
-          color: isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          color: StudyUi.surface(isDarkMode),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isDarkMode
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFE8ECF5),
+            color: StudyUi.border(isDarkMode),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: isDarkMode ? 0.08 : 0.12),
+              blurRadius: 22,
+              offset: const Offset(0, 12),
+            ),
+          ],
         ),
-        child: Row(
+        child: Column(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: accent.withValues(alpha: 0.14),
-              child: Icon(Icons.person_rounded, color: accent, size: 19),
+            Row(
+              children: [
+                StudyUserAvatar(
+                  avatarImagePath: avatarImagePath,
+                  avatarEmoji: avatarEmoji,
+                  accent: accent,
+                  size: 44,
+                  isDarkMode: isDarkMode,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '记录这次学习...',
+                        style: TextStyle(
+                          color: titleColor,
+                          fontSize: 14,
+                          fontWeight: AppTypography.emphasis,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '现场、错题、板书或阶段整理都可以留下',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: bodyColor, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                _MomentActionPill(
+                  icon: Icons.edit_rounded,
+                  label: '保存记录',
+                  accent: accent,
+                  isDarkMode: isDarkMode,
+                  onPressed: onTap,
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '分享今天的学习现场...',
-                style: TextStyle(color: bodyColor, fontSize: 14),
-              ),
+            const SizedBox(height: 14),
+            Row(
+              children: const [
+                _MomentToolChip(icon: Icons.menu_book_rounded),
+                SizedBox(width: 10),
+                _MomentToolChip(icon: Icons.image_rounded),
+                SizedBox(width: 10),
+                _MomentToolChip(icon: Icons.edit_note_rounded),
+              ],
             ),
-            Icon(Icons.photo_camera_rounded, color: bodyColor, size: 20),
           ],
         ),
       ),
@@ -1573,50 +2352,24 @@ class _PostEntryCard extends StatelessWidget {
   }
 }
 
-class _MetricPill extends StatelessWidget {
-  const _MetricPill({
-    required this.label,
-    required this.value,
-    required this.accent,
-    required this.isDarkMode,
-  });
+class _MomentToolChip extends StatelessWidget {
+  const _MomentToolChip({required this.icon});
 
-  final String label;
-  final String value;
-  final Color accent;
-  final bool isDarkMode;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 96, maxWidth: 132),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        height: 42,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: accent.withValues(alpha: isDarkMode ? 0.16 : 0.1),
-          borderRadius: BorderRadius.circular(14),
+          color: StudyUi.surfaceAlt(dark).withValues(alpha: dark ? 0.72 : 0.86),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: StudyUi.border(dark)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: accent,
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: accent, fontSize: 11),
-            ),
-          ],
-        ),
+        child: Icon(icon, color: StudyUi.muted(dark), size: 20),
       ),
     );
   }
@@ -1665,7 +2418,7 @@ class _CapabilityBadgePanel extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '学习能力徽章',
+                '学习能力线索',
                 style: TextStyle(
                   color: titleColor,
                   fontWeight: FontWeight.w800,
@@ -1678,12 +2431,12 @@ class _CapabilityBadgePanel extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '像成就系统一样记录能力成长，徽章图标已接入学习能力主题资产。',
+                  '根据最近记录整理你用过的学习方式，方便下次接着尝试。',
                   style: TextStyle(color: bodyColor, fontSize: 12, height: 1.35),
                 ),
               ),
               BadgePill(
-                label: '$unlockedCount/${badges.length} 已解锁',
+                label: '$unlockedCount/${badges.length} 有记录',
                 background: accent.withValues(alpha: 0.12),
                 foreground: accent,
               ),
@@ -1748,14 +2501,14 @@ class _CapabilityBadgeTile extends StatelessWidget {
     final progress = badge.target <= 0
         ? 0.0
         : (badge.current / badge.target).clamp(0.0, 1.0).toDouble();
-    final statusText = badge.unlocked ? '已解锁' : '未解锁';
+    final statusText = badge.unlocked ? '已有记录' : '待尝试';
     final levelText = progress >= 1
-        ? 'Lv.3'
+        ? '进度 3'
         : progress >= 0.66
-            ? 'Lv.2'
+            ? '进度 2'
             : progress > 0
-                ? 'Lv.1'
-                : 'Lv.0';
+                ? '进度 1'
+                : '进度 0';
     return Opacity(
       opacity: badge.unlocked ? 1 : 0.58,
       child: Container(
@@ -1765,7 +2518,7 @@ class _CapabilityBadgeTile extends StatelessWidget {
               ? accent.withValues(alpha: isDarkMode ? 0.18 : 0.1)
               : (isDarkMode
                   ? Colors.white.withValues(alpha: 0.05)
-                  : const Color(0xFFF2F5FC)),
+                  : StudyUi.surfaceAlt(isDarkMode)),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: badge.unlocked
@@ -1934,16 +2687,12 @@ class _CampusMapPanel extends StatelessWidget {
                 style: TextStyle(color: bodyColor, fontSize: 12),
               ),
               const SizedBox(width: 8),
-              IconButton.filledTonal(
+              _MomentToolbarAction(
                 tooltip: '手动记录地点',
+                icon: Icons.edit_location_alt_rounded,
+                accent: accent,
+                isDarkMode: isDarkMode,
                 onPressed: isCheckingLocation ? null : () => onCheckIn(),
-                icon: isCheckingLocation
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.edit_location_alt_rounded, size: 18),
               ),
             ],
           ),
@@ -2104,6 +2853,7 @@ class _VisibilityOptionTile extends StatelessWidget {
     required this.option,
     required this.selected,
     required this.isDarkMode,
+    required this.accent,
     required this.titleColor,
     required this.bodyColor,
     required this.onTap,
@@ -2112,40 +2862,39 @@ class _VisibilityOptionTile extends StatelessWidget {
   final _VisibilityOption option;
   final bool selected;
   final bool isDarkMode;
+  final Color accent;
   final Color titleColor;
   final Color bodyColor;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final fillColor = selected
-        ? StudyUi.primary.withValues(alpha: isDarkMode ? 0.22 : 0.10)
-        : isDarkMode
-            ? Colors.white.withValues(alpha: 0.05)
-            : const Color(0xFFF4F6FB);
-    final borderColor = selected
-        ? StudyUi.primary.withValues(alpha: 0.55)
-        : isDarkMode
-            ? Colors.white.withValues(alpha: 0.08)
-            : const Color(0xFFE8ECF5);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
           decoration: BoxDecoration(
-            color: fillColor,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: borderColor),
+            color: selected
+                ? StudyUi.chipBackground(accent, isDarkMode)
+                : StudyUi.surface(isDarkMode).withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected
+                  ? accent.withValues(alpha: isDarkMode ? 0.36 : 0.26)
+                  : StudyUi.border(isDarkMode),
+            ),
           ),
           child: Row(
             children: [
-              Icon(
-                option.icon,
-                color: selected ? StudyUi.primary : bodyColor,
-                size: 20,
+              StudyGlassIconNode(
+                icon: option.icon,
+                accent: selected ? accent : StudyUi.muted(isDarkMode),
+                size: 34,
+                iconSize: 17,
+                isDarkMode: isDarkMode,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -2155,8 +2904,8 @@ class _VisibilityOptionTile extends StatelessWidget {
                     Text(
                       option.title,
                       style: TextStyle(
-                        color: selected ? StudyUi.primary : titleColor,
-                        fontWeight: FontWeight.w800,
+                        color: selected ? accent : titleColor,
+                        fontWeight: AppTypography.emphasis,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -2171,7 +2920,7 @@ class _VisibilityOptionTile extends StatelessWidget {
                 selected
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked_rounded,
-                color: selected ? StudyUi.primary : bodyColor,
+                color: selected ? accent : StudyUi.muted(isDarkMode),
                 size: 19,
               ),
             ],
@@ -2182,10 +2931,188 @@ class _VisibilityOptionTile extends StatelessWidget {
   }
 }
 
+class _MomentSelectionChip extends StatelessWidget {
+  const _MomentSelectionChip({
+    required this.label,
+    required this.accent,
+    required this.isDarkMode,
+  });
+
+  final String label;
+  final Color accent;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: StudyUi.chipBackground(accent, isDarkMode),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.20)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_rounded, size: 15, color: accent),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: StudyUi.title(isDarkMode),
+              fontSize: 12,
+              fontWeight: AppTypography.emphasis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CourseSelectorField extends StatelessWidget {
+  const _CourseSelectorField({
+    required this.isDarkMode,
+    required this.accent,
+    required this.titleColor,
+    required this.bodyColor,
+    required this.courses,
+    required this.currentCourse,
+    required this.onChanged,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final Color titleColor;
+  final Color bodyColor;
+  final List<String> courses;
+  final String currentCourse;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedLabel =
+        currentCourse.trim().isEmpty ? '不关联课程' : currentCourse.trim();
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _openCoursePicker(context),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+          decoration: BoxDecoration(
+            color: StudyUi.surfaceAlt(isDarkMode),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: StudyUi.border(isDarkMode)),
+          ),
+          child: Row(
+            children: [
+              StudyGlassIconNode(
+                icon: Icons.school_rounded,
+                accent: accent,
+                size: 38,
+                iconSize: 18,
+                isDarkMode: isDarkMode,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selectedLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: titleColor,
+                        fontSize: 14,
+                        fontWeight: AppTypography.emphasis,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '关联课程后，学习回顾会自动归档到对应学习路径。',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: bodyColor, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: bodyColor,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCoursePicker(BuildContext context) async {
+    final options = {
+      for (final course in courses)
+        if (course.trim().isNotEmpty) course.trim(),
+    }.toList(growable: false);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _MomentsSheetSurface(
+        isDarkMode: isDarkMode,
+        accent: accent,
+        icon: Icons.school_rounded,
+        title: '关联课程',
+        subtitle: '选择这条学迹属于哪门课，或保持不关联。',
+        child: Column(
+          children: [
+            _MomentGroupCheckTile(
+              title: '不关联课程',
+              subtitle: '保存为通用学习现场，之后仍可整理进回顾。',
+              selected: currentCourse.trim().isEmpty,
+              accent: accent,
+              isDarkMode: isDarkMode,
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                onChanged(null);
+              },
+            ),
+            for (final course in options)
+              _MomentGroupCheckTile(
+                title: course,
+                subtitle: '归入「$course」的学习路径和学习回顾。',
+                selected: currentCourse.trim() == course,
+                accent: accent,
+                isDarkMode: isDarkMode,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  onChanged(course);
+                },
+              ),
+            if (options.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '还没有课程记录，先保存为通用学迹也没问题。',
+                  style: TextStyle(color: bodyColor, fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _VisibilityPicker extends StatelessWidget {
   const _VisibilityPicker({
     required this.isDarkMode,
+    required this.accent,
     required this.groups,
+    this.onOpenStudyGroup,
     required this.visibility,
     required this.allowedGroupIds,
     required this.deniedGroupIds,
@@ -2194,7 +3121,9 @@ class _VisibilityPicker extends StatelessWidget {
   });
 
   final bool isDarkMode;
+  final Color accent;
   final List<GroupInfo> groups;
+  final VoidCallback? onOpenStudyGroup;
   final LearningMomentVisibility visibility;
   final List<String> allowedGroupIds;
   final List<String> deniedGroupIds;
@@ -2209,23 +3138,24 @@ class _VisibilityPicker extends StatelessWidget {
         : visibility == LearningMomentVisibility.excludeGroups
             ? deniedGroupIds
             : const <String>[];
-    final showGroups = visibility == LearningMomentVisibility.includeGroups ||
-        visibility == LearningMomentVisibility.excludeGroups;
-    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final hasGroups = groups.isNotEmpty;
+    final showGroups = hasGroups &&
+        (visibility == LearningMomentVisibility.includeGroups ||
+            visibility == LearningMomentVisibility.excludeGroups);
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
     const options = [
-      _VisibilityOption(
-        LearningMomentVisibility.public,
-        Icons.groups_rounded,
-        '公开',
-        '我的小组成员可见',
-      ),
       _VisibilityOption(
         LearningMomentVisibility.private,
         Icons.lock_rounded,
         '私密',
         '仅自己可见',
+      ),
+      _VisibilityOption(
+        LearningMomentVisibility.public,
+        Icons.groups_rounded,
+        '我的所有小组可见',
+        '我的小组成员可见',
       ),
       _VisibilityOption(
         LearningMomentVisibility.includeGroups,
@@ -2247,23 +3177,70 @@ class _VisibilityPicker extends StatelessWidget {
           '可见范围',
           style: TextStyle(
             color: titleColor,
-            fontWeight: FontWeight.w800,
+            fontWeight: AppTypography.title,
           ),
         ),
+        const SizedBox(height: 4),
+        Text(
+          '默认只有你自己能看到。',
+          style: TextStyle(color: bodyColor, fontSize: 12),
+        ),
         const SizedBox(height: 8),
-        ...options.map(
+        ...options.where((option) {
+          return hasGroups ||
+              option.visibility == LearningMomentVisibility.private;
+        }).map(
           (option) => Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: _VisibilityOptionTile(
               option: option,
               selected: visibility == option.visibility,
               isDarkMode: isDarkMode,
+              accent: accent,
               titleColor: titleColor,
               bodyColor: bodyColor,
               onTap: () => onVisibilityChanged(option.visibility),
             ),
           ),
         ),
+        if (!hasGroups) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: StudyUi.surfaceAlt(isDarkMode),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: StudyUi.border(isDarkMode)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '想同步给同伴？先创建或加入学习小组。',
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 12,
+                    fontWeight: AppTypography.emphasis,
+                  ),
+                ),
+                if (onOpenStudyGroup != null) ...[
+                  const SizedBox(height: 10),
+                  _MomentActionPill(
+                    icon: Icons.group_add_rounded,
+                    label: '去创建或加入',
+                    accent: accent,
+                    isDarkMode: isDarkMode,
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      onOpenStudyGroup?.call();
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         if (showGroups) ...[
           const SizedBox(height: 2),
           Wrap(
@@ -2271,14 +3248,17 @@ class _VisibilityPicker extends StatelessWidget {
             runSpacing: 8,
             children: [
               ...activeIds.map(
-                (id) => Chip(
-                  label: Text(_groupName(groups, id)),
-                  visualDensity: VisualDensity.compact,
+                (id) => _MomentSelectionChip(
+                  label: _groupName(groups, id),
+                  accent: accent,
+                  isDarkMode: isDarkMode,
                 ),
               ),
-              ActionChip(
-                avatar: const Icon(Icons.group_add_rounded, size: 17),
-                label: Text(activeIds.isEmpty ? '选择小组' : '重新选择'),
+              _MomentActionPill(
+                icon: Icons.group_add_rounded,
+                label: activeIds.isEmpty ? '选择小组' : '重新选择',
+                accent: accent,
+                isDarkMode: isDarkMode,
                 onPressed: () => onChooseGroups(visibility),
               ),
             ],
@@ -2292,7 +3272,7 @@ class _VisibilityPicker extends StatelessWidget {
     for (final group in groups) {
       if (group.id == id) return group.name;
     }
-    return '未知小组';
+    return '这个小组';
   }
 }
 
@@ -2306,6 +3286,7 @@ class _ComposerCard extends StatelessWidget {
     required this.controller,
     required this.courses,
     required this.groups,
+    this.onOpenStudyGroup,
     required this.selectedCourse,
     required this.visibility,
     required this.selectedAllowedGroupIds,
@@ -2328,6 +3309,7 @@ class _ComposerCard extends StatelessWidget {
   final TextEditingController controller;
   final List<String> courses;
   final List<GroupInfo> groups;
+  final VoidCallback? onOpenStudyGroup;
   final String selectedCourse;
   final LearningMomentVisibility visibility;
   final List<String> selectedAllowedGroupIds;
@@ -2351,13 +3333,9 @@ class _ComposerCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1E2533) : Colors.white,
+        color: StudyUi.surface(isDarkMode),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDarkMode
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFE7EBF5),
-        ),
+        border: Border.all(color: StudyUi.border(isDarkMode)),
       ),
       child: SingleChildScrollView(
         controller: scrollController,
@@ -2377,14 +3355,12 @@ class _ComposerCard extends StatelessWidget {
             ),
             Row(
               children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.11),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(Icons.edit_note_rounded, color: accent, size: 22),
+                StudyGlassIconNode(
+                  icon: Icons.edit_note_rounded,
+                  accent: accent,
+                  size: 42,
+                  iconSize: 20,
+                  isDarkMode: isDarkMode,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -2392,16 +3368,16 @@ class _ComposerCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '发布学迹动态',
+                        '记录学迹',
                         style: TextStyle(
                           color: titleColor,
                           fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: AppTypography.title,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '记录学习现场、错题、板书或阶段成果。',
+                        '记录学习现场、错题、板书或阶段整理。',
                         style: TextStyle(color: bodyColor, fontSize: 12),
                       ),
                     ],
@@ -2410,15 +3386,24 @@ class _ComposerCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            TextField(
-              controller: controller,
-              minLines: 5,
-              maxLines: 8,
-              style: TextStyle(color: titleColor, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: '今天学了什么？拍到的板书、课件、错题也可以一起发。',
-                hintStyle: TextStyle(color: bodyColor),
-                border: InputBorder.none,
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: StudyUi.surfaceAlt(isDarkMode),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: StudyUi.border(isDarkMode)),
+              ),
+              child: TextField(
+                controller: controller,
+                minLines: 5,
+                maxLines: 8,
+                style: TextStyle(color: titleColor, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: '今天学了什么？拍到的板书、课件、错题也可以一起保存。',
+                  hintStyle: TextStyle(color: bodyColor),
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                ),
               ),
             ),
             if (imagePaths.isNotEmpty) ...[
@@ -2432,31 +3417,21 @@ class _ComposerCard extends StatelessWidget {
             const SizedBox(height: 12),
             Column(
               children: [
-                DropdownButtonFormField<String>(
-                  value: currentCourse,
-                  isExpanded: true,
-                  dropdownColor:
-                      isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-                  decoration: _fieldDecoration(
-                    isDarkMode,
-                    accent,
-                    Icons.school_rounded,
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('不关联课程')),
-                    ...courses.map(
-                      (course) => DropdownMenuItem(
-                        value: course,
-                        child: Text(course, overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                  ],
+                _CourseSelectorField(
+                  isDarkMode: isDarkMode,
+                  accent: accent,
+                  titleColor: titleColor,
+                  bodyColor: bodyColor,
+                  courses: courses,
+                  currentCourse: currentCourse,
                   onChanged: onCourseChanged,
                 ),
                 const SizedBox(height: 10),
                 _VisibilityPicker(
                   isDarkMode: isDarkMode,
+                  accent: accent,
                   groups: groups,
+                  onOpenStudyGroup: onOpenStudyGroup,
                   visibility: visibility,
                   allowedGroupIds: selectedAllowedGroupIds,
                   deniedGroupIds: selectedDeniedGroupIds,
@@ -2468,36 +3443,29 @@ class _ComposerCard extends StatelessWidget {
             const SizedBox(height: 18),
             Row(
               children: [
-                IconButton.filledTonal(
+                _MomentToolbarAction(
                   tooltip: '添加图片',
+                  icon: Icons.add_photo_alternate_rounded,
+                  accent: accent,
+                  isDarkMode: isDarkMode,
                   onPressed:
                       imagePaths.length >= 9 ? null : () => onPickImages(),
-                  icon: const Icon(Icons.add_photo_alternate_rounded),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
+                  child: _MomentActionPill(
+                    icon: Icons.send_rounded,
                     onPressed: isPosting ? null : () => onPost(),
-                    icon: isPosting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
                     label: Text(
                       visibility == LearningMomentVisibility.private
-                          ? '保存私密动态'
-                          : '发布动态',
+                          ? '保存私密学迹'
+                          : '保存到小组',
                     ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
+                    accent: accent,
+                    isDarkMode: isDarkMode,
+                    isFilled: true,
+                    isBusy: isPosting,
+                    expand: true,
                   ),
                 ),
               ],
@@ -2508,24 +3476,6 @@ class _ComposerCard extends StatelessWidget {
     );
   }
 
-  InputDecoration _fieldDecoration(
-    bool isDarkMode,
-    Color accent,
-    IconData icon,
-  ) {
-    return InputDecoration(
-      isDense: true,
-      prefixIcon: Icon(icon, color: accent),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
-      filled: true,
-      fillColor: isDarkMode
-          ? Colors.white.withValues(alpha: 0.06)
-          : const Color(0xFFF3F6FF),
-    );
-  }
 }
 
 class _EvidencePackagePanel extends StatelessWidget {
@@ -2558,86 +3508,71 @@ class _EvidencePackagePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (packages.isEmpty && cloudPackages.isEmpty) return const SizedBox.shrink();
-    return Container(
+    return StudyCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
+      radius: 22,
+      color: StudyUi.surface(isDarkMode),
+      borderColor: StudyUi.border(isDarkMode),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              StudyAssetIcon(
+              StudyGlassIconNode(
                 asset: AppAssets.featureNotesIcon,
-                color: accent,
-                size: 22,
-                fallbackIcon: Icons.inventory_2_rounded,
+                icon: Icons.inventory_2_rounded,
+                accent: accent,
+                size: 38,
+                iconSize: 20,
+                isDarkMode: isDarkMode,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Text(
-                '作品成果包',
+                '学习回顾',
                 style: TextStyle(
                   color: titleColor,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: AppTypography.title,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            '按课程聚合学习记录、任务、笔记、闪卡和AI操作。',
+            '把学习整理、任务、笔记和闪卡放在一起，保存成之后可回看的学习回顾。',
             style: TextStyle(color: bodyColor, fontSize: 12),
           ),
           const SizedBox(height: 12),
           ...packages.take(3).map(
-                (package) => Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: isDarkMode ? 0.12 : 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              package.courseName,
-                              style: TextStyle(
-                                color: titleColor,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${package.eventCount} 条轨迹 · ${package.aiCount} 次整理 · ${package.shareableCount} 条成果',
-                              style: TextStyle(color: bodyColor, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: '保存成果包',
-                        onPressed: () => onSavePackage(package),
-                        icon: const Icon(Icons.save_outlined, size: 18),
-                      ),
-                      IconButton(
-                        tooltip: '生成动态文案',
-                        onPressed: () => onUsePackage(package),
-                        icon: const Icon(Icons.edit_note_rounded, size: 19),
-                      ),
-                    ],
-                  ),
+                (package) => _MomentReviewRow(
+                  isDarkMode: isDarkMode,
+                  accent: accent,
+                  icon: Icons.auto_stories_rounded,
+                  title: package.courseName,
+                  subtitle:
+                      '${package.eventCount} 条记录 · ${package.aiCount} 次整理 · ${package.shareableCount} 条可回看记录',
+                  actions: [
+                    _MomentActionPill(
+                      icon: Icons.save_outlined,
+                      label: '保存回顾',
+                      accent: StudyUi.pathMint,
+                      isDarkMode: isDarkMode,
+                      onPressed: () => onSavePackage(package),
+                    ),
+                    const SizedBox(width: 8),
+                    _MomentActionPill(
+                      icon: Icons.edit_note_rounded,
+                      label: '生成文案',
+                      accent: accent,
+                      isDarkMode: isDarkMode,
+                      onPressed: () => onUsePackage(package),
+                    ),
+                  ],
                 ),
               ),
           if (cloudPackages.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              '已保存成果',
+              '已保存回顾',
               style: TextStyle(
                 color: bodyColor,
                 fontSize: 12,
@@ -2646,47 +3581,42 @@ class _EvidencePackagePanel extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             ...cloudPackages.take(3).map(
-                  (package) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      package.featured ? Icons.push_pin_rounded : Icons.inventory_2_outlined,
-                      color: accent,
-                    ),
-                    title: Text(
-                      package.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: titleColor, fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      package.visibility == 'private' ? '私密成果包' : '已分享到小组',
-                      style: TextStyle(color: bodyColor, fontSize: 12),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: '分享到小组',
-                          onPressed: () => onSharePackage(package),
-                          icon: const Icon(Icons.groups_rounded),
-                        ),
-                        IconButton(
-                          tooltip: package.featured ? '取消精选' : '置顶精选',
-                          onPressed: () => onToggleFeatured(package),
-                          icon: Icon(
-                            package.featured
-                                ? Icons.push_pin_rounded
-                                : Icons.push_pin_outlined,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: '生成成果封面',
-                          onPressed: () => onGenerateCover(package),
-                          icon: const Icon(Icons.image_outlined),
-                        ),
-                      ],
-                    ),
+                  (package) => _MomentReviewRow(
+                    isDarkMode: isDarkMode,
+                    accent: accent,
+                    icon: package.featured
+                        ? Icons.push_pin_rounded
+                        : Icons.inventory_2_outlined,
+                    title: package.title,
+                    subtitle:
+                        package.visibility == 'private' ? '私密学习回顾' : '已同步到小组',
+                    actions: [
+                      _MomentToolbarAction(
+                        tooltip: '同步到小组',
+                        icon: Icons.groups_rounded,
+                        accent: StudyUi.pathCyan,
+                        isDarkMode: isDarkMode,
+                        onPressed: () => onSharePackage(package),
+                      ),
+                      const SizedBox(width: 8),
+                      _MomentToolbarAction(
+                        tooltip: package.featured ? '移出常看' : '放到常看',
+                        icon: package.featured
+                            ? Icons.push_pin_rounded
+                            : Icons.push_pin_outlined,
+                        accent: StudyUi.pathWarm,
+                        isDarkMode: isDarkMode,
+                        onPressed: () => onToggleFeatured(package),
+                      ),
+                      const SizedBox(width: 8),
+                      _MomentToolbarAction(
+                        tooltip: '生成回顾封面',
+                        icon: Icons.image_outlined,
+                        accent: accent,
+                        isDarkMode: isDarkMode,
+                        onPressed: () => onGenerateCover(package),
+                      ),
+                    ],
                   ),
                 ),
           ],
@@ -2720,29 +3650,30 @@ class _FeaturedWallPanel extends StatelessWidget {
     final packageList = packages.toList();
     final list = events.toList();
     if (packageList.isEmpty && list.isEmpty) return const SizedBox.shrink();
-    return Container(
+    return StudyCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1E2533) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
+      radius: 22,
+      color: StudyUi.surface(isDarkMode),
+      borderColor: StudyUi.border(isDarkMode),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              StudyAssetIcon(
+              StudyGlassIconNode(
                 asset: AppAssets.sideAchievementsIcon,
-                color: accent,
-                size: 22,
-                fallbackIcon: Icons.workspace_premium_rounded,
+                icon: Icons.workspace_premium_rounded,
+                accent: accent,
+                size: 38,
+                iconSize: 20,
+                isDarkMode: isDarkMode,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Text(
-                '精选成果墙',
+                '常看回顾',
                 style: TextStyle(
                   color: titleColor,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: AppTypography.title,
                 ),
               ),
             ],
@@ -2750,53 +3681,127 @@ class _FeaturedWallPanel extends StatelessWidget {
           const SizedBox(height: 10),
           if (packageList.isNotEmpty)
             ...packageList.map(
-              (package) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                leading: Icon(Icons.push_pin_rounded, color: accent),
-                title: Text(
-                  package.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: titleColor, fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(
-                  package.description.isEmpty ? '云端精选成果包' : package.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: bodyColor, fontSize: 12),
-                ),
+              (package) => _MomentReviewRow(
+                isDarkMode: isDarkMode,
+                accent: accent,
+                icon: Icons.push_pin_rounded,
+                title: package.title,
+                subtitle:
+                    package.description.isEmpty ? '常看学习回顾' : package.description,
               ),
             )
           else
             ...list.map(
-            (event) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: Text(
-                event.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: titleColor, fontWeight: FontWeight.w700),
-              ),
-              subtitle: Text(
-                event.typeLabel,
-                style: TextStyle(color: bodyColor, fontSize: 12),
-              ),
-              trailing: TextButton(
-                onPressed: () => onShare(event),
-                child: const Text('精选'),
+              (event) => _MomentReviewRow(
+                isDarkMode: isDarkMode,
+                accent: accent,
+                icon: Icons.auto_awesome_rounded,
+                title: event.title,
+                subtitle: event.typeLabel,
+                actions: [
+                  _MomentActionPill(
+                    icon: Icons.workspace_premium_rounded,
+                    label: '放到常看',
+                    accent: accent,
+                    isDarkMode: isDarkMode,
+                    onPressed: () => onShare(event),
+                  ),
+                ],
               ),
             ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _TraceToolbar extends StatelessWidget {
-  const _TraceToolbar({
+class _MomentReviewRow extends StatelessWidget {
+  const _MomentReviewRow({
+    required this.isDarkMode,
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.actions = const [],
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+      decoration: BoxDecoration(
+        color: StudyUi.surfaceAlt(isDarkMode),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: StudyUi.border(isDarkMode)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          StudyGlassIconNode(
+            icon: icon,
+            accent: accent,
+            size: 38,
+            iconSize: 18,
+            isDarkMode: isDarkMode,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: StudyUi.title(isDarkMode),
+                    fontSize: 14,
+                    fontWeight: AppTypography.emphasis,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: StudyUi.body(isDarkMode),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(width: 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: Wrap(
+                spacing: 0,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: actions,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class TraceToolbar extends StatelessWidget {
+  const TraceToolbar({
+    super.key,
     required this.accent,
     required this.titleColor,
     required this.bodyColor,
@@ -2814,27 +3819,29 @@ class _TraceToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        StudyAssetIcon(
+        StudyGlassIconNode(
           asset: AppAssets.sideMomentsIcon,
-          color: accent,
-          size: 22,
-          fallbackIcon: Icons.timeline_rounded,
+          icon: Icons.timeline_rounded,
+          accent: accent,
+          size: 36,
+          iconSize: 18,
+          isDarkMode: Theme.of(context).brightness == Brightness.dark,
         ),
         const SizedBox(width: 8),
         Text(
-          '学习轨迹',
+          '学习记录',
           style: TextStyle(
             color: titleColor,
             fontSize: 17,
-            fontWeight: FontWeight.w800,
+            fontWeight: AppTypography.title,
           ),
         ),
         const Spacer(),
         StudyPopupMenuButton<LearningTraceEventType?>(
-          tooltip: '筛选轨迹',
+          tooltip: '筛选记录',
           onSelected: onFilterChanged,
           itemBuilder: (context) => [
-            const PopupMenuItem(value: null, child: Text('全部轨迹')),
+            const PopupMenuItem(value: null, child: Text('全部记录')),
             ...LearningTraceEventType.values.map(
               (type) => PopupMenuItem(
                 value: type,
@@ -2842,10 +3849,31 @@ class _TraceToolbar extends StatelessWidget {
               ),
             ),
           ],
-          child: Chip(
-            avatar: Icon(Icons.filter_list_rounded, color: accent, size: 16),
-            label: Text(filter == null ? '全部' : _labelFor(filter!)),
-            visualDensity: VisualDensity.compact,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            decoration: BoxDecoration(
+              color: StudyUi.chipBackground(
+                accent,
+                Theme.of(context).brightness == Brightness.dark,
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: accent.withValues(alpha: 0.20)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.filter_list_rounded, color: accent, size: 15),
+                const SizedBox(width: 5),
+                Text(
+                  filter == null ? '全部' : _labelFor(filter!),
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 12,
+                    fontWeight: AppTypography.emphasis,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -2854,12 +3882,13 @@ class _TraceToolbar extends StatelessWidget {
 
   static String _labelFor(LearningTraceEventType type) {
     return switch (type) {
-      LearningTraceEventType.moment => '动态',
+      LearningTraceEventType.moment => '学迹',
       LearningTraceEventType.studyLog => '学习记录',
       LearningTraceEventType.taskCompleted => '任务完成',
       LearningTraceEventType.noteCreated => '笔记沉淀',
       LearningTraceEventType.flashcardCreated => '闪卡复习',
-      LearningTraceEventType.aiAction => 'AI操作',
+      LearningTraceEventType.focusCompleted => '专注完成',
+      LearningTraceEventType.aiAction => '学习整理',
     };
   }
 }
@@ -2893,6 +3922,8 @@ class _MomentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sourceLabel = _momentSourceLabel(moment);
+    final learningLoopContent = _LearningLoopMomentContent.tryParse(moment);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
@@ -2954,8 +3985,8 @@ class _MomentCard extends StatelessWidget {
                       ),
                     ),
                     if (onEditVisibility != null || onDelete != null)
-                      PopupMenuButton<String>(
-                        tooltip: '动态操作',
+                      StudyPopupMenuButton<String>(
+                        tooltip: '学迹操作',
                         onSelected: (value) {
                           if (value == 'visibility') onEditVisibility?.call();
                           if (value == 'delete') onDelete?.call();
@@ -2969,9 +4000,16 @@ class _MomentCard extends StatelessWidget {
                           if (onDelete != null)
                             const PopupMenuItem(
                               value: 'delete',
-                              child: Text('删除动态'),
+                              child: Text('删除学迹'),
                             ),
                         ],
+                        child: StudyGlassIconNode(
+                          icon: Icons.more_horiz_rounded,
+                          accent: accent,
+                          size: 32,
+                          iconSize: 16,
+                          isDarkMode: isDarkMode,
+                        ),
                       ),
                   ],
                 ),
@@ -2984,14 +4022,32 @@ class _MomentCard extends StatelessWidget {
                       style: TextStyle(color: bodyColor, fontSize: 12),
                     ),
                   ),
-                Text(
-                  moment.content,
-                  style: TextStyle(
-                    color: titleColor,
-                    fontSize: 15,
-                    height: 1.45,
+                if (sourceLabel.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _MiniTag(
+                      label: sourceLabel,
+                      accent: accent,
+                      isDarkMode: isDarkMode,
+                    ),
                   ),
-                ),
+                if (learningLoopContent != null)
+                  _LearningLoopMomentBody(
+                    content: learningLoopContent,
+                    accent: accent,
+                    titleColor: titleColor,
+                    bodyColor: bodyColor,
+                    isDarkMode: isDarkMode,
+                  )
+                else
+                  Text(
+                    moment.content,
+                    style: TextStyle(
+                      color: titleColor,
+                      fontSize: 15,
+                      height: 1.45,
+                    ),
+                  ),
                 if (moment.imagePaths.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   _ImageGrid(paths: moment.imagePaths, isDarkMode: isDarkMode),
@@ -2999,7 +4055,7 @@ class _MomentCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    TextButton.icon(
+                    _MomentActionPill(
                       onPressed: onLike,
                       icon: Icon(
                         moment.likedByMe
@@ -3007,16 +4063,22 @@ class _MomentCard extends StatelessWidget {
                             : Icons.favorite_border_rounded,
                         size: 18,
                       ),
-                      label: Text(moment.likeCount == 0
-                          ? '点赞'
-                          : '${moment.likeCount}'),
+                      label: moment.likeCount == 0
+                          ? '有帮助'
+                          : '${moment.likeCount}',
+                      accent:
+                          moment.likedByMe ? StudyUi.danger : StudyUi.pathViolet,
+                      isDarkMode: isDarkMode,
                     ),
-                    TextButton.icon(
+                    const SizedBox(width: 8),
+                    _MomentActionPill(
                       onPressed: onComment,
-                      icon: const Icon(Icons.mode_comment_outlined, size: 18),
-                      label: Text(moment.commentCount == 0
-                          ? '评论'
-                          : '${moment.commentCount}'),
+                      icon: Icons.mode_comment_outlined,
+                      label: moment.commentCount == 0
+                          ? '回看备注'
+                          : '${moment.commentCount}',
+                      accent: StudyUi.pathCyan,
+                      isDarkMode: isDarkMode,
                     ),
                   ],
                 ),
@@ -3104,6 +4166,135 @@ class _MomentCard extends StatelessWidget {
     if (diff.inDays < 7) return '${diff.inDays} 天前';
     return '${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
+
+  String _momentSourceLabel(LearningMoment moment) {
+    switch ((moment.sourceType ?? '').trim()) {
+      case 'learning_loop':
+      case 'synced_learning_loop':
+        return '学习整理';
+      case 'evidence_package':
+        return '学习回顾';
+      case 'task_progress':
+      case 'synced_task_progress':
+        return '任务推进';
+      case 'local_private_moment':
+        return '私密记录';
+      case 'location':
+      case 'location_evidence':
+        return '地点记录';
+      default:
+        return '';
+    }
+  }
+}
+
+class _LearningLoopMomentContent {
+  const _LearningLoopMomentContent({
+    required this.summary,
+    required this.nextActions,
+  });
+
+  final String summary;
+  final List<String> nextActions;
+
+  static _LearningLoopMomentContent? tryParse(LearningMoment moment) {
+    final sourceType = (moment.sourceType ?? '').trim();
+    if (sourceType != 'learning_loop' && sourceType != 'synced_learning_loop') {
+      return null;
+    }
+    final lines = moment.content
+        .split(RegExp(r'[\r\n]+'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
+    if (lines.isEmpty) return null;
+
+    final summaryParts = <String>[];
+    final nextActions = <String>[];
+    for (final line in lines) {
+      if (line.startsWith('下一步：')) {
+        nextActions.addAll(_splitActions(line.replaceFirst('下一步：', '')));
+        continue;
+      }
+      if (line.startsWith('下一步怎么做：')) {
+        nextActions.addAll(_splitActions(line.replaceFirst('下一步怎么做：', '')));
+        continue;
+      }
+      summaryParts.add(line);
+    }
+
+    final summary = summaryParts.join('\n').trim();
+    if (summary.isEmpty && nextActions.isEmpty) return null;
+    return _LearningLoopMomentContent(
+      summary: summary.isEmpty ? moment.content.trim() : summary,
+      nextActions: nextActions.take(3).toList(growable: false),
+    );
+  }
+
+  static List<String> _splitActions(String source) {
+    return source
+        .split(RegExp(r'[；;]'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+}
+
+class _LearningLoopMomentBody extends StatelessWidget {
+  const _LearningLoopMomentBody({
+    required this.content,
+    required this.accent,
+    required this.titleColor,
+    required this.bodyColor,
+    required this.isDarkMode,
+  });
+
+  final _LearningLoopMomentContent content;
+  final Color accent;
+  final Color titleColor;
+  final Color bodyColor;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          content.summary,
+          style: TextStyle(
+            color: titleColor,
+            fontSize: 15,
+            height: 1.45,
+          ),
+        ),
+        if (content.nextActions.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            '接下来可以这样走',
+            style: TextStyle(
+              color: bodyColor,
+              fontSize: 12,
+              fontWeight: AppTypography.emphasis,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final action in content.nextActions)
+                _MiniTag(
+                  label: action,
+                  accent: accent,
+                  isDarkMode: isDarkMode,
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _MomentAvatar extends StatelessWidget {
@@ -3114,18 +4305,11 @@ class _MomentAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = author.avatarImageUrl;
-    return CircleAvatar(
-      radius: 20,
-      backgroundColor: accent.withValues(alpha: 0.14),
-      backgroundImage:
-          imageUrl != null && imageUrl.startsWith('http') ? NetworkImage(imageUrl) : null,
-      child: imageUrl != null && imageUrl.startsWith('http')
-          ? null
-          : Text(
-              author.avatarEmoji.isEmpty ? '🎓' : author.avatarEmoji,
-              style: const TextStyle(fontSize: 18),
-            ),
+    return StudyUserAvatar(
+      avatarImagePath: author.avatarImageUrl,
+      avatarEmoji: author.avatarEmoji,
+      size: 40,
+      accent: accent,
     );
   }
 }
@@ -3205,12 +4389,16 @@ class _EmptyTimeline extends StatelessWidget {
     required this.accent,
     required this.bodyColor,
     this.message,
+    this.onRecord,
+    this.onReview,
   });
 
   final bool isDarkMode;
   final Color accent;
   final Color bodyColor;
   final String? message;
+  final VoidCallback? onRecord;
+  final VoidCallback? onReview;
 
   @override
   Widget build(BuildContext context) {
@@ -3230,11 +4418,436 @@ class _EmptyTimeline extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            message ?? '还没有动态，点上方输入框发布第一条学习现场',
+            message ?? '还没有学迹，先保存第一条学习现场，之后可整理成回顾和下一步',
             textAlign: TextAlign.center,
             style: TextStyle(color: bodyColor, fontSize: 13),
           ),
+          const SizedBox(height: 14),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _MomentActionPill(
+                icon: Icons.edit_note_rounded,
+                label: '记录一条',
+                accent: accent,
+                isDarkMode: isDarkMode,
+                onPressed: onRecord,
+              ),
+              _MomentActionPill(
+                icon: Icons.auto_stories_rounded,
+                label: '整理回顾',
+                accent: StudyUi.pathBlue,
+                isDarkMode: isDarkMode,
+                onPressed: onReview,
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _MomentsSheetSurface extends StatelessWidget {
+  const _MomentsSheetSurface({
+    required this.isDarkMode,
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.subtitle,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.84;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                StudyUi.surface(isDarkMode),
+                StudyUi.surfaceAlt(isDarkMode),
+              ],
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+            border: Border.all(color: StudyUi.border(isDarkMode)),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: isDarkMode ? 0.16 : 0.12),
+                blurRadius: 28,
+                offset: const Offset(0, -8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: StudyUi.muted(isDarkMode).withValues(alpha: 0.34),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  StudyGlassIconNode(
+                    icon: icon,
+                    accent: accent,
+                    size: 42,
+                    iconSize: 20,
+                    isDarkMode: isDarkMode,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: StudyUi.title(isDarkMode),
+                            fontSize: 17,
+                            fontWeight: AppTypography.title,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle!,
+                            style: TextStyle(
+                              color: StudyUi.body(isDarkMode),
+                              fontSize: 12,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                fit: FlexFit.loose,
+                child: SingleChildScrollView(child: child),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MomentsDialogSurface extends StatelessWidget {
+  const _MomentsDialogSurface({
+    required this.isDarkMode,
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 460),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: StudyUi.surface(isDarkMode),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: StudyUi.border(isDarkMode)),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.14),
+              blurRadius: 28,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                StudyGlassIconNode(
+                  icon: icon,
+                  accent: accent,
+                  size: 40,
+                  iconSize: 18,
+                  isDarkMode: isDarkMode,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: StudyUi.title(isDarkMode),
+                      fontSize: 17,
+                      fontWeight: AppTypography.title,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MomentGroupCheckTile extends StatelessWidget {
+  const _MomentGroupCheckTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+            decoration: BoxDecoration(
+              color: selected
+                  ? StudyUi.chipBackground(accent, isDarkMode)
+                  : StudyUi.surface(isDarkMode).withValues(alpha: 0.78),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: selected
+                    ? accent.withValues(alpha: 0.28)
+                    : StudyUi.border(isDarkMode),
+              ),
+            ),
+            child: Row(
+              children: [
+                StudyGlassIconNode(
+                  icon: selected
+                      ? Icons.check_circle_rounded
+                      : Icons.circle_outlined,
+                  accent: selected ? accent : StudyUi.muted(isDarkMode),
+                  size: 38,
+                  iconSize: 18,
+                  isDarkMode: isDarkMode,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: StudyUi.title(isDarkMode),
+                          fontSize: 14,
+                          fontWeight: AppTypography.emphasis,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: StudyUi.body(isDarkMode),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MomentToolbarAction extends StatelessWidget {
+  const _MomentToolbarAction({
+    required this.tooltip,
+    required this.icon,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return Tooltip(
+      message: tooltip,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.45,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onPressed,
+          child: StudyGlassIconNode(
+            icon: icon,
+            accent: accent,
+            size: 36,
+            iconSize: 18,
+            isDarkMode: isDarkMode,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MomentActionPill extends StatelessWidget {
+  const _MomentActionPill({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onPressed,
+    this.isFilled = false,
+    this.isBusy = false,
+    this.expand = false,
+  });
+
+  final Object icon;
+  final Object label;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+  final bool isFilled;
+  final bool isBusy;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    final foreground = isFilled ? Colors.white : accent;
+    return Opacity(
+      opacity: enabled ? 1 : 0.48,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onPressed,
+        child: Container(
+          width: expand ? double.infinity : null,
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+          decoration: BoxDecoration(
+            color: isFilled
+                ? accent
+                : StudyUi.chipBackground(accent, isDarkMode),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: isFilled
+                  ? Colors.white.withValues(alpha: isDarkMode ? 0.12 : 0.38)
+                  : accent.withValues(alpha: isDarkMode ? 0.24 : 0.18),
+            ),
+            boxShadow: isFilled
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.24),
+                      blurRadius: 18,
+                      offset: const Offset(0, 10),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isBusy)
+                SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(foreground),
+                  ),
+                )
+              else
+                icon is Icon
+                    ? IconTheme.merge(
+                        data: IconThemeData(color: foreground, size: 17),
+                        child: icon as Icon,
+                      )
+                    : Icon(icon as IconData, color: foreground, size: 17),
+              const SizedBox(width: 6),
+              label is Text
+                  ? DefaultTextStyle.merge(
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 13,
+                        fontWeight: AppTypography.emphasis,
+                      ),
+                      child: label as Text,
+                    )
+                  : Text(
+                      label as String,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 13,
+                        fontWeight: AppTypography.emphasis,
+                      ),
+                    ),
+            ],
+          ),
+        ),
       ),
     );
   }

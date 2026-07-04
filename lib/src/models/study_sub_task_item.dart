@@ -24,6 +24,7 @@ class StudySubTaskItem {
   final String note;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? completedAt;
 
   const StudySubTaskItem({
     required this.id,
@@ -34,6 +35,7 @@ class StudySubTaskItem {
     this.note = '',
     required this.createdAt,
     required this.updatedAt,
+    this.completedAt,
   });
 
   StudySubTaskItem copyWith({
@@ -43,6 +45,7 @@ class StudySubTaskItem {
     SubTaskStatus? status,
     String? note,
     DateTime? updatedAt,
+    DateTime? completedAt,
   }) =>
       StudySubTaskItem(
         id: id,
@@ -53,6 +56,8 @@ class StudySubTaskItem {
         note: note ?? this.note,
         createdAt: createdAt,
         updatedAt: updatedAt ?? DateTime.now(),
+        completedAt: completedAt ??
+            (status == SubTaskStatus.completed ? DateTime.now() : this.completedAt),
       );
 
   Map<String, dynamic> toJson() => {
@@ -64,6 +69,7 @@ class StudySubTaskItem {
         'note': note,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
+        if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
       };
 
   factory StudySubTaskItem.fromJson(Map<String, dynamic> json) {
@@ -83,6 +89,9 @@ class StudySubTaskItem {
       note: json['note'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      completedAt: json['completedAt'] != null
+          ? DateTime.tryParse(json['completedAt'] as String)
+          : null,
     );
   }
 }

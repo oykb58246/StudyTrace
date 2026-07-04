@@ -83,7 +83,7 @@ class AiCredentialService {
       }
       return;
     } on Object {
-      // Keep auth usable on non-secure Web origins used by the contest demo.
+      // Keep auth usable on non-secure Web preview origins.
     }
 
     try {

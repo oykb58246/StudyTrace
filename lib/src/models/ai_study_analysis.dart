@@ -60,7 +60,7 @@ class AiStudyAnalysis {
       buffer.writeln();
     }
     if (statusEvaluation.isNotEmpty) {
-      buffer.writeln('### 学习状态评价');
+      buffer.writeln('### 学习近况');
       buffer.writeln(statusEvaluation);
       buffer.writeln();
     }

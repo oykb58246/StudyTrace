@@ -20,7 +20,7 @@ class AuthService {
   ApiClient get api {
     final client = _api;
     if (client == null) {
-      throw const ApiException('尚未初始化后端连接，请先配置服务地址');
+      throw const ApiException('暂时还不能登录，请检查网络后再试');
     }
     return client;
   }
@@ -94,10 +94,10 @@ class AuthService {
     final accessToken = data['accessToken'] as String?;
     final refreshToken = data['refreshToken'] as String?;
     if (accessToken == null || accessToken.isEmpty) {
-      throw const ApiException('服务器未返回登录凭据');
+      throw const ApiException('登录暂时没有完成，请稍后再试');
     }
     if (refreshToken == null || refreshToken.isEmpty) {
-      throw const ApiException('服务器未返回刷新凭据');
+      throw const ApiException('登录暂时没有完成，请稍后再试');
     }
     return AuthResult(
       accessToken: accessToken,

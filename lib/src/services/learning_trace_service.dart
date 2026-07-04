@@ -3,6 +3,7 @@ import '../models/ai_flash_card.dart';
 import '../models/learning_moment.dart';
 import '../models/study_log_item.dart';
 import '../models/study_note.dart';
+import '../models/study_sub_task_item.dart';
 import '../models/study_task_item.dart';
 import 'ai_tool_registry.dart';
 
@@ -22,6 +23,7 @@ class LearningTraceService {
       ...logs.map(_fromLog),
       ...tasks.where((task) => task.effectiveStatus == StudyTaskStatus.completed)
           .map(_fromCompletedTask),
+      ...tasks.expand(_fromCompletedSubTasks),
       ...notes.where((note) => !note.isFolder).map(_fromNote),
       ...flashCards.map(_fromFlashCard),
       ...actionRecords
@@ -37,7 +39,7 @@ class LearningTraceService {
     return LearningTraceEvent(
       id: 'moment_${moment.id}',
       type: LearningTraceEventType.moment,
-      title: content.isEmpty ? '分享了一条学习动态' : content,
+      title: content.isEmpty ? '记录了一条学迹' : content,
       summary: moment.courseName.isEmpty ? '' : '课程：${moment.courseName}',
       courseName: moment.courseName,
       imagePaths: moment.imagePaths,
@@ -50,7 +52,7 @@ class LearningTraceService {
   LearningTraceEvent _fromLog(StudyLogItem log) {
     final content = _compact([
       log.content,
-      if (log.problems.trim().isNotEmpty) '问题：${log.problems}',
+      if (log.problems.trim().isNotEmpty) '难点：${log.problems}',
       if (log.nextPlan.trim().isNotEmpty) '下一步：${log.nextPlan}',
     ]);
     return LearningTraceEvent(
@@ -83,6 +85,26 @@ class LearningTraceService {
     );
   }
 
+  Iterable<LearningTraceEvent> _fromCompletedSubTasks(StudyTaskItem task) {
+    if (task.effectiveStatus == StudyTaskStatus.completed) {
+      return const [];
+    }
+    return task.subTasks
+        .where((subTask) => subTask.status == SubTaskStatus.completed)
+        .map((subTask) {
+      return LearningTraceEvent(
+        id: 'subtask_${task.id}_${subTask.id}',
+        type: LearningTraceEventType.taskCompleted,
+        title: '完成行动：${subTask.title}',
+        summary: task.title,
+        courseName: task.courseName,
+        sourceId: subTask.id,
+        happenedAt: subTask.completedAt ?? subTask.updatedAt,
+        isShareable: true,
+      );
+    });
+  }
+
   LearningTraceEvent _fromNote(StudyNote note) {
     final body = note.content.trim().isNotEmpty
         ? note.content
@@ -100,27 +122,59 @@ class LearningTraceService {
   }
 
   LearningTraceEvent _fromFlashCard(AiFlashCard card) {
+    final reviewed = card.lastReviewedAt != null || card.reviewCount > 0;
     return LearningTraceEvent(
       id: 'flashcard_${card.id}',
       type: LearningTraceEventType.flashcardCreated,
-      title: '生成闪卡：${_trim(card.question, 48)}',
-      summary: card.answer,
+      title:
+          '${reviewed ? '复习闪卡' : '生成闪卡'}：${_trim(card.question, 48)}',
+      summary: reviewed
+          ? _compact([
+              '掌握度 ${card.masteryPercent}% · ${card.masteryLabel}',
+              if (card.weakTags.isNotEmpty) '薄弱标签：${card.weakTags.join('、')}',
+              if (card.nextReviewDate != null)
+                '下次复习：${card.nextReviewDate!.month}/${card.nextReviewDate!.day}',
+            ])
+          : card.answer,
       courseName: card.courseName,
       sourceId: card.id,
-      happenedAt: card.createdAt,
+      happenedAt: card.lastReviewedAt ?? card.createdAt,
       isAiGenerated: true,
       isShareable: true,
     );
   }
 
   LearningTraceEvent _fromActionRecord(AiActionRecord record) {
-    final title = record.targetTitle?.trim().isNotEmpty == true
-        ? record.targetTitle!.trim()
+    final isCompletedFocus =
+        record.params?['completedFromTimer'] == true;
+    if (isCompletedFocus &&
+        (record.toolId == AiToolIds.startFocus ||
+            record.toolId == AiToolIds.startFocusWithTask)) {
+      final targetTitle = record.targetTitle?.trim() ?? '';
+      final rawMinutes = record.params?['durationMinutes'];
+      final minutes = rawMinutes is num ? rawMinutes.toInt() : 0;
+      return LearningTraceEvent(
+        id: 'focus_${record.id}',
+        type: LearningTraceEventType.focusCompleted,
+        title: targetTitle.isEmpty
+            ? '完成专注'
+            : '完成专注：$targetTitle',
+        summary: minutes > 0
+            ? '$minutes 分钟'
+            : (record.resultMessage ?? ''),
+        sourceId: record.targetId,
+        happenedAt: record.createdAt,
+        isShareable: true,
+      );
+    }
+    final targetTitle = record.targetTitle?.trim() ?? '';
+    final title = targetTitle.isNotEmpty
+        ? targetTitle
         : AiToolRegistry.instance.userFacingLabel(record.toolId);
     return LearningTraceEvent(
       id: 'ai_${record.id}',
       type: LearningTraceEventType.aiAction,
-      title: 'AI已执行：$title',
+      title: '助手整理：$title',
       summary: record.resultMessage ?? '',
       sourceId: record.targetId,
       happenedAt: record.createdAt,

@@ -1,17 +1,15 @@
-import 'dart:convert';
-
 /// 成就类型
 enum AchievementType {
   /// 首次记录学习日志
   firstLog,
 
-  /// 连续打卡 3 天
+  /// 连续学习记录 3 天
   streak3,
 
-  /// 连续打卡 7 天
+  /// 连续学习记录 7 天
   streak7,
 
-  /// 连续打卡 30 天
+  /// 连续学习记录 30 天
   streak30,
 
   /// 完成第一个任务
@@ -32,13 +30,13 @@ enum AchievementType {
   /// 创建第一条笔记
   firstNote,
 
-  /// 积分达到 100
+  /// 成长点达到 100
   points100,
 
-  /// 积分达到 500
+  /// 成长点达到 500
   points500,
 
-  /// 积分达到 1000
+  /// 成长点达到 1000
   points1000,
 
   /// 使用AI学习助手10次
@@ -72,21 +70,21 @@ class Achievement {
     ),
     Achievement(
       type: AchievementType.firstTask,
-      title: '任务新手',
+      title: '第一步任务',
       description: '完成第一个学习任务',
       iconName: 'task_alt',
       points: 15,
     ),
     Achievement(
       type: AchievementType.task10,
-      title: '任务达人',
+      title: '任务推进记录',
       description: '累计完成 10 个学习任务',
       iconName: 'emoji_events',
       points: 50,
     ),
     Achievement(
       type: AchievementType.task50,
-      title: '任务大师',
+      title: '长期任务记录',
       description: '累计完成 50 个学习任务',
       iconName: 'military_tech',
       points: 200,
@@ -94,34 +92,34 @@ class Achievement {
     Achievement(
       type: AchievementType.streak3,
       title: '初见坚持',
-      description: '连续学习打卡 3 天',
+      description: '连续留下学习记录 3 天',
       iconName: 'local_fire_department',
       points: 20,
     ),
     Achievement(
       type: AchievementType.streak7,
       title: '一周不断',
-      description: '连续学习打卡 7 天',
+      description: '连续留下学习记录 7 天',
       iconName: 'whatshot',
       points: 50,
     ),
     Achievement(
       type: AchievementType.streak30,
-      title: '月度学霸',
-      description: '连续学习打卡 30 天',
+      title: '月度坚持记录',
+      description: '连续留下学习记录 30 天',
       iconName: 'stars',
       points: 200,
     ),
     Achievement(
       type: AchievementType.firstReport,
-      title: '周报初体验',
-      description: '生成第一份学习周报',
+      title: '第一次周回顾',
+      description: '生成第一份学习回顾',
       iconName: 'summarize',
       points: 15,
     ),
     Achievement(
       type: AchievementType.flashCard10,
-      title: '闪卡收藏家',
+      title: '闪卡复习记录',
       description: '累计创建 10 张知识闪卡',
       iconName: 'style',
       points: 30,
@@ -135,29 +133,29 @@ class Achievement {
     ),
     Achievement(
       type: AchievementType.points100,
-      title: '百分选手',
-      description: '累计积分达到 100',
+      title: '百点记录',
+      description: '累计成长点达到 100',
       iconName: 'toll',
       points: 30,
     ),
     Achievement(
       type: AchievementType.points500,
-      title: '五百分俱乐部',
-      description: '累计积分达到 500',
+      title: '五百点路径',
+      description: '累计成长点达到 500',
       iconName: 'workspace_premium',
       points: 100,
     ),
     Achievement(
       type: AchievementType.points1000,
-      title: '千分大神',
-      description: '累计积分达到 1000',
+      title: '千点成长',
+      description: '累计成长点达到 1000',
       iconName: 'diamond',
       points: 300,
     ),
     Achievement(
       type: AchievementType.aiUsage10,
-      title: 'AI学习助手伙伴',
-      description: '使用AI学习助手10次',
+      title: '学习助手熟手',
+      description: '使用学习助手整理 10 次',
       iconName: 'smart_toy',
       points: 20,
     ),

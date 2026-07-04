@@ -6,23 +6,26 @@ import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:lottie/lottie.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../models/ai_action_record.dart';
 import '../../models/ai_app_action.dart';
+import '../../models/analysis_item.dart';
+import '../../models/trash_item.dart';
 import '../../models/weekly_report_item.dart';
 import '../../services/ai_action_executor.dart';
 import '../../services/ai_tool_registry.dart';
 import '../../services/report_export_service.dart';
 import '../../theme/app_theme.dart';
+import '../analysis/analysis_result_page.dart';
 import '../study/about_page.dart';
 import '../study/achievements_page.dart';
 import '../shell/audit_log_page.dart';
 import '../shell/trash_page.dart';
-import '../study/ai_assistant_page.dart';
 import '../study/ai_chat_page.dart';
+import '../study/ai_assistant_page.dart';
 import '../study/ai_learning_cockpit_page.dart';
 import '../study/ai_settings_page.dart';
+import '../study/evidence_package_page.dart';
 import '../study/calendar_page.dart';
 import '../study/flash_card_page.dart';
 import '../study/knowledge_graph_page.dart';
@@ -37,7 +40,6 @@ import '../study/user_profile_page.dart';
 import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 import '../shared/global_route_observer.dart';
-import '../shared/local_image.dart';
 import '../shared/page_wrapper.dart';
 import '../shared/rive_safe_widget.dart';
 import 'admin_section_page.dart';
@@ -54,12 +56,14 @@ class AppShell extends StatefulWidget {
     this.debugMenuInitiallyOpen = false,
     this.debugInitialPrimaryTab,
     this.debugInitialAdminSection,
+    this.debugInitialReviewTarget,
   });
 
   final AppDataController? initialController;
   final bool debugMenuInitiallyOpen;
   final PrimaryTab? debugInitialPrimaryTab;
   final AdminSection? debugInitialAdminSection;
+  final String? debugInitialReviewTarget;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -77,7 +81,7 @@ class _AppShellState extends State<AppShell>
   bool _isAiChatOpen = false;
   Offset? _assistantOffset;
   OverlayEntry? _assistantOverlayEntry;
-  double _menuWidth = 300;
+  double _menuWidth = 252;
 
   /// 0 = 未知, 1 = 在线, -1 = 离线
   int _backendReachable = 0;
@@ -97,10 +101,12 @@ class _AppShellState extends State<AppShell>
       value: widget.debugMenuInitiallyOpen ? 1 : 0,
     );
     _menuController.addListener(_markAssistantOverlayNeedsBuild);
-    _appDataController.addListener(_markAssistantOverlayNeedsBuild);
+    _appDataController.addListener(_handleControllerChanged);
     studyTraceRouteTick.addListener(_bringAssistantOverlayToFront);
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _ensureAssistantOverlay());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _openInitialReviewTarget());
     unawaited(_loadData());
   }
 
@@ -138,10 +144,18 @@ class _AppShellState extends State<AppShell>
     _removeAssistantOverlay();
     studyTraceRouteTick.removeListener(_bringAssistantOverlayToFront);
     _menuController.removeListener(_markAssistantOverlayNeedsBuild);
-    _appDataController.removeListener(_markAssistantOverlayNeedsBuild);
+    _appDataController.removeListener(_handleControllerChanged);
     _menuController.dispose();
     _appDataController.dispose();
     super.dispose();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _removeAssistantOverlay();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _ensureAssistantOverlay());
   }
 
   void _openMenu() => _menuController.forward();
@@ -168,6 +182,11 @@ class _AppShellState extends State<AppShell>
           isDarkMode: _isDarkMode,
           controller: _appDataController,
           onExecuteActions: _executeAssistantActions,
+          onOpenTasks: () => _openTasksPage(),
+          onOpenLogs: _openStudyLogsPage,
+          onOpenNotes: _openStudyNotesPage,
+          onOpenFlashCards: _openFlashCardLibrary,
+          onStartFlashCardReview: (cardIds) => _openFlashCardReview(cardIds),
           currentLocation: _primaryTab.name,
         ),
       );
@@ -186,6 +205,13 @@ class _AppShellState extends State<AppShell>
     _assistantOverlayEntry = OverlayEntry(
       builder: (overlayContext) {
         if (!mounted || _isAiChatOpen) return const SizedBox.shrink();
+        if (_activeAdminSection == null) {
+          return const SizedBox.shrink();
+        }
+        final shellRoute = ModalRoute.of(context);
+        if (shellRoute != null && !shellRoute.isCurrent) {
+          return const SizedBox.shrink();
+        }
         final media = MediaQuery.of(overlayContext);
         final menuProgress =
             Curves.fastOutSlowIn.transform(_menuController.value);
@@ -205,6 +231,43 @@ class _AppShellState extends State<AppShell>
 
   void _markAssistantOverlayNeedsBuild() {
     _assistantOverlayEntry?.markNeedsBuild();
+  }
+
+  void _handleControllerChanged() {
+    if (!mounted) return;
+    final requestedTab =
+        _primaryTabFromName(_appDataController.currentPrimaryTab);
+    if (requestedTab != null && requestedTab != _primaryTab) {
+      setState(() {
+        _primaryTab = requestedTab;
+        _activeAdminSection = null;
+      });
+    }
+    _markAssistantOverlayNeedsBuild();
+  }
+
+  PrimaryTab? _primaryTabFromName(String name) {
+    return switch (name.trim().toLowerCase()) {
+      'assistant' || 'home' || '首页' || '主页' => PrimaryTab.assistant,
+      'scenarios' || 'plan' || '计划' || '计划页' || '安排' => PrimaryTab.scenarios,
+      'calendar' ||
+      'focus' ||
+      'timer' ||
+      '专注' ||
+      '专注页' ||
+      '计时' ||
+      '番茄钟' =>
+        PrimaryTab.calendar,
+      'create' ||
+      'review' ||
+      'flashcard' ||
+      'flashcards' ||
+      '复习' ||
+      '闪卡' =>
+        PrimaryTab.create,
+      'profile' || 'mine' || '我的' || '我的页' || '个人' => PrimaryTab.profile,
+      _ => null,
+    };
   }
 
   void _removeAssistantOverlay() {
@@ -244,6 +307,255 @@ class _AppShellState extends State<AppShell>
     );
   }
 
+  void _openInitialReviewTarget() {
+    if (!mounted) return;
+    final target = widget.debugInitialReviewTarget?.trim().toLowerCase();
+    if (target == null || target.isEmpty) return;
+    switch (target) {
+      case 'flashcards':
+      case 'flashcard-library':
+      case 'knowledge-flashcards':
+      case '知识闪卡':
+        _openFlashCardLibrary();
+        return;
+      case 'flashcard-new-group':
+      case 'flashcard-group-dialog':
+      case '闪卡分组':
+        _openFlashCardNewGroupReview();
+        return;
+      case 'flashcard-grade-result':
+      case 'flashcard-grade-dialog':
+      case '闪卡评分':
+        _openFlashCardGradeResultReview();
+        return;
+      case 'flashcard-review':
+      case 'review':
+      case '复习':
+        _openFlashCardReview();
+        return;
+      case 'task-planning':
+      case 'task-plan':
+      case 'planning':
+      case 'automations':
+      case '任务编排':
+        _openTaskPlanningPage();
+        return;
+      case 'tasks':
+      case 'today-tasks':
+      case 'today-plan':
+      case '今日安排':
+      case '学习任务':
+        _openTasksPage();
+        return;
+      case 'notes':
+      case 'study-notes':
+      case '学习笔记':
+      case '笔记':
+        _openStudyNotesPage();
+        return;
+      case 'study-logs':
+      case 'learning-logs':
+      case 'logs':
+      case '学习记录':
+        _openStudyLogsPage();
+        return;
+      case 'learning-moments':
+      case 'learning-moments-tools':
+      case 'learning-moments-composer':
+      case 'learning-moments-course-selector':
+      case 'moments':
+      case 'study-moments':
+      case '学迹':
+      case '学迹动态':
+        _openLearningMomentsPage();
+        return;
+      case 'study-group':
+      case 'group':
+      case 'groups':
+      case '学习小组':
+      case '共学':
+        _openStudyGroupPage();
+        return;
+      case 'leaderboard':
+      case 'rank':
+      case 'ranking':
+      case '排行榜':
+        _pushAnimatedPage(PageWithBackButton(
+          title: '学习进度',
+          isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.leaderboard.icon,
+          accent: AdminSection.leaderboard.accent,
+          compactHeader: true,
+          child: LeaderboardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            onOpenStudyGroup: _openStudyGroupPage,
+            onOpenLearningMoments: _openLearningMomentsPage,
+          ),
+        ));
+        return;
+      case 'achievements':
+      case 'achievement':
+      case 'badges':
+      case '成就':
+      case '成就殿堂':
+        _pushAnimatedPage(PageWithBackButton(
+          title: '成长记录',
+          isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.achievements.icon,
+          accent: AdminSection.achievements.accent,
+          compactHeader: true,
+          child: AchievementsPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+          ),
+        ));
+        return;
+      case 'knowledge-graph':
+      case 'knowledge':
+      case 'graph':
+      case '知识图谱':
+      case '知识地图':
+        _openKnowledgeMapPage();
+        return;
+      case 'learning-dashboard':
+      case 'data-dashboard':
+      case 'dashboard':
+      case 'analytics':
+      case 'statistics':
+      case '学习数据':
+      case '数据看板':
+      case '学习统计':
+        _pushAnimatedPage(PageWithBackButton(
+          title: '数据看板',
+          isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.analytics.icon,
+          accent: AdminSection.analytics.accent,
+          compactHeader: true,
+          child: LearningDashboardPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            onOpenTasks: () => _openTasksPage(),
+            onOpenOverdueTasks: () =>
+                _openTasksPage(initialOverdueFilter: true),
+            onOpenLogs: _openStudyLogsPage,
+            onOpenLearningMoments: _openLearningMomentsPage,
+            onOpenTaskPlanning: _openTaskPlanningPage,
+            onOpenKnowledgeMap: _openKnowledgeMapPage,
+            onOpenWeeklyReview: _openWeeklyReviewPage,
+          ),
+        ));
+        return;
+      case 'analysis-result':
+      case 'analysis':
+      case '分析结果':
+      case '分析页':
+        _pushAnimatedPage(AnalysisResultPage(
+          analysis: _reviewAnalysisItem(),
+          controller: _appDataController,
+          isDarkMode: _isDarkMode,
+        ));
+        return;
+      case 'weekly-report':
+      case 'report':
+      case 'learning-report':
+      case '每周回顾':
+      case '周报':
+      case '学习周报':
+        _pushAnimatedPage(_WeeklyReportPage(
+          controller: _appDataController,
+          isDarkMode: _isDarkMode,
+          autoGenerate: true,
+        ));
+        return;
+      case 'evidence-package':
+      case 'evidence':
+      case 'learning-review':
+      case '学习回顾':
+      case '7天学习回顾':
+        _pushAnimatedPage(PageWithBackButton(
+          title: '7天学习回顾',
+          isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.evidencePackage.icon,
+          accent: AdminSection.evidencePackage.accent,
+          child: _buildEvidencePackagePage(),
+        ));
+        return;
+      case 'audit-log':
+      case 'audit':
+      case 'assistant-log':
+      case '助手整理记录':
+        _openAuditLogPage();
+        return;
+      case 'trash':
+      case 'recycle-bin':
+      case 'recovery':
+      case '回收站':
+        _pushAnimatedPage(PageWithBackButton(
+          title: '回收站',
+          isDarkMode: _isDarkMode,
+          titleIcon: AdminSection.trash.icon,
+          accent: AdminSection.trash.accent,
+          compactHeader: true,
+          child: TrashPage(
+            isDarkMode: _isDarkMode,
+            controller: _appDataController,
+            previewItems: _reviewTrashItems(),
+          ),
+        ));
+        return;
+      case 'timer':
+      case 'focus':
+      case 'focus-timer':
+      case '专注':
+      case '专注计时':
+        _openTimerPage();
+        return;
+      case 'course-archive':
+      case '课程归档':
+        _openCourseArchivePage();
+        return;
+      case 'course-detail':
+      case '课程详情':
+        final courses = _appDataController.courseNames;
+        if (courses.isNotEmpty) {
+          _openCourseDetail(courses.first);
+        }
+        return;
+      case 'ai-assistant':
+      case '学习助手':
+        _openAiAssistantTools();
+        return;
+      case 'ai-chat':
+      case 'chat':
+      case '学习对话':
+        unawaited(_openAiChat());
+        return;
+      case 'ai-cockpit':
+      case '学习座舱':
+        _openLearningCockpit();
+        return;
+      case 'ai-cockpit-saved-next-step':
+        _openLearningCockpitSavedNextStepReview();
+        return;
+      case 'ai-settings':
+      case '助手设置':
+        _openAssistantSettingsPage();
+        return;
+      case 'system-settings':
+      case '系统设置':
+        _openSystemSettingsPage();
+        return;
+      case 'about':
+      case 'overview':
+      case '应用介绍':
+      case '作品总览':
+      case '关于学迹':
+        _openAboutPage();
+        return;
+    }
+  }
+
   Future<List<AiActionResult>> _executeAssistantActions({
     required List<AiAppAction> actions,
     required String input,
@@ -261,30 +573,63 @@ class _AppShellState extends State<AppShell>
     );
   }
 
-  /// 审计页"重试"按钮回调：把失败的 AiActionRecord 重建成 AiAppAction 再跑
+  /// 整理历史页"重试"按钮回调：把失败的 AiActionRecord 重建成 AiAppAction 再跑
   Future<void> _retryAuditRecord(AiActionRecord record) async {
     final type = _actionTypeFromToolId(record.toolId);
     if (type == null) {
-      _showShellSnack('该AI操作无法重试');
+      _showShellSnack('这条整理记录暂时无法重试');
       return;
     }
     final definition = AiToolRegistry.instance.lookup(record.toolId);
     if (definition?.needsConfirmation == true) {
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('确认重试危险动作'),
-          content: Text('该动作会执行「${definition!.label}」，可能修改或删除数据。确定继续吗？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+          child: StudyDialogSurface(
+            isDarkMode: _isDarkMode,
+            accent: StudyUi.warning,
+            icon: Icons.warning_amber_rounded,
+            title: '确认重新执行操作',
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: StudyActionPill(
+                      icon: Icons.close_rounded,
+                      label: '取消',
+                      color: StudyUi.muted(_isDarkMode),
+                      isDarkMode: _isDarkMode,
+                      filled: false,
+                      expand: true,
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: StudyActionPill(
+                      icon: Icons.refresh_rounded,
+                      label: '继续重试',
+                      color: StudyUi.warning,
+                      isDarkMode: _isDarkMode,
+                      expand: true,
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            child: Text(
+              '该动作会执行「${definition!.label}」，可能修改或删除数据。确定继续吗？',
+              style: TextStyle(
+                color: StudyUi.body(_isDarkMode),
+                height: 1.5,
+              ),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('继续重试'),
-            ),
-          ],
+          ),
         ),
       );
       if (confirmed != true) return;
@@ -308,8 +653,8 @@ class _AppShellState extends State<AppShell>
     final r = results.isNotEmpty ? results.first : null;
     _showShellSnack(
       r == null
-          ? '重试失败'
-          : (r.success ? '重试成功：${r.message}' : '重试失败：${r.message}'),
+          ? '这次还没整理好，可以稍后再试'
+          : (r.success ? '已重新整理好' : '这次还没整理好，可以稍后再试'),
     );
   }
 
@@ -323,6 +668,8 @@ class _AppShellState extends State<AppShell>
       _closeMenu();
       switch (action.type) {
         case AiAppActionType.switchTab:
+          final directResult = _openDirectAssistantTarget(action);
+          if (directResult != null) return directResult;
           final tab = _tabFromAssistantAction(action);
           if (tab == null) {
             return AiActionResult(
@@ -339,29 +686,26 @@ class _AppShellState extends State<AppShell>
             message: '已打开${tab.label}，返回可回到对话',
           );
         case AiAppActionType.openTimer:
-          _pushAnimatedPage(TimerPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ));
+          _openTimerPage();
           return _navigationSuccess(action, '已打开专注计时器');
         case AiAppActionType.startFocus:
           final minutes = _parseFocusMinutes(action);
-          _pushAnimatedPage(TimerPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
+          _openTimerPage(
             initialMinutes: minutes,
             autoStart: true,
-          ));
+            focusTitle: action.title?.trim().isNotEmpty == true
+                ? action.title!.trim()
+                : null,
+          );
           return _navigationSuccess(action, '已开始 $minutes 分钟专注');
         case AiAppActionType.startFocusWithTask:
           final minutes = _parseFocusMinutes(action);
           final task = _taskForFocusAction(action);
-          _pushAnimatedPage(TimerPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
+          _openTimerPage(
             initialMinutes: minutes,
             autoStart: true,
-          ));
+            focusTitle: task?.title,
+          );
           return _navigationSuccess(
             action,
             task == null
@@ -369,10 +713,7 @@ class _AppShellState extends State<AppShell>
                 : '已围绕「${task.title}」开始 $minutes 分钟专注',
           );
         case AiAppActionType.openFlashcard:
-          _pushAnimatedPage(FlashCardPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ));
+          _openFlashCardPage();
           return _navigationSuccess(action, '已打开知识闪卡');
         case AiAppActionType.openNotes:
           _pushAnimatedPage(StudyNotesPage(
@@ -381,130 +722,82 @@ class _AppShellState extends State<AppShell>
           ));
           return _navigationSuccess(action, '已打开学习笔记');
         case AiAppActionType.openAiSettings:
-          _pushAnimatedPage(PageWithBackButton(
-            title: 'AI设置',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.aiSettings.icon,
-            accent: AdminSection.aiSettings.accent,
-            child: AiSettingsPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-            ),
-          ));
-          return _navigationSuccess(action, '已打开 AI设置');
+          _openAssistantSettingsPage();
+          return _navigationSuccess(action, '已打开助手设置');
         case AiAppActionType.openDashboard:
           _pushAnimatedPage(PageWithBackButton(
             title: '数据看板',
             isDarkMode: _isDarkMode,
             titleIcon: AdminSection.analytics.icon,
             accent: AdminSection.analytics.accent,
+            compactHeader: true,
             child: LearningDashboardPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
+              onOpenTasks: () => _openTasksPage(),
+              onOpenOverdueTasks: () =>
+                  _openTasksPage(initialOverdueFilter: true),
+              onOpenLogs: _openStudyLogsPage,
+              onOpenLearningMoments: _openLearningMomentsPage,
+              onOpenTaskPlanning: _openTaskPlanningPage,
+              onOpenKnowledgeMap: _openKnowledgeMapPage,
+              onOpenWeeklyReview: _openWeeklyReviewPage,
             ),
           ));
           return _navigationSuccess(action, '已打开数据看板');
         case AiAppActionType.openTaskPlanning:
           _pushAnimatedPage(PageWithBackButton(
-            title: '任务编排',
+            title: '学习流程',
             isDarkMode: _isDarkMode,
             titleIcon: AdminSection.automations.icon,
             accent: AdminSection.automations.accent,
+            compactHeader: true,
             child: TaskPlanningPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
+              onOpenTasks: () => _openTasksPage(),
+              onOpenOverdueTasks: () =>
+                  _openTasksPage(initialOverdueFilter: true),
             ),
           ));
-          return _navigationSuccess(action, '已打开任务编排');
+          return _navigationSuccess(action, '已打开学习流程');
         case AiAppActionType.openAiAssistant:
-          _pushAnimatedPage(PageWithBackButton(
-            title: 'AI学习助手',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.aiAssistant.icon,
-            accent: AdminSection.aiAssistant.accent,
-            child: AiAssistantPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-              onExecuteActions: _executeAssistantActions,
-              onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
-                title: 'AI设置',
-                isDarkMode: _isDarkMode,
-                titleIcon: AdminSection.aiSettings.icon,
-                accent: AdminSection.aiSettings.accent,
-                child: AiSettingsPage(
-                  isDarkMode: _isDarkMode,
-                  controller: _appDataController,
-                ),
-              )),
-            ),
-          ));
-          return _navigationSuccess(action, '已打开 AI学习助手');
+          _openLearningCockpit();
+          return _navigationSuccess(action, '已打开学习助手');
         case AiAppActionType.openUserProfile:
-          _pushAnimatedPage(UserProfilePage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            onOpenAchievements: _openAchievementsPage,
-          ));
+          _openUserProfilePage();
           return _navigationSuccess(action, '已打开个人资料');
         case AiAppActionType.openAbout:
-          _pushAnimatedPage(PageWithBackButton(
-            title: '应用介绍',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.overview.icon,
-            accent: AdminSection.overview.accent,
-            child: AboutPage(isDarkMode: _isDarkMode),
-          ));
+          _openAboutPage();
           return _navigationSuccess(action, '已打开应用介绍');
         case AiAppActionType.openStudyGroup:
-          _pushAnimatedPage(PageWithBackButton(
-            title: '学习小组',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.studyGroup.icon,
-            accent: AdminSection.studyGroup.accent,
-            child: StudyGroupPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-            ),
-          ));
+          _openStudyGroupPage();
           return _navigationSuccess(action, '已打开学习小组');
         case AiAppActionType.openLeaderboard:
           _pushAnimatedPage(PageWithBackButton(
-            title: '排行榜',
+            title: '学习进度',
             isDarkMode: _isDarkMode,
             titleIcon: AdminSection.leaderboard.icon,
             accent: AdminSection.leaderboard.accent,
+            compactHeader: true,
             child: LeaderboardPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
+              onOpenStudyGroup: _openStudyGroupPage,
+              onOpenLearningMoments: _openLearningMomentsPage,
             ),
           ));
-          return _navigationSuccess(action, '已打开排行榜');
+          return _navigationSuccess(action, '已打开学习进度');
         case AiAppActionType.openWeeklyReport:
-          _pushAnimatedPage(PageWithBackButton(
-            title: '学习周报',
+          _pushAnimatedPage(_WeeklyReportPage(
+            controller: _appDataController,
             isDarkMode: _isDarkMode,
-            titleIcon: Icons.summarize_rounded,
-            accent: StudyUi.primary,
-            child: _WeeklyReportPage(
-              controller: _appDataController,
-              isDarkMode: _isDarkMode,
-              autoGenerate: true,
-            ),
+            autoGenerate: true,
           ));
-          return _navigationSuccess(action, '已打开学习周报');
+          return _navigationSuccess(action, '已打开每周回顾');
         case AiAppActionType.openSystemSettings:
-          _pushAnimatedPage(PageWithBackButton(
-            title: '系统设置',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.settings.icon,
-            accent: AdminSection.settings.accent,
-            child: AiSettingsPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-              mode: AiSettingsMode.system,
-            ),
-          ));
-          return _navigationSuccess(action, '已打开系统设置');
+          _openSystemSettingsPage();
+          return _navigationSuccess(action, '已打开应用设置');
         default:
           return AiActionResult(
             action: action,
@@ -516,7 +809,7 @@ class _AppShellState extends State<AppShell>
       return AiActionResult(
         action: action,
         success: false,
-        message: '导航失败：$error',
+        message: '当前页面暂时打不开，可以稍后再试',
       );
     }
   }
@@ -532,7 +825,74 @@ class _AppShellState extends State<AppShell>
       isDarkMode: _isDarkMode,
       titleIcon: tab.icon,
       accent: _appDataController.primaryColor,
+      compactHeader: true,
       child: _primaryPageFor(tab),
+    ));
+  }
+
+  void _openTimerPage({
+    int? initialMinutes,
+    String? focusTitle,
+    bool autoStart = false,
+  }) {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '专注计时',
+      isDarkMode: _isDarkMode,
+      titleIcon: Icons.timer_rounded,
+      accent: AdminSection.timer.accent,
+      compactHeader: true,
+      child: TimerPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        initialMinutes: initialMinutes,
+        focusTitle: focusTitle,
+        autoStart: autoStart,
+        showAppBar: false,
+      ),
+    ));
+  }
+
+  void _openFlashCardPage({
+    bool autoGenerate = true,
+    bool startReviewOnOpen = false,
+    List<String> initialReviewCardIds = const [],
+    bool debugAutoOpenNewGroupDialog = false,
+    bool debugAutoOpenGradeResultDialog = false,
+  }) {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '知识闪卡',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.flashCard.icon,
+      accent: AdminSection.flashCard.accent,
+      compactHeader: true,
+      child: FlashCardPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        autoGenerate: autoGenerate,
+        startReviewOnOpen: startReviewOnOpen,
+        initialReviewCardIds: initialReviewCardIds,
+        debugAutoOpenNewGroupDialog: debugAutoOpenNewGroupDialog,
+        debugAutoOpenGradeResultDialog: debugAutoOpenGradeResultDialog,
+        onOpenNotes: _openStudyNotesPage,
+        showAppBar: false,
+      ),
+    ));
+  }
+
+  void _openUserProfilePage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '我的学迹',
+      isDarkMode: _isDarkMode,
+      titleIcon: Icons.person_outline_rounded,
+      accent: StudyUi.pathViolet,
+      compactHeader: true,
+      child: UserProfilePage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        onOpenAchievements: _openAchievementsPage,
+        onOpenCourseArchive: _openCourseArchivePage,
+        showAppBar: false,
+      ),
     ));
   }
 
@@ -547,27 +907,77 @@ class _AppShellState extends State<AppShell>
   }
 
   PrimaryTab? _tabFromAssistantAction(AiAppAction action) {
-    final value = (action.targetId ??
+    final value = _assistantActionTargetValue(action);
+    return switch (value) {
+      'assistant' || 'home' || '首页' || '主页' => PrimaryTab.assistant,
+      'scenarios' ||
+      'calendar' ||
+      '日历' ||
+      '计划' ||
+      '计划页' ||
+      '安排' ||
+      '今日安排' =>
+        PrimaryTab.scenarios,
+      'focus' ||
+      'timer' ||
+      '专注' ||
+      '专注页' ||
+      '计时' ||
+      '番茄钟' ||
+      '专注计时' =>
+        PrimaryTab.calendar,
+      'create' ||
+      'flashcard' ||
+      'flashcards' ||
+      '复习' ||
+      '复习页' ||
+      '闪卡' ||
+      '知识闪卡' =>
+        PrimaryTab.create,
+      'profile' ||
+      'archive' ||
+      '归档' ||
+      '课程归档' ||
+      '我的' ||
+      '我的页' ||
+      '个人' ||
+      '个人资料' =>
+        PrimaryTab.profile,
+      _ => null,
+    };
+  }
+
+  String _assistantActionTargetValue(AiAppAction action) {
+    return (action.targetId ??
             action.targetTitle ??
             action.title ??
             action.content ??
             '')
         .trim()
         .toLowerCase();
-    return switch (value) {
-      'assistant' || 'home' || '首页' || '主页' => PrimaryTab.assistant,
-      'scenarios' ||
-      'logs' ||
-      'log' ||
-      '记录' ||
-      '日志' ||
-      '学习记录' =>
-        PrimaryTab.scenarios,
-      'calendar' || '日历' => PrimaryTab.calendar,
-      'create' || 'tasks' || 'task' || '任务' || '任务页' => PrimaryTab.create,
-      'profile' || 'archive' || '归档' || '课程归档' => PrimaryTab.profile,
-      _ => null,
-    };
+  }
+
+  AiActionResult? _openDirectAssistantTarget(AiAppAction action) {
+    switch (_assistantActionTargetValue(action)) {
+      case 'tasks':
+      case 'task':
+      case 'today-tasks':
+      case 'today-plan':
+      case '任务':
+      case '今日安排':
+      case '学习任务':
+        _openTasksPage();
+        return _navigationSuccess(action, '已打开今日安排');
+      case 'logs':
+      case 'study-logs':
+      case 'learning-logs':
+      case '记录':
+      case '日志':
+      case '学习记录':
+        _openStudyLogsPage();
+        return _navigationSuccess(action, '已打开学习记录');
+    }
+    return null;
   }
 
   int _parseFocusMinutes(AiAppAction action) {
@@ -589,6 +999,310 @@ class _AppShellState extends State<AppShell>
       isDarkMode: _isDarkMode,
       controller: _appDataController,
       onOpenAiChat: () => unawaited(_openAiChat()),
+      onOpenTasks: () => _openTasksPage(),
+      onOpenFlashCards: _openFlashCardLibrary,
+      onStartFlashCardReview: (cardIds) => _openFlashCardReview(cardIds),
+      onOpenLearningMoments: _openLearningMomentsPage,
+      onOpenEvidencePackage: () => _pushAnimatedPage(PageWithBackButton(
+        title: '7天学习回顾',
+        isDarkMode: _isDarkMode,
+        titleIcon: AdminSection.evidencePackage.icon,
+        accent: AdminSection.evidencePackage.accent,
+        child: _buildEvidencePackagePage(),
+      )),
+    ));
+  }
+
+  void _openLearningCockpitSavedNextStepReview() {
+    _pushAnimatedPage(AiLearningCockpitPage(
+      isDarkMode: _isDarkMode,
+      controller: _appDataController,
+      debugAutoOpenSavedNextStepDialog: true,
+      onOpenAiChat: () => unawaited(_openAiChat()),
+      onOpenTasks: () => _openTasksPage(),
+      onOpenFlashCards: _openFlashCardLibrary,
+      onStartFlashCardReview: (cardIds) => _openFlashCardReview(cardIds),
+      onOpenLearningMoments: _openLearningMomentsPage,
+      onOpenEvidencePackage: () => _pushAnimatedPage(PageWithBackButton(
+        title: '7天学习回顾',
+        isDarkMode: _isDarkMode,
+        titleIcon: AdminSection.evidencePackage.icon,
+        accent: AdminSection.evidencePackage.accent,
+        child: _buildEvidencePackagePage(),
+      )),
+    ));
+  }
+
+  void _openAiAssistantTools() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '学习助手',
+      isDarkMode: _isDarkMode,
+      titleIcon: Icons.auto_awesome_rounded,
+      accent: StudyUi.pathViolet,
+      compactHeader: true,
+      child: AiAssistantPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        onOpenTasks: () => _openTasksPage(),
+        onOpenLogs: _openStudyLogsPage,
+        onOpenNotes: _openStudyNotesPage,
+        onOpenFlashCards: _openFlashCardLibrary,
+        onStartFlashCardReview: (cardIds) => _openFlashCardReview(cardIds),
+        onOpenSettings: _openAssistantSettingsPage,
+        onExecuteActions: _executeAssistantActions,
+      ),
+    ));
+  }
+
+  AnalysisItem _reviewAnalysisItem() {
+    return AnalysisItem(
+      id: 'review_analysis_path',
+      contentType: '复盘材料',
+      summary: '高数错题复盘已进入收尾，下一步要把洛必达适用条件讲清楚。',
+      keyPoints: const [
+        '已经完成极限未定式、求导步骤和错题标记。',
+        '难点集中在 0/0 或 ∞/∞ 条件判断，以及化简后是否还能继续使用洛必达。',
+        '最适合先重做一道同类极限题，再整理成 3 张闪卡。',
+      ],
+      suggestedActions: const [
+        '今晚先把洛必达法则的使用条件写成判断清单。',
+        '把未定式判断、求导步骤和易错点整理成 3 张闪卡。',
+        '明天用 25 分钟复盘错题和下一步。',
+      ],
+      rawContent: '来自任务、笔记和复盘记录的学习材料：本周主要复习高数极限题和洛必达法则。'
+          '当前已经完成知识点梳理，但适用条件判断还缺少一次完整复盘。',
+      createdAt: DateTime.now().subtract(const Duration(minutes: 18)),
+    );
+  }
+
+  List<TrashItem> _reviewTrashItems() {
+    final now = DateTime.now();
+    return [
+      TrashItem(
+        id: 'review_trash_task',
+        entityType: TrashEntityType.task,
+        entityId: 'review_task_archived',
+        title: '高等数学错题复盘截图',
+        payload: '{}',
+        deletedAt: now.subtract(const Duration(hours: 3, minutes: 18)),
+      ),
+      TrashItem(
+        id: 'review_trash_note',
+        entityType: TrashEntityType.note,
+        entityId: 'review_note_archived',
+        title: '课程复盘材料摘要',
+        payload: '{}',
+        deletedAt: now.subtract(const Duration(days: 1, hours: 2)),
+      ),
+    ];
+  }
+
+  void _openFlashCardReview([List<String> cardIds = const []]) {
+    _openFlashCardPage(
+      startReviewOnOpen: true,
+      initialReviewCardIds: cardIds,
+    );
+  }
+
+  EvidencePackagePage _buildEvidencePackagePage() {
+    return EvidencePackagePage(
+      isDarkMode: _isDarkMode,
+      controller: _appDataController,
+      onOpenTasks: () => _openTasksPage(),
+      onOpenFlashCards: _openFlashCardLibrary,
+      onOpenLearningMoments: _openLearningMomentsPage,
+      onOpenNotes: _openStudyNotesPage,
+      onOpenCourse: _openCourseDetail,
+      onStartReview: _openLearningCockpit,
+    );
+  }
+
+  void _openWeeklyReviewPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '7天学习回顾',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.evidencePackage.icon,
+      accent: AdminSection.evidencePackage.accent,
+      child: _buildEvidencePackagePage(),
+    ));
+  }
+
+  void _openKnowledgeMapPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '知识地图',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.knowledgeGraph.icon,
+      accent: AdminSection.knowledgeGraph.accent,
+      compactHeader: true,
+      child: KnowledgeGraphPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+      ),
+    ));
+  }
+
+  void _openAssistantSettingsPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '助手设置',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.aiSettings.icon,
+      accent: AdminSection.aiSettings.accent,
+      compactHeader: true,
+      child: AiSettingsPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+      ),
+    ));
+  }
+
+  void _openSystemSettingsPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '应用设置',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.settings.icon,
+      accent: AdminSection.settings.accent,
+      compactHeader: true,
+      child: AiSettingsPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        mode: AiSettingsMode.system,
+        onOpenAssistantSettings: _openAssistantSettingsPage,
+        onOpenHistory: _openAuditLogPage,
+        onOpenTrash: _openTrashPage,
+        onOpenAbout: _openAboutPage,
+      ),
+    ));
+  }
+
+  void _openAuditLogPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '整理历史',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.auditLog.icon,
+      accent: AdminSection.auditLog.accent,
+      compactHeader: true,
+      child: AuditLogPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        onRetry: _retryAuditRecord,
+      ),
+    ));
+  }
+
+  void _openTrashPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '回收站',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.trash.icon,
+      accent: AdminSection.trash.accent,
+      compactHeader: true,
+      child: TrashPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+      ),
+    ));
+  }
+
+  void _openAboutPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '应用介绍',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.overview.icon,
+      accent: AdminSection.overview.accent,
+      compactHeader: true,
+      child: AboutPage(isDarkMode: _isDarkMode),
+    ));
+  }
+
+  void _openStudyLogsPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '学习记录',
+      isDarkMode: _isDarkMode,
+      titleIcon: Icons.edit_note_rounded,
+      accent: StudyUi.primary,
+      compactHeader: true,
+      child: StudyLogsPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+      ),
+    ));
+  }
+
+  void _openTasksPage({bool initialOverdueFilter = false}) {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '任务清单',
+      isDarkMode: _isDarkMode,
+      titleIcon: Icons.flag_rounded,
+      accent: StudyUi.primary,
+      compactHeader: true,
+      child: StudyTasksPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        initialOverdueFilter: initialOverdueFilter,
+      ),
+    ));
+  }
+
+  void _openTaskPlanningPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '学习流程',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.automations.icon,
+      accent: AdminSection.automations.accent,
+      compactHeader: true,
+      child: TaskPlanningPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        onOpenTasks: () => _openTasksPage(),
+        onOpenOverdueTasks: () => _openTasksPage(initialOverdueFilter: true),
+      ),
+    ));
+  }
+
+  void _openFlashCardLibrary() {
+    _openFlashCardPage();
+  }
+
+  void _openFlashCardNewGroupReview() {
+    _openFlashCardPage(
+      autoGenerate: false,
+      debugAutoOpenNewGroupDialog: true,
+    );
+  }
+
+  void _openFlashCardGradeResultReview() {
+    _openFlashCardPage(
+      autoGenerate: false,
+      debugAutoOpenGradeResultDialog: true,
+    );
+  }
+
+  void _openLearningMomentsPage() {
+    _pushAnimatedPage(LearningMomentsPage(
+      isDarkMode: _isDarkMode,
+      controller: _appDataController,
+      onOpenStudyGroup: _openStudyGroupPage,
+    ));
+  }
+
+  void _openStudyGroupPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '学习小组',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.studyGroup.icon,
+      accent: AdminSection.studyGroup.accent,
+      compactHeader: true,
+      child: StudyGroupPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+      ),
+    ));
+  }
+
+  void _openStudyNotesPage() {
+    _pushAnimatedPage(StudyNotesPage(
+      isDarkMode: _isDarkMode,
+      controller: _appDataController,
     ));
   }
 
@@ -639,74 +1353,61 @@ class _AppShellState extends State<AppShell>
     });
     _appDataController.setCurrentPrimaryTab(tab.name);
     _closeMenu();
+    _markAssistantOverlayNeedsBuild();
   }
 
   void _selectAdminSection(AdminSection section) {
     _closeMenu();
     switch (section) {
       case AdminSection.overview:
-        _pushAnimatedPage(PageWithBackButton(
-          title: '应用介绍',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.overview.icon,
-          accent: AdminSection.overview.accent,
-          child: AboutPage(isDarkMode: _isDarkMode),
-        ));
+        _openAboutPage();
         return;
       case AdminSection.notes:
-        _pushAnimatedPage(StudyNotesPage(
-          isDarkMode: _isDarkMode,
-          controller: _appDataController,
-        ));
+        _openStudyNotesPage();
         return;
       case AdminSection.flashCard:
-        _pushAnimatedPage(FlashCardPage(
-          isDarkMode: _isDarkMode,
-          controller: _appDataController,
-        ));
+        _openFlashCardLibrary();
         return;
       case AdminSection.learningMoments:
-        _pushAnimatedPage(LearningMomentsPage(
+        _openLearningMomentsPage();
+        return;
+      case AdminSection.evidencePackage:
+        _pushAnimatedPage(PageWithBackButton(
+          title: '7天学习回顾',
           isDarkMode: _isDarkMode,
-          controller: _appDataController,
+          titleIcon: AdminSection.evidencePackage.icon,
+          accent: AdminSection.evidencePackage.accent,
+          child: _buildEvidencePackagePage(),
         ));
         return;
       case AdminSection.timer:
-        _pushAnimatedPage(TimerPage(
-          isDarkMode: _isDarkMode,
-          controller: _appDataController,
-        ));
+        _openTimerPage();
         return;
       case AdminSection.studyGroup:
-        _pushAnimatedPage(PageWithBackButton(
-          title: '学习小组',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.studyGroup.icon,
-          accent: AdminSection.studyGroup.accent,
-          child: StudyGroupPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ),
-        ));
+        _openStudyGroupPage();
         return;
       case AdminSection.leaderboard:
         _pushAnimatedPage(PageWithBackButton(
-          title: '排行榜',
+          title: '学习进度',
           isDarkMode: _isDarkMode,
           titleIcon: AdminSection.leaderboard.icon,
           accent: AdminSection.leaderboard.accent,
+          compactHeader: true,
           child: LeaderboardPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
+            onOpenStudyGroup: _openStudyGroupPage,
+            onOpenLearningMoments: _openLearningMomentsPage,
           ),
         ));
         return;
       case AdminSection.achievements:
         _pushAnimatedPage(PageWithBackButton(
-          title: '成就殿堂',
+          title: '成长记录',
           isDarkMode: _isDarkMode,
           titleIcon: AdminSection.achievements.icon,
           accent: AdminSection.achievements.accent,
+          compactHeader: true,
           child: AchievementsPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
@@ -714,74 +1415,30 @@ class _AppShellState extends State<AppShell>
         ));
         return;
       case AdminSection.knowledgeGraph:
-        _pushAnimatedPage(PageWithBackButton(
-          title: '知识图谱',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.knowledgeGraph.icon,
-          accent: AdminSection.knowledgeGraph.accent,
-          child: KnowledgeGraphPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ),
-        ));
+        _openKnowledgeMapPage();
         return;
       case AdminSection.aiAssistant:
-        _pushAnimatedPage(PageWithBackButton(
-          title: 'AI学习助手',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.aiAssistant.icon,
-          accent: AdminSection.aiAssistant.accent,
-          child: AiAssistantPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            onExecuteActions: _executeAssistantActions,
-            onOpenSettings: () => _pushAnimatedPage(PageWithBackButton(
-              title: 'AI设置',
-              isDarkMode: _isDarkMode,
-              titleIcon: AdminSection.aiSettings.icon,
-              accent: AdminSection.aiSettings.accent,
-              child: AiSettingsPage(
-                isDarkMode: _isDarkMode,
-                controller: _appDataController,
-              ),
-            )),
-          ),
-        ));
+        _openLearningCockpit();
         return;
       case AdminSection.aiSettings:
-        _pushAnimatedPage(PageWithBackButton(
-          title: 'AI设置',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.aiSettings.icon,
-          accent: AdminSection.aiSettings.accent,
-          child: AiSettingsPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ),
-        ));
+        _openAssistantSettingsPage();
         return;
       case AdminSection.settings:
-        _pushAnimatedPage(PageWithBackButton(
-          title: '系统设置',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.settings.icon,
-          accent: AdminSection.settings.accent,
-          child: AiSettingsPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            mode: AiSettingsMode.system,
-          ),
-        ));
+        _openSystemSettingsPage();
         return;
       case AdminSection.automations:
         _pushAnimatedPage(PageWithBackButton(
-          title: '任务编排',
+          title: '学习流程',
           isDarkMode: _isDarkMode,
           titleIcon: AdminSection.automations.icon,
           accent: AdminSection.automations.accent,
+          compactHeader: true,
           child: TaskPlanningPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
+            onOpenTasks: () => _openTasksPage(),
+            onOpenOverdueTasks: () =>
+                _openTasksPage(initialOverdueFilter: true),
           ),
         ));
         return;
@@ -792,36 +1449,26 @@ class _AppShellState extends State<AppShell>
           isDarkMode: _isDarkMode,
           titleIcon: section.icon,
           accent: section.accent,
+          compactHeader: true,
           child: LearningDashboardPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
+            onOpenTasks: () => _openTasksPage(),
+            onOpenOverdueTasks: () =>
+                _openTasksPage(initialOverdueFilter: true),
+            onOpenLogs: _openStudyLogsPage,
+            onOpenLearningMoments: _openLearningMomentsPage,
+            onOpenTaskPlanning: _openTaskPlanningPage,
+            onOpenKnowledgeMap: _openKnowledgeMapPage,
+            onOpenWeeklyReview: _openWeeklyReviewPage,
           ),
         ));
         return;
       case AdminSection.auditLog:
-        _pushAnimatedPage(PageWithBackButton(
-          title: 'AI操作记录',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.auditLog.icon,
-          accent: AdminSection.auditLog.accent,
-          child: AuditLogPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            onRetry: _retryAuditRecord,
-          ),
-        ));
+        _openAuditLogPage();
         return;
       case AdminSection.trash:
-        _pushAnimatedPage(PageWithBackButton(
-          title: '回收站',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.trash.icon,
-          accent: AdminSection.trash.accent,
-          child: TrashPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          ),
-        ));
+        _openTrashPage();
         return;
     }
   }
@@ -833,16 +1480,10 @@ class _AppShellState extends State<AppShell>
 
   void _openWeeklyReport() {
     _bringAssistantOverlayToFront();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _withStudyTheme(
-          _WeeklyReportPage(
-            controller: _appDataController,
-            isDarkMode: _isDarkMode,
-          ),
-        ),
-      ),
-    );
+    _pushAnimatedPage(_WeeklyReportPage(
+      controller: _appDataController,
+      isDarkMode: _isDarkMode,
+    ));
   }
 
   void _openCourseDetail(String courseName) {
@@ -860,27 +1501,33 @@ class _AppShellState extends State<AppShell>
     );
   }
 
-  void _openUserProfile(BuildContext context) {
-    _bringAssistantOverlayToFront();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _withStudyTheme(
-          UserProfilePage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            onOpenAchievements: _openAchievementsPage,
-          ),
-        ),
+  void _openCourseArchivePage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '课程归档',
+      isDarkMode: _isDarkMode,
+      titleIcon: Icons.inventory_2_rounded,
+      accent: StudyUi.pathBlue,
+      compactHeader: true,
+      child: CourseArchivePage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        onViewCourse: _openCourseDetail,
       ),
-    );
+    ));
+  }
+
+  void _openUserProfile(BuildContext _) {
+    _bringAssistantOverlayToFront();
+    _openUserProfilePage();
   }
 
   void _openAchievementsPage() {
     _pushAnimatedPage(PageWithBackButton(
-      title: '成就殿堂',
+      title: '成长记录',
       isDarkMode: _isDarkMode,
       titleIcon: AdminSection.achievements.icon,
       accent: AdminSection.achievements.accent,
+      compactHeader: true,
       child: AchievementsPage(
         isDarkMode: _isDarkMode,
         controller: _appDataController,
@@ -899,98 +1546,91 @@ class _AppShellState extends State<AppShell>
             _openLearningCockpit();
           },
           onOpenAiChat: _openAiChat,
-          onOpenLogs: () => _selectPrimaryTab(PrimaryTab.scenarios),
-          onOpenCalendar: () => _selectPrimaryTab(PrimaryTab.calendar),
-          onOpenTasks: () => _selectPrimaryTab(PrimaryTab.create),
-          onOpenNotes: () => _pushAnimatedPage(StudyNotesPage(
+          onOpenLogs: _openStudyLogsPage,
+          onOpenCalendar: () => _selectPrimaryTab(PrimaryTab.scenarios),
+          onOpenTasks: () => _openTasksPage(),
+          onOpenOverdueTasks: () =>
+              _openTasksPage(initialOverdueFilter: true),
+          onOpenNotes: _openStudyNotesPage,
+          onOpenTimer: _openTimerPage,
+          onOpenFlashCards: _openFlashCardLibrary,
+          onStartFlashCardReview: () => _openFlashCardReview(),
+          onOpenLearningMoments: _openLearningMomentsPage,
+          onOpenEvidencePackage: () => _pushAnimatedPage(PageWithBackButton(
+            title: '7天学习回顾',
             isDarkMode: _isDarkMode,
-            controller: _appDataController,
+            titleIcon: AdminSection.evidencePackage.icon,
+            accent: AdminSection.evidencePackage.accent,
+            child: _buildEvidencePackagePage(),
           )),
-          onOpenTimer: () => _pushAnimatedPage(TimerPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          )),
-          onOpenFlashCards: () => _pushAnimatedPage(FlashCardPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          )),
-          onOpenLearningMoments: () => _pushAnimatedPage(LearningMomentsPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-          )),
-          onOpenStudyGroup: () => _pushAnimatedPage(PageWithBackButton(
-            title: '学习小组',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.studyGroup.icon,
-            accent: AdminSection.studyGroup.accent,
-            child: StudyGroupPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-            ),
-          )),
+          onOpenStudyGroup: _openStudyGroupPage,
           onOpenLeaderboard: () => _pushAnimatedPage(PageWithBackButton(
-            title: '排行榜',
+            title: '学习进度',
             isDarkMode: _isDarkMode,
             titleIcon: AdminSection.leaderboard.icon,
             accent: AdminSection.leaderboard.accent,
+            compactHeader: true,
             child: LeaderboardPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
+              onOpenStudyGroup: _openStudyGroupPage,
+              onOpenLearningMoments: _openLearningMomentsPage,
             ),
           )),
-          onOpenSyncSettings: () => _pushAnimatedPage(PageWithBackButton(
-            title: '系统设置',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.settings.icon,
-            accent: AdminSection.settings.accent,
-            child: AiSettingsPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-              mode: AiSettingsMode.system,
-            ),
-          )),
+          onOpenSyncSettings: _openSystemSettingsPage,
           onOpenTaskPlanning: () => _pushAnimatedPage(PageWithBackButton(
-            title: '任务编排',
+            title: '学习流程',
             isDarkMode: _isDarkMode,
             titleIcon: AdminSection.automations.icon,
             accent: AdminSection.automations.accent,
+            compactHeader: true,
             child: TaskPlanningPage(
               isDarkMode: _isDarkMode,
               controller: _appDataController,
+              onOpenTasks: () => _openTasksPage(),
+              onOpenOverdueTasks: () =>
+                  _openTasksPage(initialOverdueFilter: true),
             ),
           )),
         );
       case PrimaryTab.scenarios:
         return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          child: StudyLogsPage(
+          child: CalendarPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
+            onOpenTasks: () => _openTasksPage(),
+            onOpenLogs: _openLearningMomentsPage,
           ),
         );
       case PrimaryTab.calendar:
         return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          child: CalendarPage(
+          child: TimerPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
+            showAppBar: false,
           ),
         );
       case PrimaryTab.create:
         return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          child: StudyTasksPage(
+          child: FlashCardPage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
+            onOpenNotes: _openStudyNotesPage,
+            showAppBar: false,
           ),
         );
       case PrimaryTab.profile:
         return _PrimaryTabSurface(
           isDarkMode: _isDarkMode,
-          child: CourseArchivePage(
+          child: UserProfilePage(
             isDarkMode: _isDarkMode,
             controller: _appDataController,
-            onViewCourse: _openCourseDetail,
+            onOpenAchievements: _openAchievementsPage,
+            onOpenCourseArchive: _openCourseArchivePage,
+            showAppBar: false,
           ),
         );
     }
@@ -1001,7 +1641,7 @@ class _AppShellState extends State<AppShell>
     final mediaQuery = MediaQuery.of(context);
     final safeBottom = mediaQuery.padding.bottom;
     final screenWidth = mediaQuery.size.width;
-    _menuWidth = math.min(screenWidth * 0.74, 288);
+    _menuWidth = math.min(screenWidth * 0.64, 252);
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -1020,6 +1660,7 @@ class _AppShellState extends State<AppShell>
                     controller: _appDataController,
                     onOpenSettings: () =>
                         _selectAdminSection(AdminSection.aiSettings),
+                    onOpenNotes: _openStudyNotesPage,
                     onExecuteActions: _executeAssistantActions,
                     onBack: () => setState(() => _activeAdminSection = null),
                   ),
@@ -1051,6 +1692,8 @@ class _AppShellState extends State<AppShell>
                 isMenuOpen: _menuController.value > 0.5,
                 useHomeBackground: _activeAdminSection == null &&
                     _primaryTab == PrimaryTab.assistant,
+                showMenuButton: _activeAdminSection != null ||
+                    _primaryTab == PrimaryTab.assistant,
                 menuWidth: _menuWidth,
                 screenWidth: screenWidth,
                 progress: progress,
@@ -1066,7 +1709,9 @@ class _AppShellState extends State<AppShell>
                 onHorizontalDragEnd: _handleDragEnd,
                 child: page,
               ),
-              if (_backendReachable == -1 && _appDataController.isLoggedIn)
+              if (_backendReachable == -1 &&
+                  _appDataController.isLoggedIn &&
+                  (_activeAdminSection != null || progress > 0.5))
                 Positioned(
                   bottom: safeBottom + 72,
                   left: 0,
@@ -1103,7 +1748,7 @@ class _AppShellState extends State<AppShell>
                                   color: Colors.white, size: 14),
                               SizedBox(width: 6),
                               Text(
-                                '离线模式',
+                                '本机保存中',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
@@ -1168,7 +1813,7 @@ class _DraggableAssistantButton extends StatelessWidget {
   final ValueChanged<Offset> onOffsetChanged;
   final VoidCallback onTap;
 
-  static const _size = 86.0;
+  static const _size = 54.0;
   static const _margin = 10.0;
 
   @override
@@ -1177,7 +1822,7 @@ class _DraggableAssistantButton extends StatelessWidget {
     final bounds = media.size;
     final defaultOffset = Offset(
       bounds.width - _size - 12,
-      bounds.height - safeBottom - media.viewInsets.bottom - 168,
+      bounds.height - safeBottom - media.viewInsets.bottom - 116,
     );
     final current = _clampOffset(offset ?? defaultOffset, bounds, media);
 
@@ -1210,7 +1855,7 @@ class _DraggableAssistantButton extends StatelessWidget {
     final minY = media.padding.top + _margin;
     final maxY = math.max(
       minY,
-      bounds.height - _size - safeBottom - media.viewInsets.bottom - 88,
+      bounds.height - _size - safeBottom - media.viewInsets.bottom - 86,
     );
     return Offset(
       value.dx.clamp(minX, maxX).toDouble(),
@@ -1259,7 +1904,7 @@ class _GlobalAssistantButtonState extends State<_GlobalAssistantButton>
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: '全局AI学习助手',
+      label: '全局学习助手',
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -1282,23 +1927,23 @@ class _GlobalAssistantButtonState extends State<_GlobalAssistantButton>
               );
             },
             child: Container(
-              width: 86,
-              height: 86,
+              width: 54,
+              height: 54,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
                     color: widget.accent.withValues(alpha: 0.22),
-                    blurRadius: 24,
-                    offset: const Offset(0, 12),
+                    blurRadius: 18,
+                    offset: const Offset(0, 10),
                   ),
                   BoxShadow(
                     color: Colors.black.withValues(
                       alpha: widget.isDarkMode ? 0.28 : 0.10,
                     ),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
+                    blurRadius: 14,
+                    offset: const Offset(0, 7),
                   ),
                 ],
               ),
@@ -1306,7 +1951,7 @@ class _GlobalAssistantButtonState extends State<_GlobalAssistantButton>
                 asset: AppAssets.aiFloatingAssistantIcon,
                 preserveColor: true,
                 fallbackIcon: Icons.smart_toy_rounded,
-                size: 78,
+                size: 50,
               ),
             ),
           ),
@@ -1338,6 +1983,7 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
   String? _reportContent;
   bool _isGenerating = false;
   bool _isExporting = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -1364,157 +2010,351 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
     });
   }
 
+  Future<void> _pickDate({required bool isStart}) async {
+    final current = isStart ? _startDate : _endDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        final theme = widget.isDarkMode ? buildDarkAppTheme() : buildAppTheme();
+        return Theme(data: theme, child: child ?? const SizedBox.shrink());
+      },
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _startDate = picked;
+        if (_startDate.isAfter(_endDate)) _endDate = picked;
+      } else {
+        _endDate = picked;
+        if (_endDate.isBefore(_startDate)) _startDate = picked;
+      }
+    });
+  }
+
+  void _copyReport() {
+    final content = _reportContent;
+    if (content == null) return;
+    Clipboard.setData(ClipboardData(text: content));
+    StudyToast.show(context, '已复制到剪贴板');
+  }
+
+  Future<void> _saveReport() async {
+    final content = _reportContent;
+    if (content == null || _isSaving) return;
+    setState(() => _isSaving = true);
+    await widget.controller.saveWeeklyReport(
+      content,
+      startDate: _startDate,
+      endDate: _endDate,
+    );
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+    StudyToast.show(context, '每周回顾已保存');
+  }
+
   @override
   Widget build(BuildContext context) {
-    final accent = widget.controller.primaryColor;
-    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    const accent = StudyUi.primary;
+    final bodyColor = StudyUi.body(widget.isDarkMode);
+    final logsInRange = widget.controller.studyLogs
+        .where((item) =>
+            !item.date.isBefore(_startDate) && !item.date.isAfter(_endDate))
+        .length;
+    final tasksInRange = widget.controller.studyTasks
+        .where((item) =>
+            !item.deadline.isBefore(_startDate) &&
+            !item.deadline.isAfter(_endDate))
+        .length;
+    final savedReportCount = widget.controller.weeklyReports.length;
 
     return Scaffold(
-      backgroundColor:
-          widget.isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: textColor,
-        title: const Text(
-          '生成学习周报',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        actions: [
-          if (_reportContent != null)
-            IconButton(
-              icon: const Icon(Icons.copy_rounded),
-              tooltip: '复制到剪贴板',
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: _reportContent!));
-                StudyToast.show(context, '已复制到剪贴板');
-              },
-            ),
-          if (_reportContent != null)
-            IconButton(
-              icon: const Icon(Icons.description_rounded),
-              tooltip: '导出 Markdown',
-              onPressed:
-                  _isExporting ? null : () => _exportReport(asPdf: false),
-            ),
-          if (_reportContent != null)
-            IconButton(
-              icon: const Icon(Icons.picture_as_pdf_rounded),
-              tooltip: '导出 PDF',
-              onPressed: _isExporting ? null : () => _exportReport(asPdf: true),
-            ),
-          if (_reportContent != null)
-            IconButton(
-              icon: const Icon(Icons.save_rounded),
-              tooltip: '保存为历史周报',
-              onPressed: () async {
-                await widget.controller.saveWeeklyReport(
-                  _reportContent!,
-                  startDate: _startDate,
-                  endDate: _endDate,
-                );
-                if (context.mounted) {
-                  StudyToast.show(context, '周报已保存');
-                }
-              },
-            ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
-        children: [
-          // Date range selector
-          Row(
+      backgroundColor: StudyUi.background(widget.isDarkMode),
+      body: StudyScreenBackground(
+        isDarkMode: widget.isDarkMode,
+        accent: accent,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(22, 12, 22, 34),
             children: [
-              Expanded(
-                child: _DateButton(
-                  label: '开始日期',
-                  date: _startDate,
-                  isDarkMode: widget.isDarkMode,
-                  onPick: (picked) => setState(() => _startDate = picked),
-                  accentColor: accent,
+              _WeeklyReportTopBar(
+                isDarkMode: widget.isDarkMode,
+                accent: accent,
+              ),
+              const SizedBox(height: 14),
+              StudyPathHero(
+                isDarkMode: widget.isDarkMode,
+                accent: accent,
+                badge: '每周回顾',
+                title: _reportContent == null ? '整理这 7 天的学习轨迹' : '本周学习轨迹已整理好',
+                subtitle: _reportContent == null
+                    ? '把日志、任务和复盘材料整理成一份可以保存的每周回顾。'
+                    : '可以复制、保存为文档，或留到每周回顾里。',
+                icon: Icons.summarize_rounded,
+                steps: const ['范围', '整理', '文档', '保存'],
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: StudyPathMetricPill(
+                            label: '学习日志',
+                            value: '$logsInRange',
+                            icon: Icons.menu_book_rounded,
+                            color: StudyUi.pathBlue,
+                            isDarkMode: widget.isDarkMode,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: StudyPathMetricPill(
+                            label: '相关任务',
+                            value: '$tasksInRange',
+                            icon: Icons.task_alt_rounded,
+                            color: StudyUi.success,
+                            isDarkMode: widget.isDarkMode,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    StudyPathMetricPill(
+                      label: '时间范围',
+                      value:
+                          '${_shortDate(_startDate)} - ${_shortDate(_endDate)}',
+                      icon: Icons.date_range_rounded,
+                      color: StudyUi.pathWarm,
+                      isDarkMode: widget.isDarkMode,
+                    ),
+                  ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Icon(Icons.arrow_forward_rounded,
-                    color:
-                        widget.isDarkMode ? Colors.white54 : AppColors.muted),
+              const SizedBox(height: 16),
+              _WeeklyReportInsightStrip(
+                isDarkMode: widget.isDarkMode,
+                goodText: logsInRange > 0
+                    ? '本周沉淀了 $logsInRange 条学习记录，可以继续保留这个复盘节奏。'
+                    : '先记录一次学习现场，每周回顾会更有抓手。',
+                adjustText: tasksInRange > 0
+                    ? '把 $tasksInRange 个相关任务再拆小，避免集中到最后一天。'
+                    : '本周任务还没有进入回顾范围，可以先补一个下一步。',
+                nextText: _reportContent == null
+                    ? '整理后保存到每周回顾，方便下周接着复盘。'
+                    : '每周回顾已经生成，可以保存为文档或留到回顾里。',
+                routeText:
+                    '已保存 $savedReportCount 份回顾 · ${_shortDate(_startDate)} - ${_shortDate(_endDate)}',
               ),
-              Expanded(
-                child: _DateButton(
-                  label: '结束日期',
-                  date: _endDate,
-                  isDarkMode: widget.isDarkMode,
-                  onPick: (picked) => setState(() => _endDate = picked),
-                  accentColor: accent,
+              const SizedBox(height: 16),
+              StudyCard(
+                color: StudyUi.surface(widget.isDarkMode)
+                    .withValues(alpha: widget.isDarkMode ? 0.82 : 0.88),
+                borderColor: Colors.white
+                    .withValues(alpha: widget.isDarkMode ? 0.10 : 0.70),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        StudyGlassIconNode(
+                          icon: Icons.event_note_rounded,
+                          accent: accent,
+                          size: 42,
+                          iconSize: 20,
+                          isDarkMode: widget.isDarkMode,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '回顾范围',
+                                style: TextStyle(
+                                  color: StudyUi.title(widget.isDarkMode),
+                                  fontSize: 16,
+                                  fontWeight: AppTypography.title,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '选择要整理的学习记录时间段。',
+                                style: TextStyle(
+                                  color: bodyColor,
+                                  fontSize: 12,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _DateButton(
+                            label: '开始',
+                            date: _startDate,
+                            isDarkMode: widget.isDarkMode,
+                            onTap: () => _pickDate(isStart: true),
+                            accentColor: accent,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Icon(
+                            Icons.arrow_forward_rounded,
+                            color: StudyUi.muted(widget.isDarkMode),
+                            size: 18,
+                          ),
+                        ),
+                        Expanded(
+                          child: _DateButton(
+                            label: '结束',
+                            date: _endDate,
+                            isDarkMode: widget.isDarkMode,
+                            onTap: () => _pickDate(isStart: false),
+                            accentColor: StudyUi.pathWarm,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _ReportPrimaryButton(
+                      key: const Key('do_generate_report_button'),
+                      label: _isGenerating ? '整理中...' : '整理每周回顾',
+                      icon: Icons.auto_awesome_rounded,
+                      color: accent,
+                      isDarkMode: widget.isDarkMode,
+                      onTap: _isGenerating ? null : _generate,
+                    ),
+                  ],
                 ),
               ),
+              if (_reportContent != null) ...[
+                const SizedBox(height: 16),
+                StudyCard(
+                  color: StudyUi.surface(widget.isDarkMode)
+                      .withValues(alpha: widget.isDarkMode ? 0.84 : 0.90),
+                  borderColor: Colors.white
+                      .withValues(alpha: widget.isDarkMode ? 0.10 : 0.70),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          StudyGlassIconNode(
+                            icon: Icons.description_rounded,
+                            accent: StudyUi.secondary,
+                            size: 42,
+                            iconSize: 20,
+                            isDarkMode: widget.isDarkMode,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '回顾内容',
+                                  style: TextStyle(
+                                    color: StudyUi.title(widget.isDarkMode),
+                                    fontSize: 16,
+                                    fontWeight: AppTypography.title,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '整理完成后可以复制、保存为文档或留到每周回顾。',
+                                  style: TextStyle(
+                                    color: bodyColor,
+                                    fontSize: 12,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _ReportActionPill(
+                            label: '复制',
+                            icon: Icons.copy_rounded,
+                            color: StudyUi.pathBlue,
+                            isDarkMode: widget.isDarkMode,
+                            onTap: _copyReport,
+                          ),
+                          _ReportActionPill(
+                            label: _isExporting ? '保存中' : '保存为文档',
+                            icon: Icons.description_rounded,
+                            color: StudyUi.secondary,
+                            isDarkMode: widget.isDarkMode,
+                            onTap: _isExporting
+                                ? null
+                                : () => _exportReport(asPdf: false),
+                          ),
+                          _ReportActionPill(
+                            label: _isExporting ? '保存中' : '保存为 PDF',
+                            icon: Icons.picture_as_pdf_rounded,
+                            color: StudyUi.pathWarm,
+                            isDarkMode: widget.isDarkMode,
+                            onTap: _isExporting
+                                ? null
+                                : () => _exportReport(asPdf: true),
+                          ),
+                          _ReportActionPill(
+                            label: _isSaving ? '保存中' : '保存',
+                            icon: Icons.save_rounded,
+                            color: StudyUi.success,
+                            filled: true,
+                            isDarkMode: widget.isDarkMode,
+                            onTap: _isSaving ? null : _saveReport,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: StudyUi.surfaceAlt(widget.isDarkMode)
+                              .withValues(
+                                  alpha: widget.isDarkMode ? 0.78 : 0.84),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: StudyUi.border(widget.isDarkMode),
+                          ),
+                        ),
+                        child: Text(
+                          _reportContent!,
+                          style: TextStyle(
+                            color: bodyColor,
+                            height: 1.62,
+                            fontSize: 13.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 50,
-            child: ElevatedButton(
-              key: const Key('do_generate_report_button'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: accent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                elevation: 0,
-              ),
-              onPressed: _isGenerating ? null : _generate,
-              child: Text(
-                _isGenerating ? '生成中...' : '生成周报',
-                style:
-                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-              ),
-            ),
-          ),
-          if (_reportContent != null) ...[
-            const SizedBox(height: 20),
-            Text(
-              '周报内容',
-              style: TextStyle(
-                color: widget.isDarkMode ? Colors.white : Colors.black,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                color: widget.isDarkMode
-                    ? const Color(0xFF242B37).withValues(alpha: 0.92)
-                    : Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.isDarkMode
-                        ? Colors.black.withValues(alpha: 0.2)
-                        : const Color(0x10121A36),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Text(
-                _reportContent!,
-                style: TextStyle(
-                  color: bodyColor,
-                  height: 1.65,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
+  }
+
+  String _shortDate(DateTime date) {
+    return '${date.month}/${date.day}';
   }
 
   WeeklyReportItem _previewReportItem() {
@@ -1539,17 +2379,268 @@ class _WeeklyReportPageState extends State<_WeeklyReportPage> {
           : await _exportService.exportWeeklyReportMarkdown(report);
       await Clipboard.setData(ClipboardData(text: file.path));
       if (!mounted) return;
-      StudyToast.show(context, '已导出${asPdf ? ' PDF' : ' Markdown'}，文件路径已复制');
+      StudyToast.show(context, '已保存${asPdf ? ' PDF' : '文档'}，文件位置已复制');
     } catch (error) {
       if (!mounted) return;
       StudyToast.dialog(
         context,
-        title: '导出失败',
-        message: '$error',
+        title: '保存失败',
+        message: '这次没有保存成功，请稍后再试。',
       );
     } finally {
       if (mounted) setState(() => _isExporting = false);
     }
+  }
+}
+
+class _WeeklyReportInsightStrip extends StatelessWidget {
+  const _WeeklyReportInsightStrip({
+    required this.isDarkMode,
+    required this.goodText,
+    required this.adjustText,
+    required this.nextText,
+    required this.routeText,
+  });
+
+  final bool isDarkMode;
+  final String goodText;
+  final String adjustText;
+  final String nextText;
+  final String routeText;
+
+  @override
+  Widget build(BuildContext context) {
+    return StudyCard(
+      color: StudyUi.surface(isDarkMode)
+          .withValues(alpha: isDarkMode ? 0.82 : 0.90),
+      borderColor: Colors.white.withValues(alpha: isDarkMode ? 0.10 : 0.72),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _WeeklyReportInsightTile(
+            isDarkMode: isDarkMode,
+            icon: Icons.thumb_up_alt_rounded,
+            accent: StudyUi.pathMint,
+            title: '做得好的',
+            text: goodText,
+          ),
+          const SizedBox(height: 10),
+          _WeeklyReportInsightTile(
+            isDarkMode: isDarkMode,
+            icon: Icons.tune_rounded,
+            accent: StudyUi.pathWarm,
+            title: '需要调整',
+            text: adjustText,
+          ),
+          const SizedBox(height: 10),
+          _WeeklyReportInsightTile(
+            isDarkMode: isDarkMode,
+            icon: Icons.near_me_rounded,
+            accent: StudyUi.secondary,
+            title: '下一步建议',
+            text: nextText,
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: StudyUi.surfaceAlt(isDarkMode)
+                  .withValues(alpha: isDarkMode ? 0.72 : 0.86),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: StudyUi.border(isDarkMode)),
+            ),
+            child: Row(
+              children: [
+                StudyGlassIconNode(
+                  icon: Icons.timeline_rounded,
+                  accent: StudyUi.pathCyan,
+                  size: 36,
+                  iconSize: 17,
+                  isDarkMode: isDarkMode,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '本周学习路线回顾',
+                        style: TextStyle(
+                          color: StudyUi.title(isDarkMode),
+                          fontSize: 14,
+                          fontWeight: AppTypography.title,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        routeText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: StudyUi.body(isDarkMode),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyReportInsightTile extends StatelessWidget {
+  const _WeeklyReportInsightTile({
+    required this.isDarkMode,
+    required this.icon,
+    required this.accent,
+    required this.title,
+    required this.text,
+  });
+
+  final bool isDarkMode;
+  final IconData icon;
+  final Color accent;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: StudyUi.chipBackground(accent, isDarkMode),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: accent.withValues(alpha: isDarkMode ? 0.24 : 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          StudyGlassIconNode(
+            icon: icon,
+            accent: accent,
+            size: 36,
+            iconSize: 17,
+            isDarkMode: isDarkMode,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: StudyUi.title(isDarkMode),
+                    fontSize: 14,
+                    fontWeight: AppTypography.title,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: StudyUi.body(isDarkMode),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyReportTopBar extends StatelessWidget {
+  const _WeeklyReportTopBar({
+    required this.isDarkMode,
+    required this.accent,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return StudyCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+      color: StudyUi.surface(isDarkMode)
+          .withValues(alpha: isDarkMode ? 0.78 : 0.86),
+      borderColor: Colors.white.withValues(alpha: isDarkMode ? 0.10 : 0.72),
+      child: Row(
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).maybePop(),
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: StudyUi.chipBackground(accent, isDarkMode),
+                border: Border.all(
+                  color: accent.withValues(alpha: isDarkMode ? 0.28 : 0.18),
+                ),
+              ),
+              child: Icon(
+                Icons.arrow_back_rounded,
+                color: StudyUi.title(isDarkMode),
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          StudyGlassIconNode(
+            icon: Icons.summarize_rounded,
+            accent: accent,
+            size: 42,
+            iconSize: 20,
+            isDarkMode: isDarkMode,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '每周回顾',
+                  style: TextStyle(
+                    color: StudyUi.title(isDarkMode),
+                    fontSize: 18,
+                    fontWeight: AppTypography.title,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '把一周学习整理成可回看的轨迹。',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: StudyUi.body(isDarkMode),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1558,49 +2649,219 @@ class _DateButton extends StatelessWidget {
     required this.label,
     required this.date,
     required this.isDarkMode,
-    required this.onPick,
+    required this.onTap,
     required this.accentColor,
   });
 
   final String label;
   final DateTime date;
   final bool isDarkMode;
-  final ValueChanged<DateTime> onPick;
+  final VoidCallback onTap;
   final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: isDarkMode ? Colors.white : accentColor,
-        side: BorderSide(
-          color:
-              isDarkMode ? Colors.white24 : accentColor.withValues(alpha: 0.2),
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      ),
-      onPressed: () async {
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: date,
-          firstDate: DateTime(2024),
-          lastDate: DateTime(2030),
-        );
-        if (picked != null) onPick(picked);
-      },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 11)),
-          const SizedBox(height: 2),
-          Text(
-            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+    final dateLabel =
+        '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: StudyUi.chipBackground(accentColor, isDarkMode),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: accentColor.withValues(alpha: isDarkMode ? 0.24 : 0.18),
           ),
-        ],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_month_rounded,
+              color: accentColor,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: StudyUi.body(isDarkMode),
+                      fontSize: 11,
+                      fontWeight: AppTypography.title,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    dateLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: StudyUi.title(isDarkMode),
+                      fontSize: 13,
+                      fontWeight: AppTypography.hero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportPrimaryButton extends StatelessWidget {
+  const _ReportPrimaryButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool isDarkMode;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    return Opacity(
+      opacity: disabled ? 0.56 : 1,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                color,
+                Color.alphaBlend(
+                  Colors.white.withValues(alpha: isDarkMode ? 0.08 : 0.16),
+                  color,
+                ),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: isDarkMode ? 0.16 : 0.50),
+            ),
+            boxShadow: [
+              if (!disabled)
+                BoxShadow(
+                  color: color.withValues(alpha: isDarkMode ? 0.16 : 0.22),
+                  blurRadius: 18,
+                  offset: const Offset(0, 9),
+                ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: AppTypography.title,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportActionPill extends StatelessWidget {
+  const _ReportActionPill({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.isDarkMode,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool isDarkMode;
+  final VoidCallback? onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    final foreground = filled ? Colors.white : color;
+    return Opacity(
+      opacity: disabled ? 0.50 : 1,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          decoration: BoxDecoration(
+            color: filled ? color : StudyUi.chipBackground(color, isDarkMode),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: filled
+                  ? Colors.white.withValues(alpha: isDarkMode ? 0.12 : 0.36)
+                  : color.withValues(alpha: isDarkMode ? 0.24 : 0.18),
+            ),
+            boxShadow: filled && !disabled
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: isDarkMode ? 0.18 : 0.24),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: foreground, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 13,
+                  fontWeight: AppTypography.title,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1613,6 +2874,7 @@ class _ForegroundSurface extends StatelessWidget {
     required this.isDarkMode,
     required this.isMenuOpen,
     required this.useHomeBackground,
+    required this.showMenuButton,
     required this.menuWidth,
     required this.screenWidth,
     required this.progress,
@@ -1630,6 +2892,7 @@ class _ForegroundSurface extends StatelessWidget {
   final bool isDarkMode;
   final bool isMenuOpen;
   final bool useHomeBackground;
+  final bool showMenuButton;
   final double menuWidth;
   final double screenWidth;
   final double progress;
@@ -1646,8 +2909,8 @@ class _ForegroundSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final translateY = lerpDouble(0, 0, progress)!;
-    final scale = lerpDouble(1, 0.8, progress)!;
-    final rotateY = lerpDouble(0, 1 - 30 * math.pi / 180, progress)!;
+    final scale = lerpDouble(1, 0.84, progress)!;
+    final rotateY = lerpDouble(0, 18 * math.pi / 180, progress)!;
     final radius = lerpDouble(0, 24, progress)!;
     final revealedMenuEdge = menuWidth * progress;
     final scaledInset = screenWidth * (1 - scale) / 2;
@@ -1658,7 +2921,7 @@ class _ForegroundSurface extends StatelessWidget {
     );
 
     final transform = Matrix4.identity()
-      ..setEntry(3, 2, 0.0012)
+      ..setEntry(3, 2, 0.0009)
       ..translateByDouble(translateX, translateY, 0, 1)
       ..rotateY(rotateY)
       ..scaleByDouble(scale, scale, 1, 1);
@@ -1677,14 +2940,14 @@ class _ForegroundSurface extends StatelessWidget {
                   ),
                 ),
               )
-            : const DecoratedBox(
+            : DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.white70,
-                      Color(0xFFF2F5FC),
+                      StudyUi.background(false),
                     ],
                   ),
                 ),
@@ -1735,14 +2998,41 @@ class _ForegroundSurface extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (showMenuButton)
+                  Positioned(
+                    left: 16,
+                    top: 38,
+                    child: _MenuButton(
+                      isDarkMode: isDarkMode,
+                      isMenuOpen: isMenuOpen,
+                      progress: progress,
+                      onTap: onMenuTap,
+                    ),
+                  ),
                 Positioned(
-                  left: 16,
-                  top: 38,
-                  child: _MenuButton(
-                    isDarkMode: isDarkMode,
-                    isMenuOpen: isMenuOpen,
-                    progress: progress,
-                    onTap: onMenuTap,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: safeBottom + 118,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: isDarkMode
+                              ? [
+                                  Colors.transparent,
+                                  const Color(0xFF0A1020)
+                                      .withValues(alpha: 0.78),
+                                ]
+                              : [
+                                  Colors.transparent,
+                                  Colors.white.withValues(alpha: 0.9),
+                                ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -1961,33 +3251,43 @@ class _BottomNav extends StatelessWidget {
       offset: Offset(0, 100 * progress),
       child: IgnorePointer(
         ignoring: progress > 0.55,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: isDarkMode ? 0.18 : 0.68),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: isDarkMode ? 0.16 : 0.48),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF17203A).withValues(alpha: 0.16),
-                offset: const Offset(0, 20),
-                blurRadius: 20,
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              for (final tab in PrimaryTab.values)
-                _BottomNavItem(
-                  tab: tab,
-                  isActive: currentTab == tab,
-                  isDarkMode: isDarkMode,
-                  onTap: () => onSelected(tab),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 9),
+              decoration: BoxDecoration(
+                color: isDarkMode
+                    ? const Color(0xFF111726).withValues(alpha: 0.94)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isDarkMode
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : Colors.white.withValues(alpha: 0.8),
                 ),
-            ],
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF17203A).withValues(alpha: 0.18),
+                    offset: const Offset(0, 18),
+                    blurRadius: 28,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (final tab in PrimaryTab.values)
+                    _BottomNavItem(
+                      tab: tab,
+                      isActive: currentTab == tab,
+                      isDarkMode: isDarkMode,
+                      onTap: () => onSelected(tab),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1995,7 +3295,7 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-class _BottomNavItem extends StatefulWidget {
+class _BottomNavItem extends StatelessWidget {
   const _BottomNavItem({
     required this.tab,
     required this.isActive,
@@ -2008,52 +3308,21 @@ class _BottomNavItem extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_BottomNavItem> createState() => _BottomNavItemState();
-}
-
-class _BottomNavItemState extends State<_BottomNavItem>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _iconController;
-
-  @override
-  void initState() {
-    super.initState();
-    _iconController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-      value: widget.isActive ? 1 : 0,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _BottomNavItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isActive && widget.isActive) {
-      _iconController.forward(from: 0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _iconController.dispose();
-    super.dispose();
-  }
-
-  void _handleTap() {
-    _iconController.forward(from: 0);
-    widget.onTap();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final activeColor = const Color(0xFF4470E8);
+    final inactiveColor = isDarkMode
+        ? Colors.white.withValues(alpha: 0.62)
+        : const Color(0xFF6E7687);
+    final labelColor = isActive ? activeColor : inactiveColor;
+    final iconColor = isActive ? activeColor : inactiveColor;
     return Semantics(
       button: true,
-      selected: widget.isActive,
-      label: widget.tab.label,
+      selected: isActive,
+      label: tab.label,
       child: GestureDetector(
-        key: Key('bottom_nav_${widget.tab.name}'),
+        key: Key('bottom_nav_${tab.name}'),
         behavior: HitTestBehavior.opaque,
-        onTap: _handleTap,
+        onTap: onTap,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2062,34 +3331,44 @@ class _BottomNavItemState extends State<_BottomNavItem>
               duration: const Duration(milliseconds: 200),
               curve: Curves.fastOutSlowIn,
               height: 4,
-              width: widget.isActive ? 20 : 0,
+              width: isActive ? 20 : 0,
               decoration: BoxDecoration(
                 color: const Color(0xFF81B4FF),
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            SizedBox(
-              height: 36,
-              width: 36,
-              child: Opacity(
-                opacity: widget.isActive ? 1 : 0.5,
-                child: ColorFiltered(
-                  colorFilter: ColorFilter.mode(
-                    widget.isDarkMode ? Colors.white : Colors.transparent,
-                    widget.isDarkMode ? BlendMode.srcATop : BlendMode.dst,
-                  ),
-                  child: Lottie.asset(
-                    widget.tab.navLordiconAsset,
-                    controller: _iconController,
-                    repeat: false,
-                    onLoaded: (composition) {
-                      _iconController.duration = composition.duration;
-                      if (widget.isActive && _iconController.value == 0) {
-                        _iconController.value = 1;
-                      }
-                    },
-                  ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              height: 34,
+              width: 44,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? activeColor.withValues(alpha: isDarkMode ? 0.18 : 0.10)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isActive
+                      ? activeColor.withValues(alpha: isDarkMode ? 0.26 : 0.18)
+                      : Colors.transparent,
                 ),
+              ),
+              child: Icon(
+                tab.icon,
+                color: iconColor,
+                size: 22,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              tab.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: labelColor,
+                fontSize: 10,
+                height: 1,
+                fontWeight: isActive ? AppTypography.title : FontWeight.w600,
               ),
             ),
           ],
@@ -2161,43 +3440,14 @@ class _SideMenuState extends State<_SideMenu> {
                             vertical: 4, horizontal: 4),
                         child: Row(
                           children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                color: widget.controller.userProfile
-                                            .avatarImagePath ==
-                                        null
-                                    ? accent.withValues(alpha: 0.18)
-                                    : null,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.16),
-                                ),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: widget.controller.userProfile
-                                          .avatarImagePath !=
-                                      null
-                                  ? localImageFromPath(
-                                      widget.controller.userProfile
-                                          .avatarImagePath!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Center(
-                                        child: Text(
-                                            widget.controller.userProfile
-                                                .avatarEmoji,
-                                            style:
-                                                const TextStyle(fontSize: 22)),
-                                      ),
-                                    )
-                                  : Center(
-                                      child: Text(
-                                        widget
-                                            .controller.userProfile.avatarEmoji,
-                                        style: const TextStyle(fontSize: 22),
-                                      ),
-                                    ),
+                            StudyUserAvatar(
+                              avatarImagePath:
+                                  widget.controller.userProfile.avatarImagePath,
+                              avatarEmoji:
+                                  widget.controller.userProfile.avatarEmoji,
+                              size: 42,
+                              accent: accent,
+                              isDarkMode: true,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -2236,7 +3486,9 @@ class _SideMenuState extends State<_SideMenu> {
                     ),
                     const SizedBox(height: 22),
                     _SideMenuActionItem(
-                      label: 'AI学习助手',
+                      label: '学习助手',
+                      asset: AppAssets.sideAiAssistantIcon,
+                      accent: AdminSection.aiAssistant.accent,
                       fallbackIcon: Icons.smart_toy_rounded,
                       selected:
                           widget.currentSection == AdminSection.aiAssistant,
@@ -2244,15 +3496,18 @@ class _SideMenuState extends State<_SideMenu> {
                     ),
                     const SizedBox(height: 10),
                     _SideMenuActionItem(
-                      label: 'AI设置',
-                      fallbackIcon: Icons.tune_rounded,
-                      selected:
-                          widget.currentSection == AdminSection.aiSettings,
-                      onTap: () => widget.onSelected(AdminSection.aiSettings),
+                      label: '学习笔记',
+                      asset: AppAssets.featureNotesIcon,
+                      accent: AdminSection.notes.accent,
+                      fallbackIcon: Icons.menu_book_rounded,
+                      selected: widget.currentSection == AdminSection.notes,
+                      onTap: () => widget.onSelected(AdminSection.notes),
                     ),
                     const SizedBox(height: 10),
                     _SideMenuActionItem(
                       label: '学迹动态',
+                      asset: AppAssets.sideMomentsIcon,
+                      accent: AdminSection.learningMoments.accent,
                       fallbackIcon: Icons.dynamic_feed_rounded,
                       selected:
                           widget.currentSection == AdminSection.learningMoments,
@@ -2262,54 +3517,20 @@ class _SideMenuState extends State<_SideMenu> {
                     const SizedBox(height: 10),
                     _SideMenuActionItem(
                       label: '数据看板',
+                      asset: AppAssets.sideDashboardIcon,
+                      accent: AdminSection.analytics.accent,
                       fallbackIcon: Icons.insights_rounded,
                       selected: widget.currentSection == AdminSection.analytics,
                       onTap: () => widget.onSelected(AdminSection.analytics),
                     ),
                     const SizedBox(height: 10),
                     _SideMenuActionItem(
-                      label: '系统设置',
+                      label: '设置',
+                      asset: AppAssets.sideSettingsIcon,
+                      accent: AdminSection.settings.accent,
                       fallbackIcon: Icons.settings_rounded,
                       selected: widget.currentSection == AdminSection.settings,
                       onTap: () => widget.onSelected(AdminSection.settings),
-                    ),
-                    const SizedBox(height: 10),
-                    _SideMenuActionItem(
-                      label: '成就殿堂',
-                      fallbackIcon: Icons.emoji_events_rounded,
-                      selected:
-                          widget.currentSection == AdminSection.achievements,
-                      onTap: () => widget.onSelected(AdminSection.achievements),
-                    ),
-                    const SizedBox(height: 10),
-                    _SideMenuActionItem(
-                      label: '知识图谱',
-                      fallbackIcon: Icons.account_tree_rounded,
-                      selected:
-                          widget.currentSection == AdminSection.knowledgeGraph,
-                      onTap: () =>
-                          widget.onSelected(AdminSection.knowledgeGraph),
-                    ),
-                    const SizedBox(height: 10),
-                    _SideMenuActionItem(
-                      label: 'AI操作记录',
-                      fallbackIcon: Icons.history_rounded,
-                      selected: widget.currentSection == AdminSection.auditLog,
-                      onTap: () => widget.onSelected(AdminSection.auditLog),
-                    ),
-                    const SizedBox(height: 10),
-                    _SideMenuActionItem(
-                      label: '回收站',
-                      fallbackIcon: Icons.delete_outline_rounded,
-                      selected: widget.currentSection == AdminSection.trash,
-                      onTap: () => widget.onSelected(AdminSection.trash),
-                    ),
-                    const SizedBox(height: 10),
-                    _SideMenuActionItem(
-                      label: '应用介绍',
-                      fallbackIcon: Icons.info_rounded,
-                      selected: widget.currentSection == AdminSection.overview,
-                      onTap: () => widget.onSelected(AdminSection.overview),
                     ),
                     const SizedBox(height: 16),
                     _ThemeModeButton(
@@ -2327,82 +3548,165 @@ class _SideMenuState extends State<_SideMenu> {
   }
 }
 
-class _SideMenuActionItem extends StatelessWidget {
+class _SideMenuActionItem extends StatefulWidget {
   const _SideMenuActionItem({
     required this.label,
+    required this.asset,
+    required this.accent,
     required this.fallbackIcon,
     required this.onTap,
     this.selected = false,
   });
 
   final String label;
+  final String asset;
+  final Color accent;
   final IconData fallbackIcon;
   final VoidCallback onTap;
   final bool selected;
 
   @override
+  State<_SideMenuActionItem> createState() => _SideMenuActionItemState();
+}
+
+class _SideMenuActionItemState extends State<_SideMenuActionItem> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final active = widget.selected || _hovered || _pressed;
     return LayoutBuilder(
       builder: (context, constraints) {
-        return GestureDetector(
-          onTap: onTap,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              height: 56,
-              child: Stack(
-                children: [
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.fastOutSlowIn,
-                    width: selected ? constraints.maxWidth : 0,
-                    height: 56,
-                    left: 0,
-                    top: 0,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6792FF),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? Colors.transparent
-                            : Colors.white.withValues(alpha: 0.04),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: Row(
-                          children: [
-                            SizedBox.square(
-                              dimension: 28,
-                              child: Icon(
-                                fallbackIcon,
-                                color: Colors.white.withValues(
-                                  alpha: selected ? 1 : 0.9,
-                                ),
-                                size: 23,
-                              ),
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => _setHovered(true),
+          onExit: (_) {
+            _setHovered(false);
+            _setPressed(false);
+          },
+          child: GestureDetector(
+            onTap: widget.onTap,
+            onTapDown: (_) => _setPressed(true),
+            onTapCancel: () => _setPressed(false),
+            onTapUp: (_) => _setPressed(false),
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOutCubic,
+              scale: _pressed ? 0.985 : 1,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: SizedBox(
+                  height: 58,
+                  child: Stack(
+                    children: [
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 320),
+                        curve: Curves.fastOutSlowIn,
+                        width: widget.selected ? constraints.maxWidth : 0,
+                        height: 58,
+                        left: 0,
+                        top: 0,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                widget.accent.withValues(alpha: 0.80),
+                                widget.accent.withValues(alpha: 0.46),
+                              ],
                             ),
-                            const SizedBox(width: 14),
-                            Text(
-                              label,
-                              style: TextStyle(
-                                color: Colors.white
-                                    .withValues(alpha: selected ? 1 : 0.86),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
                             ),
-                          ],
+                            boxShadow: [
+                              BoxShadow(
+                                color: widget.accent.withValues(alpha: 0.24),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                      Positioned.fill(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          decoration: BoxDecoration(
+                            color: widget.selected
+                                ? Colors.transparent
+                                : Colors.white.withValues(
+                                    alpha: active ? 0.08 : 0.045,
+                                  ),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(
+                                alpha: widget.selected ? 0.20 : 0.06,
+                              ),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              children: [
+                                StudyGlassIconNode(
+                                  asset: widget.asset,
+                                  icon: widget.fallbackIcon,
+                                  accent: widget.selected
+                                      ? Colors.white
+                                      : widget.accent,
+                                  size: 38,
+                                  iconSize: 27,
+                                  isDarkMode: true,
+                                  preserveColor: true,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    widget.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: widget.selected ? 1 : 0.88,
+                                      ),
+                                      fontSize: 15,
+                                      fontWeight: widget.selected
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 160),
+                                  opacity: widget.selected ? 1 : 0,
+                                  child: Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: Colors.white.withValues(alpha: 0.78),
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

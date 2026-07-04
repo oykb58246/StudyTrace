@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:studytrace/src/models/ai_app_action.dart';
+import 'package:studytrace/src/models/vivo_capability.dart';
 
 void main() {
   group('aiAppActionTypeFromWire - 精确命名空间匹配', () {
@@ -21,13 +22,13 @@ void main() {
     });
 
     test('危险类精确匹配', () {
-      expect(aiAppActionTypeFromWire('task.delete'),
-          AiAppActionType.deleteTask);
+      expect(
+          aiAppActionTypeFromWire('task.delete'), AiAppActionType.deleteTask);
       expect(aiAppActionTypeFromWire('note.overwrite'),
           AiAppActionType.overwriteNote);
       expect(aiAppActionTypeFromWire('auth.logout'), AiAppActionType.logout);
-      expect(aiAppActionTypeFromWire('trash.empty'),
-          AiAppActionType.emptyTrash);
+      expect(
+          aiAppActionTypeFromWire('trash.empty'), AiAppActionType.emptyTrash);
     });
 
     test('Phase 2 扩展', () {
@@ -46,18 +47,16 @@ void main() {
     });
 
     test('中文别名', () {
-      expect(aiAppActionTypeFromWire('生成周报'),
-          AiAppActionType.openWeeklyReport);
-      expect(aiAppActionTypeFromWire('系统设置'),
-          AiAppActionType.openSystemSettings);
+      expect(aiAppActionTypeFromWire('生成周报'), AiAppActionType.openWeeklyReport);
       expect(
-          aiAppActionTypeFromWire('清空回收站'), AiAppActionType.emptyTrash);
+          aiAppActionTypeFromWire('系统设置'), AiAppActionType.openSystemSettings);
+      expect(aiAppActionTypeFromWire('清空回收站'), AiAppActionType.emptyTrash);
     });
 
     test('同义词', () {
       expect(aiAppActionTypeFromWire('create_task'), AiAppActionType.addTask);
-      expect(aiAppActionTypeFromWire('remove_task'),
-          AiAppActionType.deleteTask);
+      expect(
+          aiAppActionTypeFromWire('remove_task'), AiAppActionType.deleteTask);
       expect(aiAppActionTypeFromWire('update_note'),
           AiAppActionType.overwriteNote);
     });
@@ -130,6 +129,50 @@ void main() {
         final wire = aiAppActionTypeToWire(type);
         expect(wire, isNotEmpty, reason: '$type 缺少 wire 映射');
       }
+    });
+  });
+
+  group('GeneratedImageTask.fromJson - 图片 URL 兼容解析', () {
+    test('兼容 vivo snake_case 与 images 对象数组', () {
+      final task = GeneratedImageTask.fromJson({
+        'trace_id': 'task_sync_image',
+        'status': 'succeeded',
+        'images': [
+          {'url': 'https://img.example.com/note-diagram.png'},
+        ],
+        'finish_reason': 'stop',
+      });
+
+      expect(task.taskId, 'task_sync_image');
+      expect(task.imagesUrl, ['https://img.example.com/note-diagram.png']);
+      expect(task.auditStatus, 'stop');
+    });
+
+    test('兼容单个 url 字段', () {
+      final task = GeneratedImageTask.fromJson({
+        'task_id': 'task_url',
+        'status': 'succeeded',
+        'url': 'https://img.example.com/single.png',
+      });
+
+      expect(task.taskId, 'task_url');
+      expect(task.imagesUrl, ['https://img.example.com/single.png']);
+    });
+
+    test('兼容嵌套 output/data 与 markdown 文本中的图片地址', () {
+      final task = GeneratedImageTask.fromJson({
+        'trace_id': 'task_nested',
+        'status': 'succeeded',
+        'data': {
+          'output': {
+            'content':
+                '生成结果：![图解](https://img.example.com/nested.png)',
+          },
+        },
+      });
+
+      expect(task.taskId, 'task_nested');
+      expect(task.imagesUrl, ['https://img.example.com/nested.png']);
     });
   });
 }

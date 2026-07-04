@@ -5,11 +5,15 @@ import 'api_client.dart';
 class VivoCapabilityService {
   VivoCapabilityService({ApiClient? apiClient}) : _api = apiClient;
 
+  static const Duration _mediaGenerationTimeout = Duration(seconds: 120);
+
   ApiClient? _api;
 
   ApiClient get api {
     final client = _api;
-    if (client == null) throw const ApiException('Backend connection is not initialized');
+    if (client == null) {
+      throw const ApiException('学习助手暂时还不能连接，请稍后再试');
+    }
     return client;
   }
 
@@ -32,14 +36,16 @@ class VivoCapabilityService {
 
   Future<GeneratedImageTask> createCover({
     required String prompt,
-    String purpose = 'evidence_cover',
+    String purpose = 'learning_review_cover',
   }) async {
-    final data = await api.postJson('/ai/images/tasks', body: {
-      'prompt': prompt,
-      'purpose': purpose,
-      'width': 768,
-      'height': 1024,
-    });
+    final data = await api.postJson(
+      '/ai/images/tasks',
+      body: {
+        'prompt': prompt,
+        'purpose': purpose,
+      },
+      timeout: _mediaGenerationTimeout,
+    );
     return GeneratedImageTask.fromJson(data);
   }
 
@@ -57,13 +63,17 @@ class VivoCapabilityService {
     String? imageUrl,
     String purpose = 'chat_video',
   }) async {
-    final data = await api.postJson('/ai/videos/tasks', body: {
-      'prompt': prompt,
-      'purpose': purpose,
-      if (imageBase64 != null && imageBase64.isNotEmpty)
-        'imageBase64': imageBase64,
-      if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
-    });
+    final data = await api.postJson(
+      '/ai/videos/tasks',
+      body: {
+        'prompt': prompt,
+        'purpose': purpose,
+        if (imageBase64 != null && imageBase64.isNotEmpty)
+          'imageBase64': imageBase64,
+        if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+      },
+      timeout: _mediaGenerationTimeout,
+    );
     return GeneratedVideoTask.fromJson(data);
   }
 

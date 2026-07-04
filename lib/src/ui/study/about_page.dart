@@ -15,124 +15,69 @@ class AboutPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDarkMode ? Colors.white : Colors.black;
-    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
-    final cardBg = isDarkMode ? const Color(0xFF1E2430) : Colors.white;
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 124),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 124),
       children: [
-        // ── 品牌区 ──
-        const SizedBox(height: 24),
-        Center(
-          child: Column(
-            children: [
-              const Image(
-                image: AssetImage('logo/app_icon_v2.png'),
-                width: 112,
-                height: 112,
-                fit: BoxFit.contain,
-              ),
-              const SizedBox(height: 16),
-              Image.asset(
-                isDarkMode ? 'logo/logo白透明.png' : 'logo/logo黑透明.png',
-                height: 34,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Text(
-                  'StudyTrace 学迹',
-                  style: TextStyle(
-                    color: titleColor,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'StudyTrace 学迹',
-                style: TextStyle(
-                  color: titleColor,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'v1.2.0',
-                style: TextStyle(
-                  color: bodyColor,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 32),
-
-        // ── 一句话介绍 ──
-        Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(24),
-            border: isDarkMode
-                ? Border.all(color: Colors.white.withValues(alpha: 0.06))
-                : null,
-            boxShadow: isDarkMode
-                ? null
-                : const [
-                    BoxShadow(
-                      color: Color(0x0C123C78),
-                      blurRadius: 20,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-          ),
+        StudyPathHero(
+          isDarkMode: isDarkMode,
+          accent: const Color(0xFF4470E8),
+          badge: 'v1.2.0',
+          title: 'StudyTrace 学迹',
+          subtitle:
+              '把学习记录、复盘、专注、闪卡和每周回顾整理成一条清楚的成长路径。',
+          icon: Icons.auto_stories_rounded,
+          steps: const ['记录', '复盘', '回顾', '成长'],
           child: Column(
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: const Color(0xFF4470E8).withValues(alpha: 0.12),
-                    ),
-                    child: const StudyAssetIcon(
-                      asset: AppAssets.aiSuggestionIcon,
-                      preserveColor: true,
-                      size: 22,
-                      fallbackIcon: Icons.lightbulb_rounded,
+                  Expanded(
+                    child: StudyPathMetricPill(
+                      label: '学习路径',
+                      value: '5 步',
+                      icon: Icons.route_rounded,
+                      color: const Color(0xFF4470E8),
+                      isDarkMode: isDarkMode,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: StudyPathMetricPill(
+                      label: '本机可用',
+                      value: '安心',
+                      icon: Icons.verified_user_rounded,
+                      color: StudyUi.success,
+                      isDarkMode: isDarkMode,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
                   Expanded(
                     child: Text(
-                      '你的学习成长管理工具',
+                      '从一次记录开始，StudyTrace 会把复盘、专注、复习和每周回顾串成可回看的学习路径。',
                       style: TextStyle(
-                        color: titleColor,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        height: 1.3,
+                        color: bodyColor,
+                        fontSize: 13,
+                        height: 1.45,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              Text(
-                'StudyTrace 帮助大学生建立高效的学习习惯：整理学习日志、拆解复杂任务、定时生成复盘周报、通过知识闪卡巩固记忆。让每一分钟的学习都有迹可循。',
-                style: TextStyle(
-                  color: bodyColor,
-                  fontSize: 14,
-                  height: 1.65,
-                ),
-              ),
             ],
           ),
         ),
+        const SizedBox(height: 18),
+
+        _sectionTitle('学习路径', titleColor),
+        const SizedBox(height: 12),
+        _LearningPathCard(isDarkMode: isDarkMode),
         const SizedBox(height: 18),
 
         // ── 核心亮点 ──
@@ -142,8 +87,8 @@ class AboutPage extends StatelessWidget {
           iconAsset: AppAssets.sideAiAssistantIcon,
           fallbackIcon: Icons.auto_awesome_rounded,
           color: const Color(0xFF4470E8),
-          title: 'AI学习助手',
-          subtitle: '自然语言生成学习日志、拆解任务、分析周报与风险提醒',
+          title: '学习助手',
+          subtitle: '用文字、图片或语音复盘，整理难点和下一步',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
@@ -166,85 +111,53 @@ class AboutPage extends StatelessWidget {
           iconAsset: AppAssets.featureNotesIcon,
           fallbackIcon: Icons.menu_book_rounded,
           color: const Color(0xFF4CB9FF),
-          title: 'Notion 风格笔记',
-          subtitle: '图文混排、代码块、文件夹管理，自由书写随心整理',
+          title: '学习笔记',
+          subtitle: '文件夹、图文和代码块统一整理，复盘时随时回看',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
           iconAsset: AppAssets.featureCalendarReportIcon,
           fallbackIcon: Icons.calendar_month_rounded,
           color: const Color(0xFFFF7C7C),
-          title: '日历 + 周报',
-          subtitle: '学习记录映射日历视图，生成每周复盘报告',
+          title: '日历 + 每周回顾',
+          subtitle: '按日期回看学习记录，整理每周收获和下周计划',
           isDarkMode: isDarkMode,
         ),
         _FeatureItem(
           iconAsset: AppAssets.featureGroupRankIcon,
           fallbackIcon: Icons.groups_rounded,
           color: const Color(0xFFFFC043),
-          title: '学习小组 + 排行榜',
-          subtitle: '和同伴交流讨论，排行榜激发良性竞争',
+          title: '学习小组 + 学习进度',
+          subtitle: '和同伴交流讨论，互相看见进步',
           isDarkMode: isDarkMode,
         ),
         const SizedBox(height: 18),
 
-        // ── 技术栈 ──
-        _sectionTitle('技术栈', titleColor),
+        _sectionTitle('关于 StudyTrace', titleColor),
         const SizedBox(height: 12),
-        _techStack(isDarkMode, bodyColor),
-        const SizedBox(height: 18),
-
-        // ── 底部 ──
-        Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(24),
-            border: isDarkMode
-                ? Border.all(color: Colors.white.withValues(alpha: 0.06))
-                : null,
-          ),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _SocialIcon(Icons.language, 'lordicon.com'),
-                  const SizedBox(width: 24),
-                  _SocialIcon(Icons.code, 'GitHub'),
-                  const SizedBox(width: 24),
-                  _SocialIcon(Icons.email_outlined, 'support@studytrace.app'),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Made with Flutter',
-                style: TextStyle(color: bodyColor, fontSize: 12),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '2025 StudyTrace Team. All rights reserved.',
-                style: TextStyle(
-                    color: bodyColor.withValues(alpha: 0.5), fontSize: 11),
-              ),
-            ],
-          ),
-        ),
+        _AppInfoCard(isDarkMode: isDarkMode),
         const SizedBox(height: 12),
         Center(
-          child: TextButton(
+          child: StudyActionPill(
+            icon: Icons.ios_share_rounded,
+            label: '分享给朋友',
+            color: const Color(0xFF4470E8),
+            isDarkMode: isDarkMode,
+            filled: false,
             onPressed: () {
               Clipboard.setData(
                   const ClipboardData(text: 'StudyTrace - 你的学习成长管理工具'));
               StudyToast.show(context, '分享文案已复制到剪贴板');
             },
-            child: Text(
-              '分享 StudyTrace 给朋友',
-              style: TextStyle(
-                color: const Color(0xFF4470E8),
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Center(
+          child: Text(
+            '感谢你把学习过程交给 StudyTrace 陪伴。',
+            style: TextStyle(
+              color: bodyColor.withValues(alpha: 0.52),
+              fontSize: 11,
             ),
           ),
         ),
@@ -266,20 +179,242 @@ class AboutPage extends StatelessWidget {
     );
   }
 
-  Widget _techStack(bool isDarkMode, Color bodyColor) {
-    final cardBg = isDarkMode ? const Color(0xFF1E2430) : Colors.white;
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+}
+
+class _LearningPathCard extends StatelessWidget {
+  const _LearningPathCard({required this.isDarkMode});
+
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final nodes = [
+      _LearningPathStep(
+        icon: Icons.edit_rounded,
+        title: '记录',
+        subtitle: '捕捉学习瞬间',
+        color: StudyUi.pathBlue,
+      ),
+      _LearningPathStep(
+        icon: Icons.pie_chart_rounded,
+        title: '复盘',
+        subtitle: '整理与反思',
+        color: StudyUi.pathMint,
+      ),
+      _LearningPathStep(
+        icon: Icons.track_changes_rounded,
+        title: '专注',
+        subtitle: '沉浸高效学习',
+        color: StudyUi.pathViolet,
+      ),
+      _LearningPathStep(
+        icon: Icons.menu_book_rounded,
+        title: '复习',
+        subtitle: '巩固关键知识',
+        color: StudyUi.secondary,
+      ),
+      _LearningPathStep(
+        icon: Icons.autorenew_rounded,
+        title: '回顾',
+        subtitle: '形成长期记忆',
+        color: StudyUi.pathWarm,
+      ),
+    ];
+
+    return StudyCard(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      borderColor: StudyUi.pathBlue.withValues(alpha: isDarkMode ? 0.18 : 0.14),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var i = 0; i < nodes.length; i++) ...[
+              _LearningPathNode(step: nodes[i], isDarkMode: isDarkMode),
+              if (i != nodes.length - 1)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    color: StudyUi.muted(isDarkMode),
+                    size: 20,
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LearningPathNode extends StatelessWidget {
+  const _LearningPathNode({
+    required this.step,
+    required this.isDarkMode,
+  });
+
+  final _LearningPathStep step;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 76,
+      child: Column(
+        children: [
+          StudyGlassIconNode(
+            icon: step.icon,
+            accent: step.color,
+            size: 48,
+            iconSize: 21,
+            isDarkMode: isDarkMode,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            step.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: StudyUi.title(isDarkMode),
+              fontSize: 14,
+              fontWeight: AppTypography.title,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            step.subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: StudyUi.body(isDarkMode),
+              fontSize: 11,
+              height: 1.25,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LearningPathStep {
+  const _LearningPathStep({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+}
+
+class _AppInfoCard extends StatelessWidget {
+  const _AppInfoCard({required this.isDarkMode});
+
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return StudyCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      borderColor: StudyUi.pathBlue.withValues(alpha: isDarkMode ? 0.18 : 0.14),
+      child: Column(
+        children: [
+          _AppInfoRow(
+            icon: Icons.layers_rounded,
+            label: '版本',
+            value: 'v1.2.0',
+            color: StudyUi.pathBlue,
+            isDarkMode: isDarkMode,
+          ),
+          _AppInfoRow(
+            icon: Icons.groups_rounded,
+            label: '出品团队',
+            value: 'StudyTrace Team',
+            color: StudyUi.secondary,
+            isDarkMode: isDarkMode,
+          ),
+          _AppInfoRow(
+            icon: Icons.public_rounded,
+            label: '了解更多',
+            value: 'www.studytrace.app',
+            color: StudyUi.pathCyan,
+            isDarkMode: isDarkMode,
+          ),
+          _AppInfoRow(
+            icon: Icons.mail_rounded,
+            label: '反馈邮箱',
+            value: 'hello@studytrace.app',
+            color: StudyUi.pathMint,
+            isDarkMode: isDarkMode,
+            showDivider: false,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AppInfoRow extends StatelessWidget {
+  const _AppInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.isDarkMode,
+    this.showDivider = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final bool isDarkMode;
+  final bool showDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
       children: [
-        _TechChip('Flutter', const Color(0xFF02569B), cardBg, isDarkMode),
-        _TechChip('Dart', const Color(0xFF0175C2), cardBg, isDarkMode),
-        _TechChip('云端服务', const Color(0xFF4470E8), cardBg, isDarkMode),
-        _TechChip('云端能力', const Color(0xFF4D6BFE), cardBg, isDarkMode),
-        _TechChip('Lottie', const Color(0xFF00DDB3), cardBg, isDarkMode),
-        _TechChip('Rive', const Color(0xFFFF4D6A), cardBg, isDarkMode),
-        _TechChip('ML Kit', const Color(0xFF34A853), cardBg, isDarkMode),
-        _TechChip('语音识别', const Color(0xFFF77D8E), cardBg, isDarkMode),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  color: StudyUi.title(isDarkMode),
+                  fontSize: 14,
+                  fontWeight: AppTypography.title,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: StudyUi.body(isDarkMode),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (showDivider)
+          Divider(
+            height: 1,
+            color: StudyUi.border(isDarkMode),
+          ),
       ],
     );
   }
@@ -304,44 +439,22 @@ class _FeatureItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardBg = isDarkMode ? const Color(0xFF1E2430) : Colors.white;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
+      child: StudyCard(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(20),
-          border: isDarkMode
-              ? Border.all(color: Colors.white.withValues(alpha: 0.06))
-              : null,
-          boxShadow: isDarkMode
-              ? null
-              : const [
-                  BoxShadow(
-                    color: Color(0x080E2A6A),
-                    blurRadius: 14,
-                    offset: Offset(0, 6),
-                  ),
-                ],
-        ),
+        radius: 20,
+        color: StudyUi.surface(isDarkMode),
+        borderColor: StudyUi.border(isDarkMode),
         child: Row(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                color: color.withValues(alpha: 0.12),
-              ),
-              child: Center(
-                child: StudyAssetIcon(
-                  asset: iconAsset,
-                  color: color,
-                  size: 24,
-                  fallbackIcon: fallbackIcon,
-                ),
-              ),
+            StudyGlassIconNode(
+              asset: iconAsset,
+              icon: fallbackIcon,
+              accent: color,
+              size: 46,
+              iconSize: 24,
+              isDarkMode: isDarkMode,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -351,17 +464,16 @@ class _FeatureItem extends StatelessWidget {
                   Text(
                     title,
                     style: TextStyle(
-                      color: isDarkMode ? Colors.white : Colors.black,
+                      color: StudyUi.title(isDarkMode),
                       fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: AppTypography.title,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color:
-                          isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
+                      color: StudyUi.body(isDarkMode),
                       fontSize: 13,
                       height: 1.45,
                     ),
@@ -372,52 +484,6 @@ class _FeatureItem extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _TechChip extends StatelessWidget {
-  const _TechChip(this.label, this.color, this.cardBg, this.isDarkMode);
-  final String label;
-  final Color color;
-  final Color cardBg;
-  final bool isDarkMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _SocialIcon extends StatelessWidget {
-  const _SocialIcon(this.icon, this.label);
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: const Color(0xFF8B93A7), size: 20),
-        const SizedBox(height: 4),
-        Text(label,
-            style: const TextStyle(color: Color(0xFF8B93A7), fontSize: 10)),
-      ],
     );
   }
 }

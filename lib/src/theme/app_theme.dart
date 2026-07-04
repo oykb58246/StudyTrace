@@ -86,6 +86,8 @@ ThemeData buildAppTheme() {
         borderSide: BorderSide.none,
       ),
       hintStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.muted,
         fontWeight: AppTypography.regular,
       ),
@@ -99,6 +101,8 @@ ThemeData buildAppTheme() {
         side: const BorderSide(color: Color(0xFFE3E9EF)),
       ),
       textStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.ink,
         fontSize: 14,
         fontWeight: AppTypography.medium,
@@ -111,11 +115,15 @@ ThemeData buildAppTheme() {
         borderRadius: BorderRadius.circular(20),
       ),
       titleTextStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.ink,
         fontSize: 18,
         fontWeight: AppTypography.hero,
       ),
       contentTextStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.body,
         fontSize: 14,
         height: 1.5,
@@ -134,6 +142,8 @@ ThemeData buildAppTheme() {
         backgroundColor: AppColors.ink,
         foregroundColor: Colors.white,
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),
@@ -147,6 +157,8 @@ ThemeData buildAppTheme() {
         foregroundColor: AppColors.ink,
         side: const BorderSide(color: Color(0xFFE3E9EF)),
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),
@@ -161,6 +173,8 @@ ThemeData buildAppTheme() {
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),
@@ -173,6 +187,8 @@ ThemeData buildAppTheme() {
       style: TextButton.styleFrom(
         foregroundColor: AppColors.ink,
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),
@@ -257,6 +273,8 @@ ThemeData buildDarkAppTheme() {
         borderSide: BorderSide.none,
       ),
       hintStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.darkMuted,
         fontWeight: AppTypography.regular,
       ),
@@ -270,6 +288,8 @@ ThemeData buildDarkAppTheme() {
         side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
       ),
       textStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.darkInk,
         fontSize: 14,
         fontWeight: AppTypography.medium,
@@ -282,11 +302,15 @@ ThemeData buildDarkAppTheme() {
         borderRadius: BorderRadius.circular(20),
       ),
       titleTextStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.darkInk,
         fontSize: 18,
         fontWeight: AppTypography.hero,
       ),
       contentTextStyle: const TextStyle(
+        fontFamily: AppTypography.sans,
+        fontFamilyFallback: AppTypography.fontFallbacks,
         color: AppColors.darkBody,
         fontSize: 14,
         height: 1.5,
@@ -305,6 +329,8 @@ ThemeData buildDarkAppTheme() {
         backgroundColor: AppColors.darkInk,
         foregroundColor: AppColors.darkBackground,
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),
@@ -318,6 +344,8 @@ ThemeData buildDarkAppTheme() {
         foregroundColor: AppColors.darkInk,
         side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),
@@ -332,6 +360,8 @@ ThemeData buildDarkAppTheme() {
         foregroundColor: AppColors.darkBackground,
         surfaceTintColor: Colors.transparent,
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),
@@ -344,6 +374,8 @@ ThemeData buildDarkAppTheme() {
       style: TextButton.styleFrom(
         foregroundColor: AppColors.darkInk,
         textStyle: const TextStyle(
+          fontFamily: AppTypography.sans,
+          fontFamilyFallback: AppTypography.fontFallbacks,
           fontWeight: AppTypography.emphasis,
           fontSize: 14,
         ),

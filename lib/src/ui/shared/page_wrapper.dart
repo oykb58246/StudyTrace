@@ -13,6 +13,7 @@ class PageWithBackButton extends StatelessWidget {
     this.onBack,
     this.titleIcon,
     this.accent,
+    this.compactHeader = false,
   });
 
   final String title;
@@ -21,10 +22,56 @@ class PageWithBackButton extends StatelessWidget {
   final VoidCallback? onBack;
   final IconData? titleIcon;
   final Color? accent;
+  final bool compactHeader;
 
   @override
   Widget build(BuildContext context) {
     final titleColor = StudyUi.title(isDarkMode);
+    if (compactHeader) {
+      return Scaffold(
+        backgroundColor: StudyUi.background(isDarkMode),
+        body: StudyScreenBackground(
+          isDarkMode: isDarkMode,
+          accent: accent ?? StudyUi.pathBlue,
+          child: SafeArea(
+            bottom: false,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: StudyCompactHeaderScope(
+                    enabled: true,
+                    child: child,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 4),
+                  child: IconButton(
+                    icon: Icon(Icons.arrow_back_rounded, color: titleColor),
+                    onPressed: () {
+                      if (onBack != null) {
+                        onBack!();
+                      } else {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final content = StudyScreenBackground(
+      isDarkMode: isDarkMode,
+      accent: accent ?? StudyUi.pathBlue,
+      child: StudyCompactHeaderScope(
+        enabled: false,
+        child: child,
+      ),
+    );
+
     return Scaffold(
       backgroundColor: StudyUi.background(isDarkMode),
       appBar: AppBar(
@@ -48,21 +95,12 @@ class PageWithBackButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (titleIcon != null) ...[
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: StudyUi.chipBackground(
-                          accent ?? StudyUi.primary,
-                          isDarkMode,
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        titleIcon,
-                        color: accent ?? StudyUi.primary,
-                        size: 17,
-                      ),
+                    StudyGlassIconNode(
+                      icon: titleIcon,
+                      accent: accent ?? StudyUi.pathBlue,
+                      size: 32,
+                      iconSize: 16,
+                      isDarkMode: isDarkMode,
                     ),
                     const SizedBox(width: 10),
                   ],
@@ -83,7 +121,7 @@ class PageWithBackButton extends StatelessWidget {
           },
         ),
       ),
-      body: child,
+      body: content,
     );
   }
 }

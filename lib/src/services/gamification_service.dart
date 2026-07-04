@@ -12,7 +12,7 @@ class _PointRules {
   static const int noteCreated = 3;
   static const int flashCardCreated = 2;
   static const int reportGenerated = 10;
-  static const int streakBonus = 5; // 每天连续打卡额外奖励
+  static const int streakBonus = 5; // 每天连续记录额外奖励
 }
 
 /// 游戏化服务：积分计算和成就检测
@@ -37,7 +37,7 @@ class GamificationService {
   /// 计算生成周报应得积分
   int pointsForReport() => _PointRules.reportGenerated;
 
-  /// 计算连续打卡奖励积分
+  /// 计算连续记录奖励积分
   int pointsForStreak(int streakDays) {
     if (streakDays <= 1) return 0;
     return _PointRules.streakBonus * (streakDays - 1);
@@ -76,7 +76,7 @@ class GamificationService {
     if (completedTasks >= 10) check(AchievementType.task10);
     if (completedTasks >= 50) check(AchievementType.task50);
 
-    // 连续打卡
+    // 连续学习记录
     if (streakDays >= 3) check(AchievementType.streak3);
     if (streakDays >= 7) check(AchievementType.streak7);
     if (streakDays >= 30) check(AchievementType.streak30);

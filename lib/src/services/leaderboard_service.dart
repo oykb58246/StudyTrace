@@ -59,7 +59,7 @@ class LeaderboardService {
   ApiClient get api {
     final client = _api;
     if (client == null) {
-      throw const ApiException('尚未初始化后端连接');
+      throw const ApiException('暂时还不能同步学习进度，请稍后再试');
     }
     return client;
   }

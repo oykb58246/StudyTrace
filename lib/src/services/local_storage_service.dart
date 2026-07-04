@@ -380,7 +380,7 @@ class LocalStorageService {
     await prefs.setString(_trashKey, encoded);
   }
 
-  // --- AI 操作审计 ---
+  // --- 助手动作记录 ---
   Future<List<AiActionRecord>> loadAiActionRecords() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_aiAuditKey);

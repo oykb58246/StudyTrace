@@ -36,61 +36,74 @@ class AchievementsPage extends StatelessWidget {
         : ((controller.totalPoints - levelStart) / (nextLevel - levelStart))
             .clamp(0.0, 1.0);
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
-      children: [
-        _PointsHero(
-          accent: accent,
-          totalPoints: controller.totalPoints,
-          streakDays: controller.studyStreak,
-          level: level,
-          nextLevelPoints: nextLevel,
-          levelProgress: levelProgress,
-          unlockedCount: unlocked.length,
-          totalCount: total,
-        ),
-        const SizedBox(height: 18),
-        _BadgeWall(
-          achievements: Achievement.all,
-          unlockedByType: unlockedByType,
-          accent: accent,
-          isDarkMode: isDarkMode,
-        ),
-        const SizedBox(height: 22),
-        _SectionTitle(
-          title: '已解锁',
-          subtitle: '${unlocked.length} 个徽章已收入你的学习档案',
-          isDarkMode: isDarkMode,
-        ),
-        const SizedBox(height: 12),
-        if (unlocked.isEmpty)
-          _EmptyAchievementCard(isDarkMode: isDarkMode)
-        else
-          ...unlocked.map(
+    return StudyScreenBackground(
+      isDarkMode: isDarkMode,
+      accent: accent,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        children: [
+          _PointsHero(
+            accent: accent,
+            isDarkMode: isDarkMode,
+            totalPoints: controller.totalPoints,
+            streakDays: controller.studyStreak,
+            level: level,
+            nextLevelPoints: nextLevel,
+            levelProgress: levelProgress,
+            unlockedCount: unlocked.length,
+            totalCount: total,
+          ),
+          const SizedBox(height: 18),
+          _BadgeWall(
+            achievements: Achievement.all,
+            unlockedByType: unlockedByType,
+            accent: accent,
+            isDarkMode: isDarkMode,
+          ),
+          if (locked.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _NextBadgeCard(
+              achievement: locked.first,
+              accent: accent,
+              isDarkMode: isDarkMode,
+            ),
+          ],
+          const SizedBox(height: 22),
+          _SectionTitle(
+            title: '已记录',
+            subtitle: '${unlocked.length} 条成长记录已收入你的学习档案',
+            isDarkMode: isDarkMode,
+          ),
+          const SizedBox(height: 12),
+          if (unlocked.isEmpty)
+            _EmptyAchievementCard(isDarkMode: isDarkMode)
+          else
+            ...unlocked.map(
+              (achievement) => _AchievementTile(
+                achievement: achievement,
+                isUnlocked: true,
+                unlockedAt: unlockedByType[achievement.type]?.unlockedAt,
+                accent: accent,
+                isDarkMode: isDarkMode,
+              ),
+            ),
+          const SizedBox(height: 18),
+          _SectionTitle(
+            title: '待记录',
+            subtitle: '继续记录、复盘和整理闪卡，慢慢留下更多痕迹',
+            isDarkMode: isDarkMode,
+          ),
+          const SizedBox(height: 12),
+          ...locked.map(
             (achievement) => _AchievementTile(
               achievement: achievement,
-              isUnlocked: true,
-              unlockedAt: unlockedByType[achievement.type]?.unlockedAt,
+              isUnlocked: false,
               accent: accent,
               isDarkMode: isDarkMode,
             ),
           ),
-        const SizedBox(height: 18),
-        _SectionTitle(
-          title: '待解锁',
-          subtitle: '继续记录、复盘和生成闪卡，慢慢点亮它们',
-          isDarkMode: isDarkMode,
-        ),
-        const SizedBox(height: 12),
-        ...locked.map(
-          (achievement) => _AchievementTile(
-            achievement: achievement,
-            isUnlocked: false,
-            accent: accent,
-            isDarkMode: isDarkMode,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -98,6 +111,7 @@ class AchievementsPage extends StatelessWidget {
 class _PointsHero extends StatelessWidget {
   const _PointsHero({
     required this.accent,
+    required this.isDarkMode,
     required this.totalPoints,
     required this.streakDays,
     required this.level,
@@ -108,6 +122,7 @@ class _PointsHero extends StatelessWidget {
   });
 
   final Color accent;
+  final bool isDarkMode;
   final int totalPoints;
   final int streakDays;
   final int level;
@@ -118,129 +133,65 @@ class _PointsHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: StudyUi.primary,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+    final progressLabel = totalCount == 0
+        ? '0%'
+        : '${(unlockedCount / totalCount * 100).round()}%';
+    return StudyPathHero(
+      isDarkMode: isDarkMode,
+      accent: accent,
+      badge: '成长阶段',
+      title: '成长记录',
+      subtitle: nextLevelPoints == null
+          ? '阶段 $level · 已达到当前最高阶段'
+          : '阶段 $level · 距离阶段 ${level + 1} 还差 ${nextLevelPoints! - totalPoints} 成长点',
+      icon: Icons.workspace_premium_rounded,
+      steps: const ['记录', '复盘', '闪卡', '沉淀'],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(Icons.workspace_premium_rounded,
-                    color: Colors.white, size: 32),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$totalPoints 积分',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      'Lv.$level · $unlockedCount/$totalCount 个成就',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.82),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
               value: levelProgress,
-              minHeight: 8,
-              backgroundColor: Colors.white.withValues(alpha: 0.18),
+              minHeight: 7,
+              backgroundColor: StudyUi.surfaceAlt(isDarkMode),
               valueColor:
                   const AlwaysStoppedAnimation<Color>(Color(0xFF4BC4A1)),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            nextLevelPoints == null
-                ? '已达到当前最高等级'
-                : '距离 Lv.${level + 1} 还差 ${nextLevelPoints! - totalPoints} 积分',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.78),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             children: [
-              _HeroMetric(label: '连续学习', value: '$streakDays 天'),
+              Expanded(
+                child: StudyPathMetricPill(
+                  label: '连续学习',
+                  value: '$streakDays 天',
+                  icon: Icons.local_fire_department_rounded,
+                  color: StudyUi.warning,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
               const SizedBox(width: 10),
-              _HeroMetric(
-                label: '成就进度',
-                value: '${totalCount == 0 ? 0 : (unlockedCount / totalCount * 100).round()}%',
+              Expanded(
+                child: StudyPathMetricPill(
+                  label: '记录进度',
+                  value: progressLabel,
+                  icon: Icons.auto_awesome_rounded,
+                  color: StudyUi.success,
+                  isDarkMode: isDarkMode,
+                ),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          StudyPathMetricPill(
+            label: '成长点',
+            value: '$totalPoints',
+            icon: Icons.emoji_events_rounded,
+            color: accent,
+            isDarkMode: isDarkMode,
+          ),
         ],
-      ),
-    );
-  }
-}
-
-class _HeroMetric extends StatelessWidget {
-  const _HeroMetric({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.72),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 3),
-            Text(value,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800)),
-          ],
-        ),
       ),
     );
   }
@@ -267,7 +218,7 @@ class _BadgeWall extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _SectionTitle(
-            title: '徽章墙',
+            title: '成长记录',
             subtitle: '把每一次学习行动沉淀成可见的成长痕迹',
             isDarkMode: isDarkMode,
           ),
@@ -293,6 +244,136 @@ class _BadgeWall extends StatelessWidget {
   }
 }
 
+class _NextBadgeCard extends StatelessWidget {
+  const _NextBadgeCard({
+    required this.achievement,
+    required this.accent,
+    required this.isDarkMode,
+  });
+
+  final Achievement achievement;
+  final Color accent;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    const previewProgress = 0.58;
+    final nextStep = _nextStepFor(achievement.type);
+    return StudyCard(
+      padding: const EdgeInsets.all(18),
+      borderColor: accent.withValues(alpha: isDarkMode ? 0.20 : 0.14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '下一条成长记录',
+                style: TextStyle(
+                  color: titleColor,
+                  fontSize: 18,
+                  fontWeight: AppTypography.hero,
+                ),
+              ),
+              const Spacer(),
+              BadgePill(
+                label: '待记录',
+                background: StudyUi.chipBackground(accent, isDarkMode),
+                foreground: accent,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              StudyGlassIconNode(
+                icon: _iconForAchievement(achievement.iconName),
+                accent: StudyUi.muted(isDarkMode),
+                size: 76,
+                iconSize: 30,
+                isDarkMode: isDarkMode,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      achievement.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: titleColor,
+                        fontSize: 18,
+                        fontWeight: AppTypography.hero,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      nextStep,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: bodyColor,
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: previewProgress,
+                        minHeight: 6,
+                        backgroundColor: isDarkMode
+                            ? Colors.white.withValues(alpha: 0.10)
+                            : const Color(0xFFE7ECFF),
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      '小贴士：保持记录、复盘和复习，成长痕迹会自然留下。',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: bodyColor,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _nextStepFor(AchievementType type) {
+    return switch (type) {
+      AchievementType.firstLog => '先写一条今天的学习记录，留下难点和下一步。',
+      AchievementType.firstTask => '先完成一个最小学习任务，后面再慢慢补细节。',
+      AchievementType.task10 ||
+      AchievementType.task50 => '继续推进任务列表里的小行动，完成后会自动记录。',
+      AchievementType.streak3 ||
+      AchievementType.streak7 ||
+      AchievementType.streak30 => '连续几天保留学习记录，形成稳定节奏。',
+      AchievementType.firstReport => '整理一次本周回顾，看清这周学过来的路径。',
+      AchievementType.flashCard10 => '把容易忘的概念整理成闪卡，睡前答一轮。',
+      AchievementType.firstNote => '保存一条课堂重点或错题笔记，方便之后回看。',
+      AchievementType.points100 ||
+      AchievementType.points500 ||
+      AchievementType.points1000 => '继续记录、复习和完成任务，成长点会自然累积。',
+      AchievementType.aiUsage10 => '用学习整理台拆一次任务、复盘或闪卡。',
+    };
+  }
+}
+
 class _BadgeDot extends StatelessWidget {
   const _BadgeDot({
     required this.achievement,
@@ -310,25 +391,12 @@ class _BadgeDot extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: achievement.title,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: unlocked
-              ? StudyUi.chipBackground(accent, isDarkMode)
-              : StudyUi.surfaceAlt(isDarkMode),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: unlocked
-                ? accent.withValues(alpha: 0.28)
-                : StudyUi.border(isDarkMode),
-          ),
-        ),
-        child: Icon(
-          _iconForAchievement(achievement.iconName),
-          color: unlocked ? accent : StudyUi.muted(isDarkMode),
-          size: 24,
-        ),
+      child: StudyGlassIconNode(
+        icon: _iconForAchievement(achievement.iconName),
+        accent: unlocked ? accent : StudyUi.muted(isDarkMode),
+        size: 48,
+        iconSize: 22,
+        isDarkMode: isDarkMode,
       ),
     );
   }
@@ -354,7 +422,7 @@ class _SectionTitle extends StatelessWidget {
             style: TextStyle(
                 color: StudyUi.title(isDarkMode),
                 fontSize: 18,
-                fontWeight: FontWeight.w800)),
+                fontWeight: AppTypography.title)),
         const SizedBox(height: 4),
         Text(subtitle,
             style: TextStyle(
@@ -373,7 +441,7 @@ class _EmptyAchievementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return StudyCard(
       child: Text(
-        '暂时还没有解锁成就。完成第一条学习记录或第一个任务后，它会马上出现。',
+        '暂时还没有成长记录。完成第一条学习记录或第一个任务后，它会马上出现。',
         style: TextStyle(color: StudyUi.body(isDarkMode), height: 1.5),
       ),
     );
@@ -410,20 +478,12 @@ class _AchievementTile extends StatelessWidget {
             isUnlocked ? accent.withValues(alpha: 0.25) : StudyUi.border(isDarkMode),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: isUnlocked
-                    ? StudyUi.chipBackground(accent, isDarkMode)
-                    : StudyUi.surfaceAlt(isDarkMode),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                _iconForAchievement(achievement.iconName),
-                color: isUnlocked ? accent : StudyUi.muted(isDarkMode),
-                size: 24,
-              ),
+            StudyGlassIconNode(
+              icon: _iconForAchievement(achievement.iconName),
+              accent: isUnlocked ? accent : StudyUi.muted(isDarkMode),
+              size: 48,
+              iconSize: 22,
+              isDarkMode: isDarkMode,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -440,13 +500,13 @@ class _AchievementTile extends StatelessWidget {
                           style: TextStyle(
                             color: isUnlocked ? titleColor : bodyColor,
                             fontSize: 15,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: AppTypography.title,
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       BadgePill(
-                        label: '+${achievement.points}分',
+                        label: '+${achievement.points} 点',
                         background:
                             StudyUi.chipBackground(accent, isDarkMode),
                         foreground: isUnlocked
@@ -471,7 +531,7 @@ class _AchievementTile extends StatelessWidget {
                   if (isUnlocked && unlockedAt != null) ...[
                     const SizedBox(height: 5),
                     Text(
-                      '解锁于 ${_formatDate(unlockedAt!)}',
+                        '记录于 ${_formatDate(unlockedAt!)}',
                       style: TextStyle(
                         color: accent.withValues(alpha: 0.76),
                         fontSize: 11,

@@ -40,10 +40,12 @@ class StatisticsPage extends StatelessWidget {
           final day = now.subtract(Duration(days: i));
           final dayKey = day.day;
           final count = recentLogs
-              .where((l) =>
-                  l.date.year == day.year &&
-                  l.date.month == day.month &&
-                  l.date.day == day.day)
+              .where(
+                (l) =>
+                    l.date.year == day.year &&
+                    l.date.month == day.month &&
+                    l.date.day == day.day,
+              )
               .length;
           dailyCounts[dayKey] = count;
         }
@@ -54,170 +56,193 @@ class StatisticsPage extends StatelessWidget {
         final completionRate = total > 0 ? completed / total : 0.0;
 
         return RefreshIndicator(
-          onRefresh: () async => controller.notifyListeners(),
-          child: ListView(
-          key: const Key('page_statistics'),
-          padding: const EdgeInsets.fromLTRB(22, 82, 22, 124),
-          children: [
-            Text(
-              '学习统计',
-              style: TextStyle(
-                color: StudyUi.title(isDarkMode),
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 18),
-            // Stat cards row
-            Row(
+          onRefresh: controller.load,
+          child: StudyScreenBackground(
+            isDarkMode: isDarkMode,
+            accent: accent,
+            child: ListView(
+              key: const Key('page_statistics'),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 124),
               children: [
-                _StatCard(
-                  label: '总记录',
-                  value: '${logs.length}',
-                  icon: Icons.menu_book_rounded,
-                  color: StudyUi.secondary,
+                StudyPathHero(
+                  isDarkMode: isDarkMode,
+                  accent: accent,
+                  badge: '近 7 天',
+                  title: '最近这周学得怎么样',
+                  subtitle: '看看这一周哪里学得稳，哪里可以少掉队一点。',
+                  icon: Icons.analytics_rounded,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: StudyPathMetricPill(
+                              label: '近 7 天记录',
+                              value: '${recentLogs.length}',
+                              icon: Icons.timeline_rounded,
+                              color: StudyUi.pathCyan,
+                              isDarkMode: isDarkMode,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: StudyPathMetricPill(
+                              label: '完成进度',
+                              value: '${(completionRate * 100).toInt()}%',
+                              icon: Icons.trending_up_rounded,
+                              color: StudyUi.success,
+                              isDarkMode: isDarkMode,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: StudyPathMetricPill(
+                              label: '留下的学习痕迹',
+                              value: '${logs.length}',
+                              icon: Icons.menu_book_rounded,
+                              color: StudyUi.secondary,
+                              isDarkMode: isDarkMode,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: StudyPathMetricPill(
+                              label: '学过的课程',
+                              value: '${courseLogCount.length}',
+                              icon: Icons.school_rounded,
+                              color: accent,
+                              isDarkMode: isDarkMode,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 10),
-                _StatCard(
-                  label: '总任务',
-                  value: '$total',
-                  icon: Icons.checklist_rounded,
+                const SizedBox(height: 18),
+                _StatisticsSectionHeader(
+                  title: '这一周的学习节奏',
+                  subtitle: '看这一周哪几天学得多，哪几天节奏掉下来了',
+                  icon: Icons.bar_chart_rounded,
                   color: accent,
+                  isDarkMode: isDarkMode,
                 ),
-                const SizedBox(width: 10),
-                _StatCard(
-                  label: '完成率',
-                  value: '${(completionRate * 100).toInt()}%',
-                  icon: Icons.trending_up_rounded,
-                  color: StudyUi.success,
+                const SizedBox(height: 12),
+                StudyCard(
+                  child: SizedBox(
+                    height: 200,
+                    child: BarChart(
+                      BarChartData(
+                        alignment: BarChartAlignment.spaceAround,
+                        maxY: _maxY(dailyCounts),
+                        barGroups: _buildBarGroups(dailyCounts),
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          horizontalInterval: 1,
+                          getDrawingHorizontalLine: (value) => FlLine(
+                            color: isDarkMode
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : Colors.black.withValues(alpha: 0.06),
+                            strokeWidth: 1,
+                          ),
+                        ),
+                        titlesData: FlTitlesData(
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 28,
+                              getTitlesWidget: (value, meta) {
+                                if (value == value.roundToDouble()) {
+                                  return Text(
+                                    '${value.toInt()}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: StudyUi.muted(isDarkMode),
+                                    ),
+                                  );
+                                }
+                                return const SizedBox.shrink();
+                              },
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (value, meta) {
+                                final day = now.subtract(
+                                    Duration(days: 6 - value.toInt()));
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    '${day.month}/${day.day}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: StudyUi.muted(isDarkMode),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                        ),
+                        borderData: FlBorderData(show: false),
+                        barTouchData: BarTouchData(enabled: false),
+                      ),
+                    ),
+                  ),
                 ),
+                if (courseLogCount.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  _StatisticsSectionHeader(
+                    title: '时间主要花在哪些课',
+                    subtitle: '看看最近主要把时间放在哪几门课上',
+                    icon: Icons.pie_chart_rounded,
+                    color: StudyUi.secondary,
+                    isDarkMode: isDarkMode,
+                  ),
+                  const SizedBox(height: 12),
+                  StudyCard(
+                    child: SizedBox(
+                      height: 220,
+                      child: PieChart(
+                        PieChartData(
+                          sections: _buildPieSections(courseLogCount),
+                          centerSpaceRadius: 50,
+                          sectionsSpace: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 14,
+                    runSpacing: 8,
+                    children: _buildLegend(courseLogCount),
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 22),
-            // Course distribution pie chart
-            if (courseLogCount.isNotEmpty) ...[
-              Text(
-                '课程分布',
-                style: TextStyle(
-                  color: StudyUi.title(isDarkMode),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 14),
-              StudyCard(
-                child: SizedBox(
-                  height: 220,
-                  child: PieChart(
-                    PieChartData(
-                      sections:
-                          _buildPieSections(courseLogCount),
-                      centerSpaceRadius: 50,
-                      sectionsSpace: 2,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Legend
-              Wrap(
-                spacing: 14,
-                runSpacing: 8,
-                children: _buildLegend(courseLogCount),
-              ),
-              const SizedBox(height: 22),
-            ],
-            // Weekly bar chart
-            Text(
-              '近 7 天学习记录',
-              style: TextStyle(
-                  color: StudyUi.title(isDarkMode),
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 14),
-            StudyCard(
-              child: SizedBox(
-                height: 200,
-                child: BarChart(
-                  BarChartData(
-                    alignment: BarChartAlignment.spaceAround,
-                    maxY: _maxY(dailyCounts),
-                    barGroups: _buildBarGroups(dailyCounts),
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      horizontalInterval: 1,
-                      getDrawingHorizontalLine: (value) => FlLine(
-                        color: isDarkMode
-                            ? Colors.white.withValues(alpha: 0.08)
-                            : Colors.black.withValues(alpha: 0.06),
-                        strokeWidth: 1,
-                      ),
-                    ),
-                    titlesData: FlTitlesData(
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 28,
-                          getTitlesWidget: (value, meta) {
-                            if (value == value.roundToDouble()) {
-                              return Text(
-                                '${value.toInt()}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: StudyUi.muted(isDarkMode),
-                                ),
-                              );
-                            }
-                            return const SizedBox.shrink();
-                          },
-                        ),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (value, meta) {
-                            final day =
-                                now.subtract(Duration(days: 6 - value.toInt()));
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Text(
-                                '${day.month}/${day.day}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: StudyUi.muted(isDarkMode),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                    ),
-                    borderData: FlBorderData(show: false),
-                    barTouchData: BarTouchData(enabled: true),
-                  ),
-                ),
-              ),
-            ),
-          ],
-          ), // RefreshIndicator
+          ),
         );
       },
     );
   }
 
   double _maxY(Map<int, int> counts) {
-    final max = counts.values.isEmpty ? 1 : counts.values.reduce(
-      (a, b) => a > b ? a : b,
-    );
+    final max = counts.values.isEmpty
+        ? 1
+        : counts.values.reduce((a, b) => a > b ? a : b);
     return (max + 1).toDouble();
   }
 
@@ -312,28 +337,57 @@ class StatisticsPage extends StatelessWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.label,
-    required this.value,
+class _StatisticsSectionHeader extends StatelessWidget {
+  const _StatisticsSectionHeader({
+    required this.title,
+    required this.subtitle,
     required this.icon,
     required this.color,
+    required this.isDarkMode,
   });
 
-  final String label;
-  final String value;
+  final String title;
+  final String subtitle;
   final IconData icon;
   final Color color;
+  final bool isDarkMode;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: StudyMetricTile(
-        label: label,
-        value: value,
-        icon: icon,
-        color: color,
-      ),
+    return Row(
+      children: [
+        StudyGlassIconNode(
+          icon: icon,
+          accent: color,
+          size: 34,
+          iconSize: 16,
+          isDarkMode: isDarkMode,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: StudyUi.title(isDarkMode),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: StudyUi.body(isDarkMode),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

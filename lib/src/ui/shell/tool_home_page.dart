@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../controllers/app_data_controller.dart';
+import '../../models/ai_action_record.dart';
 import '../../models/study_log_item.dart';
 import '../../models/study_sub_task_item.dart';
 import '../../models/study_task_item.dart';
@@ -29,10 +31,13 @@ class HomePage extends StatelessWidget {
     this.onOpenLogs,
     this.onOpenCalendar,
     this.onOpenTasks,
+    this.onOpenOverdueTasks,
     this.onOpenNotes,
     this.onOpenTimer,
     this.onOpenFlashCards,
+    this.onStartFlashCardReview,
     this.onOpenLearningMoments,
+    this.onOpenEvidencePackage,
     this.onOpenStudyGroup,
     this.onOpenLeaderboard,
     this.onOpenSyncSettings,
@@ -47,10 +52,13 @@ class HomePage extends StatelessWidget {
   final VoidCallback? onOpenLogs;
   final VoidCallback? onOpenCalendar;
   final VoidCallback? onOpenTasks;
+  final VoidCallback? onOpenOverdueTasks;
   final VoidCallback? onOpenNotes;
   final VoidCallback? onOpenTimer;
   final VoidCallback? onOpenFlashCards;
+  final VoidCallback? onStartFlashCardReview;
   final VoidCallback? onOpenLearningMoments;
+  final VoidCallback? onOpenEvidencePackage;
   final VoidCallback? onOpenStudyGroup;
   final VoidCallback? onOpenLeaderboard;
   final VoidCallback? onOpenSyncSettings;
@@ -66,15 +74,99 @@ class HomePage extends StatelessWidget {
         final tasks = controller.studyTasks;
 
         final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final tomorrow = today.add(const Duration(days: 1));
         final weekAgo = now.subtract(const Duration(days: 7));
         final recentLogs =
             logs.where((l) => !l.date.isBefore(weekAgo)).toList();
 
-        final completedTasks =
-            tasks.where((t) => t.status == StudyTaskStatus.completed).length;
-        final totalTasks = tasks.length;
-        final progress = totalTasks > 0 ? completedTasks / totalTasks : 0.0;
+        final todayTasks = tasks
+            .where((t) =>
+                !t.deadline.isBefore(today) && t.deadline.isBefore(tomorrow))
+            .toList();
+        final overdueTasks = tasks
+            .where((t) =>
+                t.effectiveStatus != StudyTaskStatus.completed &&
+                t.deadline.isBefore(today))
+            .length;
+        final todayCompletedTasks = todayTasks
+            .where((t) => t.effectiveStatus == StudyTaskStatus.completed)
+            .length;
+        final todayTotalTasks = todayTasks.length;
+        final recentAiActions = controller.recentActionRecords
+            .where((r) => !r.createdAt.isBefore(weekAgo))
+            .length;
+        final recentTraceMoments = controller.learningMoments.where((moment) {
+          final sourceType = (moment.sourceType ?? '').trim();
+          return (sourceType == 'learning_loop' ||
+                  sourceType == 'synced_learning_loop' ||
+                  sourceType == 'task_progress' ||
+                  sourceType == 'synced_task_progress') &&
+              !moment.createdAt.isBefore(weekAgo);
+        }).toList(growable: false);
+        final dueFlashcards =
+            controller.flashCards.where((card) => card.isDueForReview).length;
+        final todayFocusMinutes = _todayFocusMinutes(
+          controller.recentActionRecords,
+          now,
+        );
+        final sprintAction = _SprintAction.from(
+          tasks: tasks,
+          logs: logs,
+          streak: controller.studyStreak,
+        );
+        final sprintActionTap = switch (sprintAction.target) {
+          _SprintActionTarget.task => onOpenTasks,
+          _SprintActionTarget.log => onOpenLogs,
+          _SprintActionTarget.review => onOpenAiAssistant,
+        };
+        Future<void> completeSprintAction() async {
+          final taskId = sprintAction.taskId;
+          if (taskId == null) {
+            sprintActionTap?.call();
+            return;
+          }
+          final updated = await controller.completeStudyTaskAction(
+            taskId,
+            subTaskId: sprintAction.subTaskId,
+          );
+          if (!context.mounted) return;
+          if (updated == null) {
+            StudyToast.show(context, '今日行动已变化，请刷新后再试');
+            return;
+          }
+          StudyToast.show(
+            context,
+            updated.effectiveStatus == StudyTaskStatus.completed
+                ? '今日行动已完成，学迹已更新'
+                : '已完成一个下一步，学迹已更新',
+          );
+        }
 
+        void handleTraceEntryAction(_HomeTraceEntry entry) {
+          final action = switch (entry.actionKind) {
+            _HomeTraceActionKind.log =>
+              onOpenLearningMoments ?? onOpenLogs ?? onOpenAiAssistant,
+            _HomeTraceActionKind.task =>
+              onOpenTasks ?? onOpenTaskPlanning ?? onOpenAiAssistant,
+            _HomeTraceActionKind.flashcard =>
+              onStartFlashCardReview ?? onOpenFlashCards ?? onOpenAiAssistant,
+            _HomeTraceActionKind.report => onGenerateReport,
+            _HomeTraceActionKind.assistant => onOpenAiChat ?? onOpenAiAssistant,
+          };
+          if (action != null) {
+            action();
+            return;
+          }
+          StudyToast.show(context, '这个入口还在整理，先去学习助手看看');
+        }
+
+        final traceEntries = _HomeTraceEntry.build(
+          logs: recentLogs,
+          tasks: tasks,
+          action: sprintAction,
+          now: now,
+        );
         final recentCourseNames = recentLogs
             .map((l) => l.courseName)
             .where((n) => n.isNotEmpty)
@@ -82,6 +174,8 @@ class HomePage extends StatelessWidget {
             .toList();
         final textColor = isDarkMode ? Colors.white : AppColors.ink;
         final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+        final media = MediaQuery.of(context);
+        final compactMobile = media.size.width <= 480;
 
         return Column(
           children: [
@@ -93,172 +187,64 @@ class HomePage extends StatelessWidget {
                     onRefresh: controller.load,
                     child: ListView(
                       key: const Key('page_home'),
-                      padding: const EdgeInsets.fromLTRB(20, 76, 20, 124),
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        compactMobile ? 64 : 58,
+                        20,
+                        compactMobile ? 168 : 144,
+                      ),
                       children: [
-                        Center(
-                          child: Column(
-                            children: [
-                              Image.asset(
-                                isDarkMode
-                                    ? 'logo/logo白透明.png'
-                                    : 'logo/logo黑透明.png',
-                                height: 36,
-                                fit: BoxFit.fitHeight,
-                              ),
-                              const SizedBox(height: 7),
-                              Image.asset(
-                                'logo/文字logo.png',
-                                height: 28,
-                                fit: BoxFit.fitHeight,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        _HomeAiChatEntry(
+                        _HomeStudyDashboardPanel(
                           isDarkMode: isDarkMode,
-                          onTap: onOpenAiChat ?? onOpenAiAssistant,
+                          accent: accent,
+                          compact: compactMobile,
+                          action: sprintAction,
+                          completedTasks: todayCompletedTasks,
+                          totalTasks: todayTotalTasks,
+                          recentAiActions: recentAiActions,
+                          todayFocusMinutes: todayFocusMinutes,
+                          recentLearningLoopCount: recentTraceMoments.length,
+                          overdueTasks: overdueTasks,
+                          onStartReview: onOpenAiAssistant,
+                          onActionTap: sprintActionTap,
+                          onOpenOverdueTasks: onOpenOverdueTasks,
+                          onCompleteAction: sprintAction.taskId == null
+                              ? null
+                              : completeSprintAction,
+                          onAskAi: onOpenAiChat ?? onOpenAiAssistant,
+                          onVoiceCreate: () => _openAiCreate(
+                            context,
+                            source: _AiCreateSource.voice,
+                          ),
+                          onPhotoCreate: () => _openAiCreate(
+                            context,
+                            source: _AiCreateSource.photo,
+                          ),
+                          onOpenNotes: onOpenNotes,
+                          onOpenLearningMoments: onOpenLearningMoments,
+                          onGenerateSummary: onGenerateReport,
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 18),
+                        _HomeTraceTimeline(
+                          isDarkMode: isDarkMode,
+                          accent: accent,
+                          entries: traceEntries,
+                          aiHint: _homeAiHint(
+                            dueFlashcards: dueFlashcards,
+                            action: sprintAction,
+                          ),
+                          now: now,
+                          onEntryAction: handleTraceEntryAction,
+                        ),
+                        const SizedBox(height: 18),
                         _HomeAiSuggestion(
                           isDarkMode: isDarkMode,
                           controller: controller,
                           onOpenAssistant: onOpenAiAssistant,
                           onOpenTasks: onOpenTasks,
+                          onOpenTimer: onOpenTimer,
                         ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _HomeFeatureCard(
-                                title: '语音创建',
-                                subtitle: '说出记录或任务',
-                                asset: 'assets/icons/home_voice_v3.png',
-                                colors: const [
-                                  Color(0xFF0E8CFF),
-                                  Color(0xFF5A7BFF)
-                                ],
-                                onTap: () => _openAiCreate(
-                                  context,
-                                  source: _AiCreateSource.voice,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _HomeFeatureCard(
-                                title: '拍照创建',
-                                subtitle: '识图生成记录',
-                                asset: 'assets/icons/home_camera_v3.png',
-                                colors: const [
-                                  Color(0xFFFF5A3D),
-                                  Color(0xFFFF9F50)
-                                ],
-                                onTap: () => _openAiCreate(
-                                  context,
-                                  source: _AiCreateSource.photo,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _HomeToolCard(
-                                label: '任务编排',
-                                asset: 'assets/icons/home_plan_v3.png',
-                                isDarkMode: isDarkMode,
-                                onTap: onOpenTaskPlanning,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _HomeToolCard(
-                                label: '学习笔记',
-                                asset: 'assets/icons/home_notes_v3.png',
-                                isDarkMode: isDarkMode,
-                                onTap: onOpenNotes,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final shortcuts = [
-                              _HomeShortcut(
-                                label: '学迹动态',
-                                asset: 'assets/icons/home_continue_v3.png',
-                                isDarkMode: isDarkMode,
-                                onTap: onOpenLearningMoments,
-                              ),
-                              _HomeShortcut(
-                                label: '知识闪卡',
-                                asset: 'assets/icons/home_flashcard_v3.png',
-                                isDarkMode: isDarkMode,
-                                onTap: onOpenFlashCards,
-                              ),
-                              _HomeShortcut(
-                                label: '专注计时',
-                                asset: 'assets/icons/home_timer_v3.png',
-                                isDarkMode: isDarkMode,
-                                onTap: onOpenTimer,
-                              ),
-                              _HomeShortcut(
-                                label: '学习小组',
-                                asset: 'assets/icons/home_group_v3.png',
-                                isDarkMode: isDarkMode,
-                                onTap: onOpenStudyGroup,
-                              ),
-                              _HomeShortcut(
-                                label: '排行榜',
-                                asset: 'assets/icons/home_rank_v3.png',
-                                isDarkMode: isDarkMode,
-                                onTap: onOpenLeaderboard,
-                              ),
-                            ];
-
-                            return ScrollConfiguration(
-                              behavior: const _HomeToolbarScrollBehavior(),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                clipBehavior: Clip.none,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 2),
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    minWidth: constraints.maxWidth > 4
-                                        ? constraints.maxWidth - 4
-                                        : 0,
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      for (var i = 0;
-                                          i < shortcuts.length;
-                                          i++) ...[
-                                        if (i > 0) const SizedBox(width: 12),
-                                        shortcuts[i],
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        _ProgressPanel(
-                          isDarkMode: isDarkMode,
-                          accent: accent,
-                          completedTasks: completedTasks,
-                          totalTasks: totalTasks,
-                          progress: progress,
-                          streak: controller.studyStreak,
-                        ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 22),
                         Text(
                           '最近记录',
                           style: TextStyle(
@@ -276,7 +262,11 @@ class HomePage extends StatelessWidget {
                         if (recentCourseNames.isNotEmpty)
                           const SizedBox(height: 12),
                         if (recentLogs.isEmpty)
-                          _EmptyRecentCard(isDarkMode: isDarkMode)
+                          _EmptyRecentCard(
+                            isDarkMode: isDarkMode,
+                            onStartReview: onOpenAiAssistant,
+                            onOpenLogs: onOpenLogs,
+                          )
                         else
                           for (final log in recentLogs.take(4)) ...[
                             _RecentLogCard(
@@ -335,6 +325,2576 @@ class HomePage extends StatelessWidget {
   }
 }
 
+enum _SprintActionTarget { review, task, log }
+
+class _SprintAction {
+  const _SprintAction({
+    required this.title,
+    required this.reason,
+    required this.expectedGain,
+    required this.actionLabel,
+    required this.target,
+    this.taskId,
+    this.subTaskId,
+    this.completeLabel = '完成行动',
+  });
+
+  final String title;
+  final String reason;
+  final String expectedGain;
+  final String actionLabel;
+  final _SprintActionTarget target;
+  final String? taskId;
+  final String? subTaskId;
+  final String completeLabel;
+
+  static _SprintAction from({
+    required List<StudyTaskItem> tasks,
+    required List<StudyLogItem> logs,
+    required int streak,
+  }) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final pending = tasks
+        .where((task) => task.effectiveStatus != StudyTaskStatus.completed)
+        .toList()
+      ..sort((a, b) => a.deadline.compareTo(b.deadline));
+    final dueToday = pending
+        .where((task) =>
+            !task.deadline.isBefore(today) && task.deadline.isBefore(tomorrow))
+        .toList();
+    if (dueToday.isNotEmpty) {
+      final task = dueToday.first;
+      final nextSubTask = _nextOpenSubTask(task);
+      return _SprintAction(
+        title: nextSubTask?.title ?? task.title,
+        reason: nextSubTask == null
+            ? '今天截止，适合先做 25 分钟推进。'
+            : '来自任务：${task.title}。今天截止，先完成一个可交付步骤。',
+        expectedGain: '把任务压力转成可完成行动。',
+        actionLabel: '任务清单',
+        target: _SprintActionTarget.task,
+        taskId: task.id,
+        subTaskId: nextSubTask?.id,
+        completeLabel: nextSubTask == null ? '标记完成' : '完成一步',
+      );
+    }
+    final hasTodayLog = logs.any((log) =>
+        log.date.year == today.year &&
+        log.date.month == today.month &&
+        log.date.day == today.day);
+    if (!hasTodayLog) {
+      return const _SprintAction(
+        title: '完成今晚 2 分钟学习记录',
+        reason: '今天还没有记录学习事实和难点。',
+        expectedGain: '留下今天的难点，明天更容易接着学。',
+        actionLabel: '开始记录',
+        target: _SprintActionTarget.review,
+      );
+    }
+    final latestLog = logs.isEmpty ? null : logs.first;
+    if (latestLog != null && latestLog.nextPlan.trim().isNotEmpty) {
+      return _SprintAction(
+        title: latestLog.nextPlan.trim(),
+        reason: '来自最近一次学习记录的下一步安排。',
+        expectedGain: '做完后，今天的学迹会更完整。',
+        actionLabel: '继续学习',
+        target: _SprintActionTarget.review,
+      );
+    }
+    return _SprintAction(
+      title: streak > 0 ? '保持连续学习第 $streak 天' : '记录第一次学习',
+      reason: '当前没有明显截止压力，适合补一条主动记录。',
+      expectedGain: '明天打开时，可以接上今天的思路。',
+      actionLabel: '开始记录',
+      target: _SprintActionTarget.review,
+    );
+  }
+
+  static StudySubTaskItem? _nextOpenSubTask(StudyTaskItem task) {
+    for (final subTask in task.subTasks) {
+      if (subTask.status != SubTaskStatus.completed) {
+        return subTask;
+      }
+    }
+    return null;
+  }
+}
+
+_HomeTraceActionKind _traceActionKindForSprintTarget(
+  _SprintActionTarget target,
+) {
+  return switch (target) {
+    _SprintActionTarget.task => _HomeTraceActionKind.task,
+    _SprintActionTarget.log => _HomeTraceActionKind.log,
+    _SprintActionTarget.review => _HomeTraceActionKind.assistant,
+  };
+}
+
+String _traceActionLabelForSprintTarget(_SprintActionTarget target) {
+  return switch (target) {
+    _SprintActionTarget.task => '继续这一步',
+    _SprintActionTarget.log => '去看记录',
+    _SprintActionTarget.review => '整理下一步',
+  };
+}
+
+int _todayFocusMinutes(List<AiActionRecord> records, DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  final tomorrow = today.add(const Duration(days: 1));
+  var total = 0;
+  for (final record in records) {
+    if (record.createdAt.isBefore(today) ||
+        !record.createdAt.isBefore(tomorrow)) {
+      continue;
+    }
+    if (record.status != AiActionStatus.executed) continue;
+    if (record.toolId != 'timer.start_focus' &&
+        record.toolId != 'timer.start_focus_with_task') {
+      continue;
+    }
+    final raw = record.params?['durationMinutes'];
+    if (raw is num) {
+      total += raw.toInt();
+    }
+  }
+  return total;
+}
+
+String _formatFocusMinutes(int minutes) {
+  if (minutes <= 0) return '0 分钟';
+  final hours = minutes ~/ 60;
+  final rest = minutes % 60;
+  if (hours <= 0) return '$minutes 分钟';
+  if (rest == 0) return '$hours 小时';
+  return '$hours 小时 $rest 分钟';
+}
+
+enum _HomeTraceActionKind { log, task, flashcard, report, assistant }
+
+class _HomeTraceEntry {
+  const _HomeTraceEntry({
+    required this.date,
+    required this.label,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.icon,
+    required this.asset,
+    required this.actionKind,
+    required this.actionLabel,
+  });
+
+  final DateTime date;
+  final String label;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final IconData icon;
+  final String asset;
+  final _HomeTraceActionKind actionKind;
+  final String actionLabel;
+
+  static List<_HomeTraceEntry> build({
+    required List<StudyLogItem> logs,
+    required List<StudyTaskItem> tasks,
+    required _SprintAction action,
+    required DateTime now,
+  }) {
+    final entries = <_HomeTraceEntry>[];
+    final recentLogs = [...logs]..sort((a, b) => b.date.compareTo(a.date));
+    for (final log in recentLogs.take(7)) {
+      final course = log.courseName.trim();
+      final content = _homeTrim(
+        log.content.trim().isNotEmpty ? log.content : log.nextPlan,
+        fallback: '记录了一次学习',
+        maxLength: 140,
+      );
+      entries.add(
+        _HomeTraceEntry(
+          date: log.date,
+          label: _homeDayLabel(log.date, now),
+          title: course.isEmpty ? '学习记录' : course,
+          subtitle: content,
+          color: entries.isEmpty ? StudyUi.primary : StudyUi.secondary,
+          icon: Icons.edit_note_rounded,
+          asset: AppAssets.generatedHomeNotesIcon,
+          actionKind: _HomeTraceActionKind.log,
+          actionLabel: '去学迹回看',
+        ),
+      );
+    }
+
+    if (entries.length < 6) {
+      final pending = tasks
+          .where((task) => task.effectiveStatus != StudyTaskStatus.completed)
+          .toList()
+        ..sort((a, b) => a.deadline.compareTo(b.deadline));
+      for (final task in pending.take(6 - entries.length)) {
+        entries.add(
+          _HomeTraceEntry(
+            date: task.deadline,
+            label: _homeDayLabel(task.deadline, now),
+            title: _homeTrim(task.title, fallback: '待完成任务', maxLength: 18),
+            subtitle: task.courseName.trim().isEmpty
+                ? '先推进一小段'
+                : '${task.courseName.trim()} · 先推进一小段',
+            color: StudyUi.pathBlue,
+            icon: Icons.flag_rounded,
+            asset: AppAssets.homePlanV3Icon,
+            actionKind: _HomeTraceActionKind.task,
+            actionLabel: '打开任务清单',
+          ),
+        );
+      }
+    }
+
+    final tomorrow = now.add(const Duration(days: 1));
+    final nextStepDate = now.add(const Duration(days: 2));
+    final daysUntilSunday = (DateTime.sunday - now.weekday + 7) % 7;
+    final weekendDate = now.add(Duration(days: daysUntilSunday));
+    final fallbackEntries = [
+      _HomeTraceEntry(
+        date: now,
+        label: _homeDayLabel(now, now),
+        title: action.title,
+        subtitle: '说几句今天学了什么',
+        color: StudyUi.primary,
+        icon: Icons.auto_awesome_rounded,
+        asset: AppAssets.homeTraceV3Icon,
+        actionKind: _traceActionKindForSprintTarget(action.target),
+        actionLabel: _traceActionLabelForSprintTarget(action.target),
+      ),
+      _HomeTraceEntry(
+        date: tomorrow,
+        label: _homeDayLabel(tomorrow, now),
+        title: '课前看一眼',
+        subtitle: '把小结和卡片再过一遍',
+        color: StudyUi.success,
+        icon: Icons.style_rounded,
+        asset: AppAssets.homeFlashcardsV3Icon,
+        actionKind: _HomeTraceActionKind.flashcard,
+        actionLabel: '去复习',
+      ),
+      _HomeTraceEntry(
+        date: weekendDate,
+        label: _homeDayLabel(weekendDate, now),
+        title: '看看本周小结',
+        subtitle: '知道自己哪里变熟了',
+        color: StudyUi.warning,
+        icon: Icons.insights_rounded,
+        asset: AppAssets.generatedHomeWeeklyReviewIcon,
+        actionKind: _HomeTraceActionKind.report,
+        actionLabel: '整理本周小结',
+      ),
+      _HomeTraceEntry(
+        date: nextStepDate,
+        label: _homeDayLabel(nextStepDate, now),
+        title: '把不会的问清楚',
+        subtitle: '把卡住的地方拆成小问题',
+        color: StudyUi.secondary,
+        icon: Icons.question_answer_rounded,
+        asset: AppAssets.sideAiAssistantIcon,
+        actionKind: _HomeTraceActionKind.assistant,
+        actionLabel: '问问助手',
+      ),
+    ];
+    var fallbackIndex = 0;
+    while (entries.length < 4 && fallbackIndex < fallbackEntries.length) {
+      entries.add(fallbackEntries[fallbackIndex]);
+      fallbackIndex += 1;
+    }
+
+    return entries.take(7).toList(growable: false);
+  }
+}
+
+class _HomeStudyDashboardPanel extends StatelessWidget {
+  const _HomeStudyDashboardPanel({
+    required this.isDarkMode,
+    required this.accent,
+    required this.compact,
+    required this.action,
+    required this.completedTasks,
+    required this.totalTasks,
+    required this.recentAiActions,
+    required this.todayFocusMinutes,
+    required this.recentLearningLoopCount,
+    required this.overdueTasks,
+    required this.onStartReview,
+    required this.onActionTap,
+    required this.onOpenOverdueTasks,
+    required this.onCompleteAction,
+    required this.onAskAi,
+    required this.onVoiceCreate,
+    required this.onPhotoCreate,
+    required this.onOpenNotes,
+    required this.onOpenLearningMoments,
+    required this.onGenerateSummary,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final bool compact;
+  final _SprintAction action;
+  final int completedTasks;
+  final int totalTasks;
+  final int recentAiActions;
+  final int todayFocusMinutes;
+  final int recentLearningLoopCount;
+  final int overdueTasks;
+  final VoidCallback? onStartReview;
+  final VoidCallback? onActionTap;
+  final VoidCallback? onOpenOverdueTasks;
+  final Future<void> Function()? onCompleteAction;
+  final VoidCallback? onAskAi;
+  final VoidCallback? onVoiceCreate;
+  final VoidCallback? onPhotoCreate;
+  final VoidCallback? onOpenNotes;
+  final VoidCallback? onOpenLearningMoments;
+  final VoidCallback? onGenerateSummary;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    final taskProgress = totalTasks <= 0
+        ? 0.0
+        : (completedTasks / totalTasks).clamp(0.0, 1.0).toDouble();
+    final quickActions = [
+      _HomeQuickAction(
+        label: '说说难点',
+        caption: '语音记录',
+        asset: AppAssets.homeVoiceV3Icon,
+        icon: Icons.mic_rounded,
+        color: StudyUi.pathCyan,
+        onTap: onVoiceCreate,
+      ),
+      _HomeQuickAction(
+        label: '拍题整理',
+        caption: '题目/板书',
+        asset: AppAssets.homeCameraV3Icon,
+        icon: Icons.photo_camera_rounded,
+        color: StudyUi.pathWarm,
+        onTap: onPhotoCreate,
+      ),
+      _HomeQuickAction(
+        label: '学习笔记',
+        caption: '回看重点',
+        asset: AppAssets.homeNotesV3Icon,
+        icon: Icons.edit_note_rounded,
+        color: StudyUi.pathBlue,
+        onTap: onOpenNotes,
+      ),
+      _HomeQuickAction(
+        label: recentLearningLoopCount > 0 ? '回看学迹' : '本周回顾',
+        caption: recentLearningLoopCount > 0
+            ? recentLearningLoopCount > 1
+                ? '最近整理 $recentLearningLoopCount 条'
+                : '看刚整理的下一步'
+            : recentAiActions > 0
+                ? '最近整理 $recentAiActions 次'
+                : '今晚回看',
+        asset: AppAssets.generatedHomeWeeklyReviewIcon,
+        icon: Icons.auto_awesome_rounded,
+        color: StudyUi.secondary,
+        onTap: recentLearningLoopCount > 0
+            ? (onOpenLearningMoments ?? onGenerateSummary)
+            : onGenerateSummary,
+      ),
+    ];
+
+    return StudyFontScope(
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      StudyAssetIcon(
+                        asset: AppAssets.brandAppIcon,
+                        preserveColor: true,
+                        fallbackIcon: Icons.auto_stories_rounded,
+                        size: compact ? 42 : 46,
+                      ),
+                      const SizedBox(width: 10),
+                      Image.asset(
+                        AppAssets.brandWordLogo,
+                        width: compact ? 100 : 116,
+                        height: compact ? 34 : 38,
+                        fit: BoxFit.contain,
+                        semanticLabel: '学迹',
+                        errorBuilder: (_, __, ___) => Text(
+                          '学迹',
+                          style: TextStyle(
+                            color: titleColor,
+                            fontSize: compact ? 30 : 32,
+                            height: 1.04,
+                            fontWeight: AppTypography.hero,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    recentLearningLoopCount > 0
+                        ? '学习记录已接到今天安排，先完成下一步'
+                        : todayFocusMinutes > 0
+                            ? '今天已专注 ${_formatFocusMinutes(todayFocusMinutes)}，先接着下一步'
+                            : '先抓住今天最该推进的一小步',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: bodyColor,
+                      fontSize: 14,
+                      fontWeight: AppTypography.emphasis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: compact ? 20 : 22),
+            _HomeTodayActionCard(
+              isDarkMode: isDarkMode,
+              accent: accent,
+              action: action,
+              taskProgress: taskProgress,
+              totalTasks: totalTasks,
+              completedTasks: completedTasks,
+              overdueTasks: overdueTasks,
+              hasRecentLearningPath: recentLearningLoopCount > 0,
+              onStartReview: onStartReview,
+              onActionTap: onActionTap,
+              onOverdueTap: onOpenOverdueTasks,
+              onCompleteAction: onCompleteAction,
+              onAskAi: onAskAi,
+            ),
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final spacing = compact ? 7.0 : 10.0;
+                final columns =
+                    constraints.maxWidth < 340 ? 2 : quickActions.length;
+                final width =
+                    (constraints.maxWidth - spacing * (columns - 1)) / columns;
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    for (final action in quickActions)
+                      SizedBox(
+                        width: width,
+                        child: _HomeQuickActionTile(
+                          action: action,
+                          isDarkMode: isDarkMode,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeTodayActionCard extends StatelessWidget {
+  const _HomeTodayActionCard({
+    required this.isDarkMode,
+    required this.accent,
+    required this.action,
+    required this.taskProgress,
+    required this.totalTasks,
+    required this.completedTasks,
+    required this.overdueTasks,
+    required this.hasRecentLearningPath,
+    required this.onStartReview,
+    required this.onActionTap,
+    required this.onOverdueTap,
+    required this.onCompleteAction,
+    required this.onAskAi,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final _SprintAction action;
+  final double taskProgress;
+  final int totalTasks;
+  final int completedTasks;
+  final int overdueTasks;
+  final bool hasRecentLearningPath;
+  final VoidCallback? onStartReview;
+  final VoidCallback? onActionTap;
+  final VoidCallback? onOverdueTap;
+  final Future<void> Function()? onCompleteAction;
+  final VoidCallback? onAskAi;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    final actionTap = action.target == _SprintActionTarget.review
+        ? onStartReview
+        : (onActionTap ?? onStartReview);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
+      decoration: BoxDecoration(
+        color: isDarkMode
+            ? Colors.white.withValues(alpha: 0.07)
+            : Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: accent.withValues(alpha: 0.16)),
+        boxShadow: [
+          if (!isDarkMode)
+            BoxShadow(
+              color: accent.withValues(alpha: 0.10),
+              blurRadius: 22,
+              offset: const Offset(0, 12),
+            ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    BadgePill(
+                      label: hasRecentLearningPath ? '今天要做的一步' : '今天先走这一小步',
+                      background: StudyUi.chipBackground(accent, isDarkMode),
+                      foreground: accent,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      action.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: titleColor,
+                        fontSize: 20,
+                        height: 1.18,
+                        fontWeight: AppTypography.hero,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      action.reason,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: bodyColor,
+                        fontSize: 13,
+                        height: 1.38,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _MiniProgressRing(
+                progress: taskProgress,
+                color: accent,
+                isDarkMode: isDarkMode,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            totalTasks > 0
+                ? hasRecentLearningPath
+                    ? '学习记录已接到今天安排，完成 $completedTasks / $totalTasks'
+                    : '今天安排已完成 $completedTasks / $totalTasks'
+                : action.expectedGain,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: accent,
+              fontSize: 12,
+              fontWeight: AppTypography.emphasis,
+            ),
+          ),
+          if (overdueTasks > 0) ...[
+            const SizedBox(height: 8),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onOverdueTap,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: StudyUi.danger.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: StudyUi.danger.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: StudyUi.danger,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          onOverdueTap == null
+                              ? '$overdueTasks 项任务已过期，可以稍后到任务清单处理'
+                              : '$overdueTasks 项任务已过期，打开任务清单处理',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: StudyUi.danger,
+                            fontSize: 11,
+                            fontWeight: AppTypography.title,
+                          ),
+                        ),
+                      ),
+                      if (onOverdueTap != null) ...[
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: StudyUi.danger,
+                          size: 17,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: StudyActionPill(
+                  icon: Icons.check_circle_rounded,
+                  label: action.actionLabel,
+                  color: accent,
+                  isDarkMode: isDarkMode,
+                  expand: true,
+                  onPressed: actionTap,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _HomeIconAction(
+                tooltip: '问学习助手',
+                icon: Icons.auto_awesome_rounded,
+                color: StudyUi.secondary,
+                isDarkMode: isDarkMode,
+                size: 40,
+                iconSize: 19,
+                onPressed: onAskAi,
+              ),
+              if (onCompleteAction != null) ...[
+                const SizedBox(width: 8),
+                _HomeIconAction(
+                  tooltip: action.completeLabel,
+                  icon: Icons.done_rounded,
+                  color: StudyUi.success,
+                  isDarkMode: isDarkMode,
+                  size: 40,
+                  iconSize: 19,
+                  onPressed: () => unawaited(onCompleteAction!()),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeQuickAction {
+  const _HomeQuickAction({
+    required this.label,
+    required this.caption,
+    required this.asset,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final String caption;
+  final String asset;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+}
+
+class _HomeQuickActionTile extends StatelessWidget {
+  const _HomeQuickActionTile({
+    required this.action,
+    required this.isDarkMode,
+  });
+
+  final _HomeQuickAction action;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: action.onTap,
+        child: Container(
+          height: 92,
+          padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+          decoration: BoxDecoration(
+            color: isDarkMode
+                ? Colors.white.withValues(alpha: 0.055)
+                : Colors.white.withValues(alpha: 0.58),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.70)),
+            boxShadow: [
+              if (!isDarkMode)
+                BoxShadow(
+                  color: action.color.withValues(alpha: 0.09),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color:
+                      action.color.withValues(alpha: isDarkMode ? 0.12 : 0.08),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: Center(
+                    child: StudyAssetIcon(
+                      asset: action.asset,
+                      preserveColor: true,
+                      fallbackIcon: action.icon,
+                      size: 25,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                action.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: titleColor,
+                  fontSize: 14,
+                  height: 1.08,
+                  fontWeight: AppTypography.title,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                action.caption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: bodyColor.withValues(alpha: 0.82),
+                  fontSize: 12,
+                  height: 1.08,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeTraceTimeline extends StatelessWidget {
+  const _HomeTraceTimeline({
+    required this.isDarkMode,
+    required this.accent,
+    required this.entries,
+    required this.aiHint,
+    required this.now,
+    required this.onEntryAction,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final List<_HomeTraceEntry> entries;
+  final String aiHint;
+  final DateTime now;
+  final ValueChanged<_HomeTraceEntry> onEntryAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    return StudyFontScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '这几天的学迹',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: titleColor,
+                      fontSize: 19,
+                      fontWeight: AppTypography.hero,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    color: StudyUi.chipBackground(accent, isDarkMode),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.swap_horiz_rounded, color: accent, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        '近几天',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 11,
+                          fontWeight: AppTypography.title,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              color: StudyUi.chipBackground(accent, isDarkMode),
+              border: Border.all(color: accent.withValues(alpha: 0.12)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.auto_awesome_rounded, color: accent, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    aiHint,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      height: 1.25,
+                      fontWeight: AppTypography.emphasis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 420;
+              final height = compact ? 318.0 : 336.0;
+              final gap = compact ? 220.0 : 264.0;
+              final cardHeight = compact ? 174.0 : 190.0;
+              final pathWidth = math
+                  .max(
+                    constraints.maxWidth,
+                    132 + (entries.length - 1) * gap + 132,
+                  )
+                  .toDouble();
+              final centers = _traceCenters(entries.length, gap, height);
+              final cardWidth = compact ? 214.0 : 248.0;
+              final paintOrder = _tracePaintOrder(entries, now);
+              return SizedBox(
+                height: height,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    clipBehavior: Clip.hardEdge,
+                    child: SizedBox(
+                      width: pathWidth,
+                      height: height,
+                      child: Stack(
+                        clipBehavior: Clip.hardEdge,
+                        children: [
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: _TraceCurvePainter(
+                                centers: centers,
+                                accent: accent,
+                                isDarkMode: isDarkMode,
+                              ),
+                            ),
+                          ),
+                          for (final i in paintOrder)
+                            Positioned(
+                              left: _traceCardLeft(
+                                centers[i],
+                                cardWidth,
+                                pathWidth,
+                              ),
+                              top: _traceCardTop(
+                                centers[i],
+                                height,
+                                cardHeight,
+                              ),
+                              child: SizedBox(
+                                width: cardWidth,
+                                height: cardHeight,
+                                child: _HomeTraceFloatingCard(
+                                  entry: entries[i],
+                                  isDarkMode: isDarkMode,
+                                  compact: compact,
+                                  onActionTap: onEntryAction,
+                                ),
+                              ),
+                            ),
+                          for (final i in paintOrder)
+                            Positioned(
+                              left: centers[i].dx - (compact ? 19 : 22),
+                              top: centers[i].dy - (compact ? 19 : 22),
+                              child: _HomeTraceNode(
+                                entry: entries[i],
+                                isDarkMode: isDarkMode,
+                                compact: compact,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<int> _tracePaintOrder(List<_HomeTraceEntry> entries, DateTime now) {
+    final indices = List<int>.generate(entries.length, (index) => index);
+    indices.sort((a, b) {
+      final aDistance = _traceDayDistance(entries[a].date, now);
+      final bDistance = _traceDayDistance(entries[b].date, now);
+      final distanceOrder = bDistance.compareTo(aDistance);
+      if (distanceOrder != 0) return distanceOrder;
+      return b.compareTo(a);
+    });
+    return indices;
+  }
+
+  int _traceDayDistance(DateTime date, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(date.year, date.month, date.day);
+    return today.difference(day).inDays.abs();
+  }
+
+  List<Offset> _traceCenters(int count, double gap, double height) {
+    final yPattern = [
+      height * 0.60,
+      height * 0.34,
+      height * 0.27,
+      height * 0.56,
+      height * 0.38,
+      height * 0.64,
+      height * 0.30,
+    ];
+    return [
+      for (var i = 0; i < count; i++)
+        Offset(78 + i * gap, yPattern[i % yPattern.length]),
+    ];
+  }
+
+  double _traceCardLeft(Offset center, double width, double pathWidth) {
+    return (center.dx - width / 2).clamp(6.0, pathWidth - width - 6).toDouble();
+  }
+
+  double _traceCardTop(Offset center, double height, double cardHeight) {
+    final placeAbove = center.dy > height * 0.50;
+    final top = placeAbove ? center.dy - cardHeight - 14 : center.dy + 18;
+    return top.clamp(4.0, height - cardHeight - 4).toDouble();
+  }
+}
+
+class _HomeTraceNode extends StatelessWidget {
+  const _HomeTraceNode({
+    required this.entry,
+    required this.isDarkMode,
+    required this.compact,
+  });
+
+  final _HomeTraceEntry entry;
+  final bool isDarkMode;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = compact ? 38.0 : 44.0;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isDarkMode
+            ? const Color(0xFF15212D).withValues(alpha: 0.96)
+            : Colors.white.withValues(alpha: 0.94),
+        border: Border.all(color: entry.color.withValues(alpha: 0.30)),
+        boxShadow: [
+          BoxShadow(
+            color: entry.color.withValues(alpha: isDarkMode ? 0.22 : 0.20),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+          if (!isDarkMode)
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.75),
+              blurRadius: 1,
+              offset: const Offset(0, -1),
+            ),
+        ],
+      ),
+      child: Center(
+        child: StudyAssetIcon(
+          asset: entry.asset,
+          preserveColor: true,
+          fallbackIcon: entry.icon,
+          size: compact ? 25 : 29,
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeTraceFloatingCard extends StatelessWidget {
+  const _HomeTraceFloatingCard({
+    required this.entry,
+    required this.isDarkMode,
+    required this.compact,
+    required this.onActionTap,
+  });
+
+  final _HomeTraceEntry entry;
+  final bool isDarkMode;
+  final bool compact;
+  final ValueChanged<_HomeTraceEntry> onActionTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return Container(
+      padding:
+          EdgeInsets.fromLTRB(14, compact ? 12 : 14, 14, compact ? 12 : 13),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: isDarkMode
+            ? const Color(0xFF172331).withValues(alpha: 0.86)
+            : Colors.white.withValues(alpha: 0.82),
+        border: Border.all(color: entry.color.withValues(alpha: 0.14)),
+        boxShadow: [
+          if (!isDarkMode)
+            BoxShadow(
+              color: const Color(0xFF6D7EA5).withValues(alpha: 0.09),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 10 : 12,
+                    vertical: compact ? 5 : 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: StudyUi.chipBackground(entry.color, isDarkMode),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    entry.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: entry.color,
+                      fontSize: compact ? 11 : 12,
+                      fontWeight: AppTypography.title,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: entry.actionLabel,
+                child: Material(
+                  color: entry.color.withValues(
+                    alpha: isDarkMode ? 0.18 : 0.11,
+                  ),
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => onActionTap(entry),
+                    child: SizedBox(
+                      width: compact ? 22 : 24,
+                      height: compact ? 22 : 24,
+                      child: Icon(
+                        Icons.arrow_outward_rounded,
+                        size: compact ? 13 : 14,
+                        color: entry.color,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: compact ? 9 : 10),
+          Text(
+            entry.title,
+            maxLines: compact ? 2 : 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: titleColor,
+              fontSize: compact ? 14 : 15,
+              height: 1.14,
+              fontWeight: AppTypography.title,
+            ),
+          ),
+          SizedBox(height: compact ? 5 : 6),
+          Text(
+            entry.subtitle,
+            maxLines: compact ? 4 : 5,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: bodyColor,
+              fontSize: compact ? 11.4 : 12,
+              height: 1.28,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TraceCurvePainter extends CustomPainter {
+  const _TraceCurvePainter({
+    required this.centers,
+    required this.accent,
+    required this.isDarkMode,
+  });
+
+  final List<Offset> centers;
+  final Color accent;
+  final bool isDarkMode;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (centers.length < 2) return;
+
+    final path = Path()..moveTo(centers.first.dx, centers.first.dy);
+    for (var i = 0; i < centers.length - 1; i++) {
+      final current = centers[i];
+      final next = centers[i + 1];
+      final control = Offset(
+        (current.dx + next.dx) / 2,
+        (current.dy + next.dy) / 2 + (i.isEven ? -40 : 40),
+      );
+      path.quadraticBezierTo(control.dx, control.dy, next.dx, next.dy);
+    }
+
+    final glowPaint = Paint()
+      ..color = accent.withValues(alpha: isDarkMode ? 0.12 : 0.14)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = 12
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
+    canvas.drawPath(path, glowPaint);
+
+    final basePaint = Paint()
+      ..color = Colors.white.withValues(alpha: isDarkMode ? 0.22 : 0.74)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = 6;
+    canvas.drawPath(path, basePaint);
+
+    final routePaint = Paint()
+      ..shader = LinearGradient(
+        colors: [
+          accent.withValues(alpha: isDarkMode ? 0.48 : 0.44),
+          StudyUi.pathCyan.withValues(alpha: isDarkMode ? 0.52 : 0.46),
+          StudyUi.pathMint.withValues(alpha: isDarkMode ? 0.44 : 0.38),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = 3;
+    canvas.drawPath(path, routePaint);
+
+    final dotPaint = Paint()..color = accent.withValues(alpha: 0.14);
+    for (var i = 0; i < centers.length; i++) {
+      if (i.isOdd) {
+        canvas.drawCircle(
+          centers[i].translate(34, -30),
+          2.2,
+          dotPaint,
+        );
+      } else {
+        canvas.drawCircle(
+          centers[i].translate(-28, 30),
+          1.8,
+          dotPaint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TraceCurvePainter oldDelegate) {
+    return oldDelegate.centers != centers ||
+        oldDelegate.accent != accent ||
+        oldDelegate.isDarkMode != isDarkMode;
+  }
+}
+
+String _homeAiHint({
+  required int dueFlashcards,
+  required _SprintAction action,
+}) {
+  if (dueFlashcards > 0) {
+    return '今天有 $dueFlashcards 张卡片适合再过一遍';
+  }
+  if (action.target == _SprintActionTarget.task) {
+    return '先把最紧的一步做完，晚点再补记录';
+  }
+  return '睡前补一条学习记录，明天更好接上';
+}
+
+String _homeTrim(
+  String value, {
+  String fallback = '',
+  int maxLength = 24,
+}) {
+  final text = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (text.isEmpty) return fallback;
+  if (text.length <= maxLength) return text;
+  return '${text.substring(0, maxLength)}...';
+}
+
+String _homeDayLabel(DateTime date, DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(date.year, date.month, date.day);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return '今天';
+  if (diff == 1) return '昨天';
+  if (date.year != now.year) {
+    return '${date.year}/${date.month}/${date.day}';
+  }
+  return '${date.month}/${date.day}';
+}
+
+// ignore: unused_element
+class _FinalSprintHeroPanel extends StatelessWidget {
+  const _FinalSprintHeroPanel({
+    required this.isDarkMode,
+    required this.accent,
+    required this.action,
+    required this.recentLogs,
+    required this.completedTasks,
+    required this.totalTasks,
+    required this.recentAiActions,
+    required this.onStartReview,
+    required this.onActionTap,
+    required this.onCompleteAction,
+    required this.onOpenEvidencePackage,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final _SprintAction action;
+  final int recentLogs;
+  final int completedTasks;
+  final int totalTasks;
+  final int recentAiActions;
+  final VoidCallback? onStartReview;
+  final VoidCallback? onActionTap;
+  final Future<void> Function()? onCompleteAction;
+  final VoidCallback? onOpenEvidencePackage;
+
+  @override
+  Widget build(BuildContext context) {
+    final completionLabel =
+        totalTasks == 0 ? '-' : '${(completedTasks * 100 ~/ totalTasks)}%';
+
+    return StudyPathHero(
+      isDarkMode: isDarkMode,
+      accent: accent,
+      badge: '今日学习路径',
+      title: '今天先走这一小步',
+      subtitle: '记录、行动、复习和回顾连在一起，不用从一堆工具里找入口。',
+      icon: Icons.route_rounded,
+      steps: const ['记录', '行动', '复习', '回顾'],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _TodayPathFocusCard(
+            isDarkMode: isDarkMode,
+            accent: accent,
+            action: action,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _SprintMetric(
+                  label: '近7天记录',
+                  value: '$recentLogs',
+                  color: accent,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _SprintMetric(
+                  label: '任务完成率',
+                  value: completionLabel,
+                  color: StudyUi.success,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _SprintMetric(
+                  label: '学习整理',
+                  value: '$recentAiActions',
+                  color: StudyUi.secondary,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: StudyActionPill(
+                  icon: Icons.edit_note_rounded,
+                  label: '开始记录',
+                  color: accent,
+                  isDarkMode: isDarkMode,
+                  expand: true,
+                  onPressed: onStartReview,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: StudyActionPill(
+                  icon: Icons.arrow_forward_rounded,
+                  label: action.actionLabel,
+                  color: accent,
+                  isDarkMode: isDarkMode,
+                  filled: false,
+                  expand: true,
+                  onPressed: onActionTap ?? onStartReview,
+                ),
+              ),
+            ],
+          ),
+          if (onOpenEvidencePackage != null || onCompleteAction != null) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (onCompleteAction != null)
+                  _HeroTextAction(
+                    icon: Icons.check_circle_rounded,
+                    label: action.completeLabel,
+                    color: StudyUi.success,
+                    isDarkMode: isDarkMode,
+                    onTap: () => unawaited(onCompleteAction!()),
+                  ),
+                if (onOpenEvidencePackage != null)
+                  _HeroTextAction(
+                    icon: Icons.timeline_rounded,
+                    label: '本周回顾',
+                    color: StudyUi.secondary,
+                    isDarkMode: isDarkMode,
+                    onTap: onOpenEvidencePackage!,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _MobileStudyPathPanel extends StatelessWidget {
+  const _MobileStudyPathPanel({
+    required this.isDarkMode,
+    required this.accent,
+    required this.action,
+    required this.recentLogs,
+    required this.completedTasks,
+    required this.totalTasks,
+    required this.progress,
+    required this.todayFocusMinutes,
+    required this.streak,
+    required this.onStartReview,
+    required this.onActionTap,
+    required this.onFlashcards,
+    required this.onReviewPage,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final _SprintAction action;
+  final int recentLogs;
+  final int completedTasks;
+  final int totalTasks;
+  final double progress;
+  final int todayFocusMinutes;
+  final int streak;
+  final VoidCallback? onStartReview;
+  final VoidCallback? onActionTap;
+  final VoidCallback? onFlashcards;
+  final VoidCallback? onReviewPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    final focusProgress = (todayFocusMinutes / 240).clamp(0.0, 1.0).toDouble();
+
+    return StudyFontScope(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.68)),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDarkMode
+                ? [
+                    const Color(0xFF14222D),
+                    const Color(0xFF171B2D),
+                    const Color(0xFF15192A),
+                  ]
+                : [
+                    Colors.white.withValues(alpha: 0.98),
+                    const Color(0xFFF7FCFF).withValues(alpha: 0.96),
+                    const Color(0xFFFFFBF5).withValues(alpha: 0.94),
+                  ],
+          ),
+          boxShadow: [
+            if (!isDarkMode)
+              BoxShadow(
+                color: const Color(0xFF6D7EA5).withValues(alpha: 0.10),
+                blurRadius: 34,
+                offset: const Offset(0, 20),
+              ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '今日学习路径',
+                        style: TextStyle(
+                          color: titleColor,
+                          fontSize: 23,
+                          height: 1.08,
+                          fontWeight: AppTypography.hero,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        '清晰安排，稳步推进',
+                        style: TextStyle(
+                          color: bodyColor,
+                          fontSize: 13,
+                          fontWeight: AppTypography.emphasis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: const Center(
+                    child: StudyAssetIcon(
+                      asset: AppAssets.brandAppIcon,
+                      preserveColor: true,
+                      fallbackIcon: Icons.auto_stories_rounded,
+                      size: 34,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 360,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _MobileStudyPathPainter(
+                        accent: accent,
+                        isDarkMode: isDarkMode,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 14,
+                    right: 18,
+                    child: _MobilePathNodeCard(
+                      isDarkMode: isDarkMode,
+                      color: accent,
+                      icon: Icons.auto_awesome_rounded,
+                      asset: AppAssets.generatedHomeReviewIcon,
+                      label: '记录',
+                      caption: '回顾今天的学习',
+                      trailingIcon: Icons.check_rounded,
+                      onTap: onStartReview,
+                    ),
+                  ),
+                  Positioned(
+                    top: 94,
+                    left: 54,
+                    right: 4,
+                    child: _MobilePathNodeCard(
+                      isDarkMode: isDarkMode,
+                      color: StudyUi.secondary,
+                      icon: Icons.flag_rounded,
+                      asset: AppAssets.generatedHomePlanIcon,
+                      label: '行动',
+                      caption: action.target == _SprintActionTarget.task
+                          ? '推进今日安排'
+                          : '整理下一步',
+                      trailingIcon: Icons.play_arrow_rounded,
+                      onTap: onActionTap ?? onStartReview,
+                    ),
+                  ),
+                  Positioned(
+                    top: 188,
+                    left: 14,
+                    right: 18,
+                    child: _MobilePathNodeCard(
+                      isDarkMode: isDarkMode,
+                      color: StudyUi.success,
+                      icon: Icons.style_rounded,
+                      asset: AppAssets.generatedHomeFlashcardsIcon,
+                      label: '复习',
+                      caption: '巩固知识点',
+                      trailingIcon: Icons.play_arrow_rounded,
+                      onTap: onFlashcards,
+                    ),
+                  ),
+                  Positioned(
+                    top: 282,
+                    left: 54,
+                    right: 4,
+                    child: _MobilePathNodeCard(
+                      isDarkMode: isDarkMode,
+                      color: StudyUi.warning,
+                      icon: Icons.timeline_rounded,
+                      asset: AppAssets.generatedHomeWeeklyReviewIcon,
+                      label: '回顾',
+                      caption: '看看最近变化',
+                      trailingIcon: Icons.radio_button_unchecked_rounded,
+                      onTap: onReviewPage,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _MobilePathMetric(
+                    isDarkMode: isDarkMode,
+                    color: accent,
+                    label: '今日专注时长',
+                    value: _formatFocusMinutes(todayFocusMinutes),
+                    caption: '目标 4h',
+                    progress: focusProgress,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _MobilePathMetric(
+                    isDarkMode: isDarkMode,
+                    color: StudyUi.warning,
+                    label: '连续学习',
+                    value: '$streak 天',
+                    caption: streak > 0 ? '继续加油' : '今天开始',
+                    trailingIcon: Icons.local_fire_department_rounded,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 42),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobilePathNodeCard extends StatelessWidget {
+  const _MobilePathNodeCard({
+    required this.isDarkMode,
+    required this.color,
+    required this.icon,
+    required this.asset,
+    required this.label,
+    required this.caption,
+    required this.trailingIcon,
+    required this.onTap,
+  });
+
+  final bool isDarkMode;
+  final Color color;
+  final IconData icon;
+  final String asset;
+  final String label;
+  final String caption;
+  final IconData trailingIcon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: Container(
+          height: 78,
+          padding: const EdgeInsets.fromLTRB(64, 10, 9, 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            color: isDarkMode
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.white.withValues(alpha: 0.9),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.74)),
+            boxShadow: [
+              if (!isDarkMode)
+                BoxShadow(
+                  color: color.withValues(alpha: 0.18),
+                  blurRadius: 26,
+                  offset: const Offset(0, 14),
+                ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: -50,
+                top: 3,
+                child: _PathNodeOrb(
+                  icon: icon,
+                  asset: asset,
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: titleColor,
+                            fontSize: 18,
+                            height: 1.05,
+                            fontWeight: AppTypography.title,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          caption,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: bodyColor,
+                            fontSize: 12,
+                            height: 1.18,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: StudyUi.chipBackground(color, isDarkMode),
+                    ),
+                    child: Icon(trailingIcon, color: color, size: 17),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PathNodeOrb extends StatelessWidget {
+  const _PathNodeOrb({
+    required this.icon,
+    required this.asset,
+  });
+
+  final IconData icon;
+  final String asset;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 58,
+      height: 58,
+      child: Center(
+        child: StudyAssetIcon(
+          asset: asset,
+          size: 46,
+          preserveColor: true,
+          fallbackIcon: icon,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobilePathMetric extends StatelessWidget {
+  const _MobilePathMetric({
+    required this.isDarkMode,
+    required this.color,
+    required this.label,
+    required this.value,
+    required this.caption,
+    this.progress,
+    this.trailingIcon,
+  });
+
+  final bool isDarkMode;
+  final Color color;
+  final String label;
+  final String value;
+  final String caption;
+  final double? progress;
+  final IconData? trailingIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 100,
+      padding: const EdgeInsets.fromLTRB(11, 11, 10, 11),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: isDarkMode
+            ? Colors.white.withValues(alpha: 0.07)
+            : Colors.white.withValues(alpha: 0.88),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withValues(alpha: 0.10)
+              : color.withValues(alpha: 0.14),
+        ),
+        boxShadow: [
+          if (!isDarkMode)
+            BoxShadow(
+              color: const Color(0xFF17203A).withValues(alpha: 0.07),
+              blurRadius: 20,
+              offset: const Offset(0, 12),
+            ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: StudyUi.title(isDarkMode),
+                    fontSize: 11,
+                    height: 1,
+                    fontWeight: AppTypography.title,
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  height: 24,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: StudyUi.title(isDarkMode),
+                        fontSize: 22,
+                        height: 1,
+                        fontWeight: AppTypography.hero,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: StudyUi.body(isDarkMode),
+                    fontSize: 11,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (progress != null) ...[
+            const SizedBox(width: 6),
+            _MiniProgressRing(
+              progress: progress!.clamp(0.0, 1.0).toDouble(),
+              color: color,
+              isDarkMode: isDarkMode,
+            ),
+          ] else if (trailingIcon != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: StudyUi.chipBackground(color, isDarkMode),
+              ),
+              child: Icon(
+                trailingIcon,
+                color: color,
+                size: 23,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniProgressRing extends StatelessWidget {
+  const _MiniProgressRing({
+    required this.progress,
+    required this.color,
+    required this.isDarkMode,
+  });
+
+  final double progress;
+  final Color color;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 42,
+      height: 42,
+      child: CustomPaint(
+        painter: _MiniProgressRingPainter(
+          progress: progress,
+          color: color,
+          isDarkMode: isDarkMode,
+        ),
+        child: Center(
+          child: Text(
+            '${(progress * 100).round()}%',
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              height: 1,
+              fontWeight: AppTypography.title,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniProgressRingPainter extends CustomPainter {
+  const _MiniProgressRingPainter({
+    required this.progress,
+    required this.color,
+    required this.isDarkMode,
+  });
+
+  final double progress;
+  final Color color;
+  final bool isDarkMode;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final stroke = 5.0;
+    final base = Paint()
+      ..color = color.withValues(alpha: isDarkMode ? 0.18 : 0.16)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    final active = Paint()
+      ..color = color.withValues(alpha: 0.82)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    final insetRect = rect.deflate(stroke / 2);
+    canvas.drawArc(insetRect, -math.pi / 2, math.pi * 2, false, base);
+    canvas.drawArc(
+      insetRect,
+      -math.pi / 2,
+      math.pi * 2 * progress,
+      false,
+      active,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniProgressRingPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.color != color ||
+      oldDelegate.isDarkMode != isDarkMode;
+}
+
+class _MobileStudyPathPainter extends CustomPainter {
+  const _MobileStudyPathPainter({
+    required this.accent,
+    required this.isDarkMode,
+  });
+
+  final Color accent;
+  final bool isDarkMode;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(size.width * 0.22, 44)
+      ..cubicTo(
+        size.width * 0.18,
+        96,
+        size.width * 0.76,
+        78,
+        size.width * 0.68,
+        136,
+      )
+      ..cubicTo(
+        size.width * 0.56,
+        204,
+        size.width * 0.18,
+        180,
+        size.width * 0.25,
+        246,
+      )
+      ..cubicTo(
+        size.width * 0.32,
+        304,
+        size.width * 0.68,
+        276,
+        size.width * 0.62,
+        330,
+      );
+
+    final glowPaint = Paint()
+      ..color = accent.withValues(alpha: isDarkMode ? 0.13 : 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(path, glowPaint);
+
+    final linePaint = Paint()
+      ..color = accent.withValues(alpha: isDarkMode ? 0.46 : 0.34)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(path, linePaint);
+
+    final dotPaint = Paint()
+      ..color = Colors.white.withValues(alpha: isDarkMode ? 0.48 : 0.92)
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = accent.withValues(alpha: 0.28)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    for (final point in [
+      Offset(size.width * 0.22, 44),
+      Offset(size.width * 0.68, 136),
+      Offset(size.width * 0.25, 246),
+      Offset(size.width * 0.62, 330),
+    ]) {
+      canvas.drawCircle(point, 9, dotPaint);
+      canvas.drawCircle(point, 9, borderPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MobileStudyPathPainter oldDelegate) =>
+      oldDelegate.accent != accent || oldDelegate.isDarkMode != isDarkMode;
+}
+
+class _TodayPathFocusCard extends StatelessWidget {
+  const _TodayPathFocusCard({
+    required this.isDarkMode,
+    required this.accent,
+    required this.action,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final _SprintAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDarkMode
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.66),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: accent.withValues(alpha: isDarkMode ? 0.24 : 0.18),
+        ),
+        boxShadow: [
+          if (!isDarkMode)
+            BoxShadow(
+              color: accent.withValues(alpha: 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: StudyUi.chipBackground(accent, isDarkMode),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.28),
+                  ),
+                ),
+                child: Icon(Icons.flag_rounded, color: accent, size: 18),
+              ),
+              Container(
+                width: 2,
+                height: 52,
+                margin: const EdgeInsets.only(top: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      accent.withValues(alpha: 0.48),
+                      StudyUi.warning.withValues(alpha: 0.18),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                BadgePill(
+                  label: '今日下一步',
+                  background: StudyUi.chipBackground(accent, isDarkMode),
+                  foreground: accent,
+                ),
+                const SizedBox(height: 9),
+                Text(
+                  action.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 17,
+                    height: 1.25,
+                    fontWeight: AppTypography.title,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  action.reason,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: bodyColor, height: 1.38),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  action.expectedGain,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: AppTypography.emphasis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroTextAction extends StatelessWidget {
+  const _HeroTextAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isDarkMode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: StudyUi.chipBackground(color, isDarkMode),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: AppTypography.title,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeIconAction extends StatelessWidget {
+  const _HomeIconAction({
+    required this.tooltip,
+    required this.icon,
+    required this.color,
+    required this.isDarkMode,
+    required this.onPressed,
+    this.size = 34,
+    this.iconSize = 17,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color color;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+  final double size;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null;
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(13),
+            onTap: disabled ? null : onPressed,
+            child: Ink(
+              decoration: BoxDecoration(
+                color: StudyUi.chipBackground(color, isDarkMode),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: color.withValues(alpha: disabled ? 0.08 : 0.18),
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  icon,
+                  size: iconSize,
+                  color: disabled ? StudyUi.muted(isDarkMode) : color,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _HomeLearningFlowStrip extends StatelessWidget {
+  const _HomeLearningFlowStrip({
+    required this.isDarkMode,
+    required this.accent,
+    required this.onReview,
+    required this.onAction,
+    required this.onFlashcards,
+    required this.onReviewPage,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final VoidCallback? onReview;
+  final VoidCallback? onAction;
+  final VoidCallback? onFlashcards;
+  final VoidCallback? onReviewPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = [
+      _HomeFlowStep(
+        icon: Icons.edit_note_rounded,
+        asset: AppAssets.generatedHomeReviewIcon,
+        label: '记录',
+        caption: '2 分钟',
+        onTap: onReview,
+      ),
+      _HomeFlowStep(
+        icon: Icons.flag_rounded,
+        asset: AppAssets.generatedHomePlanIcon,
+        label: '行动',
+        caption: '先做一步',
+        onTap: onAction,
+      ),
+      _HomeFlowStep(
+        icon: Icons.style_rounded,
+        asset: AppAssets.generatedHomeFlashcardsIcon,
+        label: '复习',
+        caption: '闪卡',
+        onTap: onFlashcards,
+      ),
+      _HomeFlowStep(
+        icon: Icons.timeline_rounded,
+        asset: AppAssets.generatedHomeWeeklyReviewIcon,
+        label: '回顾',
+        caption: '看变化',
+        onTap: onReviewPage,
+      ),
+    ];
+    return StudyCard(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      color: isDarkMode
+          ? StudyUi.surface(isDarkMode)
+          : Colors.white.withValues(alpha: 0.9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '今天这样走',
+            style: TextStyle(
+              color: StudyUi.title(isDarkMode),
+              fontWeight: AppTypography.title,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 96,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 26,
+                  right: 26,
+                  top: 28,
+                  child: Container(
+                    height: 2,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      gradient: LinearGradient(
+                        colors: [
+                          accent.withValues(alpha: 0.52),
+                          StudyUi.secondary.withValues(alpha: 0.34),
+                          StudyUi.warning.withValues(alpha: 0.28),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    for (var i = 0; i < steps.length; i++)
+                      Expanded(
+                        child: _HomeFlowStepTile(
+                          step: steps[i],
+                          accent: _flowAccent(i, accent),
+                          isDarkMode: isDarkMode,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _flowAccent(int index, Color fallback) {
+    return switch (index) {
+      0 => fallback,
+      1 => StudyUi.success,
+      2 => StudyUi.warning,
+      _ => StudyUi.secondary,
+    };
+  }
+}
+
+class _HomeFlowStep {
+  const _HomeFlowStep({
+    required this.icon,
+    required this.asset,
+    required this.label,
+    required this.caption,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String asset;
+  final String label;
+  final String caption;
+  final VoidCallback? onTap;
+}
+
+class _HomeFlowStepTile extends StatelessWidget {
+  const _HomeFlowStepTile({
+    required this.step,
+    required this.accent,
+    required this.isDarkMode,
+  });
+
+  final _HomeFlowStep step;
+  final Color accent;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: step.onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 42,
+              height: 42,
+              child: Center(
+                child: StudyAssetIcon(
+                  asset: step.asset,
+                  size: 34,
+                  preserveColor: true,
+                  fallbackIcon: step.icon,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              step.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: titleColor,
+                fontWeight: AppTypography.title,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              step.caption,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: bodyColor, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SprintMetric extends StatelessWidget {
+  const _SprintMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.isDarkMode,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: StudyUi.chipBackground(color, isDarkMode),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: AppTypography.sans,
+              fontFamilyFallback: AppTypography.fontFallbacks,
+              color: color,
+              fontSize: 17,
+              fontWeight: AppTypography.hero,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: AppTypography.sans,
+              fontFamilyFallback: AppTypography.fontFallbacks,
+              color: StudyUi.body(isDarkMode),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HomeRiveBackground extends StatelessWidget {
   const _HomeRiveBackground({required this.isDarkMode});
 
@@ -354,14 +2914,17 @@ class _HomeRiveBackground extends StatelessWidget {
           ),
         ),
         Positioned(
-          width: screenSize.width * 2.28,
-          left: -screenSize.width * 0.58,
-          top: -screenSize.height * 0.12,
+          width: screenSize.width * 2.05,
+          left: -screenSize.width * 0.52,
+          top: -screenSize.height * 0.10,
           child: IgnorePointer(
-            child: Image.asset(
-              AppAssets.spline,
-              fit: BoxFit.fitWidth,
-              filterQuality: FilterQuality.high,
+            child: Opacity(
+              opacity: isDarkMode ? 0.42 : 0.44,
+              child: Image.asset(
+                AppAssets.spline,
+                fit: BoxFit.fitWidth,
+                filterQuality: FilterQuality.high,
+              ),
             ),
           ),
         ),
@@ -377,7 +2940,7 @@ class _HomeRiveBackground extends StatelessWidget {
           child: IgnorePointer(
             child: ExcludeSemantics(
               child: Opacity(
-                opacity: isDarkMode ? 0.54 : 0.82,
+                opacity: isDarkMode ? 0.34 : 0.18,
                 child: const SafeRiveAsset(
                   asset: AppAssets.shapes,
                   fit: BoxFit.cover,
@@ -407,8 +2970,8 @@ class _HomeRiveBackground extends StatelessWidget {
                           const Color(0xFF0A0F1C).withValues(alpha: 0.36),
                         ]
                       : [
-                          Colors.white.withValues(alpha: 0.02),
-                          const Color(0xFFDDEBFF).withValues(alpha: 0.08),
+                          Colors.white.withValues(alpha: 0.42),
+                          const Color(0xFFF1F6FF).withValues(alpha: 0.72),
                         ],
                 ),
               ),
@@ -452,220 +3015,6 @@ class _GlassCard extends StatelessWidget {
   }
 }
 
-class _HomeToolbarScrollBehavior extends MaterialScrollBehavior {
-  const _HomeToolbarScrollBehavior();
-
-  @override
-  Set<PointerDeviceKind> get dragDevices => {
-        ...super.dragDevices,
-        PointerDeviceKind.mouse,
-      };
-}
-
-class _HomeAiChatEntry extends StatelessWidget {
-  const _HomeAiChatEntry({
-    required this.isDarkMode,
-    this.onTap,
-  });
-
-  final bool isDarkMode;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: onTap,
-        child: _GlassCard(
-          isDarkMode: isDarkMode,
-          height: 76,
-          padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
-          radius: 28,
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF1EA7FF), Color(0xFF5B6DFF)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF1EA7FF).withValues(alpha: 0.26),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: const Center(
-                  child: StudyAssetIcon(
-                    asset: AppAssets.sideAiAssistantIcon,
-                    size: 28,
-                    color: Colors.white,
-                    fallbackIcon: Icons.auto_awesome_rounded,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'AI 学习驾驶舱',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: isDarkMode ? Colors.white : AppColors.ink,
-                        fontSize: 19,
-                        height: 1.08,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '拍照、语音复盘、路径规划',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: isDarkMode
-                            ? Colors.white.withValues(alpha: 0.5)
-                            : AppColors.muted,
-                        fontSize: 12,
-                        height: 1.1,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: isDarkMode
-                      ? Colors.white.withValues(alpha: 0.06)
-                      : Colors.white.withValues(alpha: 0.36),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.arrow_forward_rounded,
-                  color: Color(0xFF2D8CFF),
-                  size: 22,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HomeFeatureCard extends StatelessWidget {
-  const _HomeFeatureCard({
-    required this.title,
-    required this.subtitle,
-    required this.asset,
-    required this.colors,
-    this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final String asset;
-  final List<Color> colors;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(26),
-        onTap: onTap,
-        child: Container(
-          height: 118,
-          padding: const EdgeInsets.fromLTRB(16, 16, 10, 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(26),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors:
-                  colors.map((color) => color.withValues(alpha: 0.9)).toList(),
-            ),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-            boxShadow: [
-              BoxShadow(
-                color: colors.first.withValues(alpha: 0.22),
-                blurRadius: 22,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: -36,
-                right: -24,
-                child: Container(
-                  width: 90,
-                  height: 90,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.18),
-                  ),
-                ),
-              ),
-              Positioned(
-                right: -10,
-                bottom: -12,
-                child: SizedBox(
-                  width: 84,
-                  height: 84,
-                  child: Center(
-                    child: _HomeAnimatedIcon(asset: asset, size: 82),
-                  ),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.78),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _HomeAnimatedIcon extends StatelessWidget {
   const _HomeAnimatedIcon({
     required this.asset,
@@ -686,145 +3035,6 @@ class _HomeAnimatedIcon extends StatelessWidget {
         Icons.auto_awesome_rounded,
         size: size * 0.62,
         color: StudyUi.primary,
-      ),
-    );
-  }
-}
-
-bool _isGeneratedHomeIcon(String asset) =>
-    asset.startsWith('assets/icons/home_') && asset.endsWith('_v3.png');
-
-class _HomeToolCard extends StatelessWidget {
-  const _HomeToolCard({
-    required this.label,
-    required this.asset,
-    required this.isDarkMode,
-    this.onTap,
-  });
-
-  final String label;
-  final String asset;
-  final bool isDarkMode;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final generatedIcon = _isGeneratedHomeIcon(asset);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onTap,
-        child: _GlassCard(
-          isDarkMode: isDarkMode,
-          height: 112,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          radius: 24,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: generatedIcon ? 64 : 56,
-                height: generatedIcon ? 64 : 56,
-                decoration: generatedIcon
-                    ? null
-                    : BoxDecoration(
-                        color: isDarkMode
-                            ? Colors.white.withValues(alpha: 0.05)
-                            : Colors.white.withValues(alpha: 0.36),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                child: Center(
-                  child: _HomeAnimatedIcon(
-                    asset: asset,
-                    size: generatedIcon ? 62 : 50,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isDarkMode ? Colors.white70 : AppColors.ink,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HomeShortcut extends StatelessWidget {
-  const _HomeShortcut({
-    required this.label,
-    required this.asset,
-    required this.isDarkMode,
-    this.onTap,
-  });
-
-  final String label;
-  final String asset;
-  final bool isDarkMode;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final generatedIcon = _isGeneratedHomeIcon(asset);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: onTap,
-        child: SizedBox(
-          width: 84,
-          child: _GlassCard(
-            isDarkMode: isDarkMode,
-            height: 100,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-            radius: 22,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: generatedIcon ? 56 : 50,
-                  height: generatedIcon ? 56 : 50,
-                  decoration: generatedIcon
-                      ? null
-                      : BoxDecoration(
-                          color: isDarkMode
-                              ? Colors.white.withValues(alpha: 0.05)
-                              : Colors.white.withValues(alpha: 0.36),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                  child: Center(
-                    child: _HomeAnimatedIcon(
-                      asset: asset,
-                      size: generatedIcon ? 54 : 44,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isDarkMode ? Colors.white70 : AppColors.ink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -868,7 +3078,7 @@ class _HomeTabs extends StatelessWidget {
           ),
           const SizedBox(width: 28),
           Text(
-            '本周复盘',
+            '本周回顾',
             style: TextStyle(
               color: inactive,
               fontSize: 17,
@@ -989,6 +3199,7 @@ class _RecommendationCard extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _ProgressPanel extends StatelessWidget {
   const _ProgressPanel({
     required this.isDarkMode,
@@ -1114,7 +3325,7 @@ class _RecentLogCard extends StatelessWidget {
             height: 50,
             child: Center(
               child: _HomeAnimatedIcon(
-                asset: 'assets/icons/home_notes_v3.png',
+                asset: AppAssets.generatedHomeNotesIcon,
                 size: 48,
               ),
             ),
@@ -1159,21 +3370,62 @@ class _RecentLogCard extends StatelessWidget {
 }
 
 class _EmptyRecentCard extends StatelessWidget {
-  const _EmptyRecentCard({required this.isDarkMode});
+  const _EmptyRecentCard({
+    required this.isDarkMode,
+    required this.onStartReview,
+    required this.onOpenLogs,
+  });
 
   final bool isDarkMode;
+  final VoidCallback? onStartReview;
+  final VoidCallback? onOpenLogs;
 
   @override
   Widget build(BuildContext context) {
+    final titleColor = isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor = isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+
     return _GlassCard(
       isDarkMode: isDarkMode,
       padding: const EdgeInsets.all(18),
-      child: Text(
-        '近 7 天没有学习记录。可以从「AI 对话」开始整理计划或复盘。',
-        style: TextStyle(
-          color: isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-          height: 1.55,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '先留下一条今天的学习记录',
+            style: TextStyle(
+              color: titleColor,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '写下学了什么、卡在哪里、下一步做什么，后面回顾会更清楚。',
+            style: TextStyle(color: bodyColor, height: 1.55),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              StudyActionPill(
+                icon: Icons.edit_note_rounded,
+                label: '开始 2 分钟记录',
+                color: AppColors.studyPrimary,
+                isDarkMode: isDarkMode,
+                onPressed: onStartReview,
+              ),
+              StudyActionPill(
+                icon: Icons.history_rounded,
+                label: '查看全部记录',
+                color: StudyUi.pathBlue,
+                isDarkMode: isDarkMode,
+                onPressed: onOpenLogs,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1342,9 +3594,9 @@ class _AiCreateInputState extends State<_AiCreateInput> {
         );
         _statusText = text.isEmpty ? '未识别到文字，可手动输入描述' : '已识别图片文字';
       });
-    } on PlatformException catch (error) {
+    } on PlatformException {
       if (mounted) {
-        setState(() => _statusText = '图片识别失败：${error.message ?? error.code}');
+        setState(() => _statusText = '图片识别失败，可手动输入描述');
       }
     } catch (_) {
       if (mounted) setState(() => _statusText = '图片识别失败，可手动输入描述');
@@ -1407,11 +3659,11 @@ class _AiCreateInputState extends State<_AiCreateInput> {
         _mode == _AiCreateMode.log ? '学习记录已保存' : '学习任务已创建',
       );
       Navigator.of(context).pop();
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _isProcessing = false;
-        _statusText = 'AI 创建失败：$error';
+        _statusText = '这次没有整理成功，内容还在，可以稍后再试';
       });
     }
   }
@@ -1427,11 +3679,10 @@ class _AiCreateInputState extends State<_AiCreateInput> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.controller.primaryColor;
-    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final textColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
     final title = _isPhoto ? '拍照创建' : '语音创建';
-    final actionLabel = _mode == _AiCreateMode.log ? '生成学习记录' : '生成学习任务';
+    final actionLabel = _mode == _AiCreateMode.log ? '整理学习记录' : '整理学习任务';
 
     return Scaffold(
       backgroundColor:
@@ -1439,7 +3690,8 @@ class _AiCreateInputState extends State<_AiCreateInput> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: textColor,
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        title:
+            Text(title, style: const TextStyle(fontWeight: AppTypography.hero)),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(22, 18, 22, 36),
@@ -1461,12 +3713,22 @@ class _AiCreateInputState extends State<_AiCreateInput> {
                   : '点击麦克风说出学习记录或任务，也可以手动输入...',
               hintStyle: TextStyle(color: bodyColor.withValues(alpha: 0.62)),
               filled: true,
-              fillColor: widget.isDarkMode
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.white,
+              fillColor: StudyUi.surfaceAlt(widget.isDarkMode).withValues(
+                alpha: widget.isDarkMode ? 0.72 : 0.88,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(24),
-                borderSide: BorderSide.none,
+                borderSide:
+                    BorderSide(color: StudyUi.border(widget.isDarkMode)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(24),
+                borderSide:
+                    BorderSide(color: StudyUi.border(widget.isDarkMode)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(24),
+                borderSide: BorderSide(color: accent.withValues(alpha: 0.50)),
               ),
               contentPadding: const EdgeInsets.all(18),
             ),
@@ -1480,44 +3742,37 @@ class _AiCreateInputState extends State<_AiCreateInput> {
             children: [
               if (_isPhoto)
                 Expanded(
-                  child: OutlinedButton.icon(
+                  child: StudyActionPill(
+                    icon: Icons.photo_camera_rounded,
+                    label: '重新拍照',
+                    color: accent,
+                    isDarkMode: widget.isDarkMode,
+                    filled: false,
+                    expand: true,
                     onPressed: _isProcessing ? null : _pickPhoto,
-                    icon: const Icon(Icons.photo_camera_rounded),
-                    label: const Text('重新拍照'),
                   ),
                 )
               else
                 Expanded(
-                  child: OutlinedButton.icon(
+                  child: StudyActionPill(
+                    icon: _isListening ? Icons.stop_rounded : Icons.mic_rounded,
+                    label: _isListening ? '停止听写' : '开始语音',
+                    color: accent,
+                    isDarkMode: widget.isDarkMode,
+                    filled: false,
+                    expand: true,
                     onPressed: _isProcessing ? null : _toggleSpeech,
-                    icon: Icon(
-                        _isListening ? Icons.stop_rounded : Icons.mic_rounded),
-                    label: Text(_isListening ? '停止听写' : '开始语音'),
                   ),
                 ),
               const SizedBox(width: 12),
               Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
+                child: StudyActionPill(
+                  icon: Icons.auto_awesome_rounded,
+                  label: _isProcessing ? '整理中...' : actionLabel,
+                  color: accent,
+                  isDarkMode: widget.isDarkMode,
+                  expand: true,
                   onPressed: _isProcessing ? null : _submit,
-                  icon: _isProcessing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.auto_awesome_rounded),
-                  label: Text(actionLabel),
                 ),
               ),
             ],
@@ -1575,8 +3830,8 @@ class _CreateModeToggle extends StatelessWidget {
             style: TextStyle(
               color: selected
                   ? Colors.white
-                  : (isDarkMode ? Colors.white70 : AppColors.ink),
-              fontWeight: FontWeight.w800,
+                  : StudyUi.title(isDarkMode).withValues(alpha: 0.72),
+              fontWeight: AppTypography.title,
             ),
           ),
         ),
@@ -1626,7 +3881,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
           if (mounted) {
             setState(() {
               _isInitialized = false;
-              _speechError = '语音功能需要 Google Play 服务支持，当前设备暂不支持';
+              _speechError = '当前设备暂时不可用语音输入，可手动输入任务';
               _isCheckingSpeech = false;
             });
           }
@@ -1637,7 +3892,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
           _isInitialized = available;
           _isCheckingSpeech = false;
           if (!available) {
-            _speechError = '语音功能需要 Google Play 服务支持，当前设备暂不支持';
+            _speechError = '当前设备暂时不可用语音输入，可手动输入任务';
           }
         });
       }
@@ -1645,7 +3900,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
       if (mounted) {
         setState(() {
           _isInitialized = false;
-          _speechError = '语音功能需要 Google Play 服务支持，当前设备暂不支持';
+          _speechError = '当前设备暂时不可用语音输入，可手动输入任务';
           _isCheckingSpeech = false;
         });
       }
@@ -1702,7 +3957,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
       await StudyToast.dialog(
         context,
         title: '语音识别失败',
-        message: '$error',
+        message: '这次没有听清，可以手动输入任务内容。',
       );
     }
   }
@@ -1777,9 +4032,8 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.controller.primaryColor;
-    final textColor = widget.isDarkMode ? Colors.white : AppColors.ink;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final textColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -1788,8 +4042,8 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: textColor,
-        title:
-            const Text('快速创建任务', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('快速创建任务',
+            style: TextStyle(fontWeight: AppTypography.hero)),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 40),
@@ -1800,54 +4054,43 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
             style: TextStyle(color: textColor, fontSize: 15),
             maxLines: 3,
             decoration: InputDecoration(
-              hintText: '输入任务描述，AI 自动拆解...',
+              hintText: '输入任务描述，我来帮你拆成几步...',
               hintStyle: TextStyle(
-                color: widget.isDarkMode
-                    ? Colors.white.withValues(alpha: 0.35)
-                    : Colors.black26,
+                color: StudyUi.muted(widget.isDarkMode),
               ),
               filled: true,
-              fillColor: widget.isDarkMode
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFF2F5FC),
+              fillColor: StudyUi.surfaceAlt(widget.isDarkMode).withValues(
+                alpha: widget.isDarkMode ? 0.72 : 0.88,
+              ),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
+                borderSide:
+                    BorderSide(color: StudyUi.border(widget.isDarkMode)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide:
+                    BorderSide(color: StudyUi.border(widget.isDarkMode)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: accent.withValues(alpha: 0.50)),
               ),
             ),
           ),
           const SizedBox(height: 12),
           if (_manualController.text.isNotEmpty)
-            SizedBox(
-              height: 48,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: _isProcessing
-                    ? null
-                    : () => _createTaskFromInput(_manualController.text),
-                icon: _isProcessing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.auto_awesome_rounded, size: 18),
-                label: Text(
-                  _isProcessing ? '创建中...' : 'AI 创建任务',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 14),
-                ),
-              ),
+            StudyActionPill(
+              icon: Icons.auto_awesome_rounded,
+              label: _isProcessing ? '创建中...' : '创建任务',
+              color: accent,
+              isDarkMode: widget.isDarkMode,
+              expand: true,
+              onPressed: _isProcessing
+                  ? null
+                  : () => _createTaskFromInput(_manualController.text),
             ),
           const SizedBox(height: 24),
 
@@ -1858,7 +4101,7 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
             const SizedBox(height: 8),
             Center(
               child: Text(
-                '语音输入需要 Google Play 服务',
+                '语音输入暂不可用',
                 style: TextStyle(
                   color: widget.isDarkMode ? Colors.white30 : AppColors.muted,
                   fontSize: 12,
@@ -1934,33 +4177,15 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
                 ),
               ),
               const SizedBox(height: 16),
-              SizedBox(
-                height: 48,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
-                  ),
-                  onPressed: _isProcessing
-                      ? null
-                      : () => _createTaskFromInput(_recognizedText),
-                  icon: _isProcessing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.task_alt_rounded, size: 18),
-                  label: Text(
-                    _isProcessing ? '创建中...' : 'AI 创建任务',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 14),
-                  ),
-                ),
+              StudyActionPill(
+                icon: Icons.task_alt_rounded,
+                label: _isProcessing ? '创建中...' : '创建任务',
+                color: accent,
+                isDarkMode: widget.isDarkMode,
+                expand: true,
+                onPressed: _isProcessing
+                    ? null
+                    : () => _createTaskFromInput(_recognizedText),
               ),
             ],
           ],
@@ -1970,20 +4195,22 @@ class _VoiceTaskInputState extends State<_VoiceTaskInput> {
   }
 }
 
-// ── Home 顶部 AI 建议卡 ──
-// 首次渲染异步读取缓存；过期 / 无缓存时调 AI 生成一条行动建议。
+// ── Home 顶部学习建议卡 ──
+// 首次渲染异步读取缓存；过期 / 无缓存时生成一条下一步建议。
 class _HomeAiSuggestion extends StatefulWidget {
   const _HomeAiSuggestion({
     required this.isDarkMode,
     required this.controller,
     this.onOpenAssistant,
     this.onOpenTasks,
+    this.onOpenTimer,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
   final VoidCallback? onOpenAssistant;
   final VoidCallback? onOpenTasks;
+  final VoidCallback? onOpenTimer;
 
   @override
   State<_HomeAiSuggestion> createState() => _HomeAiSuggestionState();
@@ -2069,7 +4296,7 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
         if (mounted) {
           setState(() {
             _loading = false;
-            _text = '还没记录学习数据，从「AI 对话」开始一下吧。';
+            _text = '还没记录学习数据，先开始 2 分钟学习记录吧。';
             _hasError = false;
             _errorText = null;
             _usingLocalFallback = false;
@@ -2105,7 +4332,7 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
       );
       String text;
       if (warnings.isEmpty) {
-        text = '当前没有明显学习风险，继续保持学习节奏。';
+        text = '当前学习节奏比较稳，继续保持就好。';
       } else {
         final first = warnings.first;
         final buf = StringBuffer();
@@ -2170,7 +4397,7 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
         source.contains('无法获取') ||
         source.contains('请求失败') ||
         source.contains('生成失败') ||
-        source.contains('云端未生成');
+        source.contains('暂时没有生成');
   }
 
   Future<void> _waitForControllerLoaded() async {
@@ -2195,13 +4422,13 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
     final overdue = pending.where((task) => task.deadline.isBefore(today));
     if (overdue.isNotEmpty) {
       final task = overdue.first;
-      return '本地建议：有 ${overdue.length} 项任务已过截止时间，先处理「${_taskTitle(task)}」，把它拆成 25 分钟专注块推进。';
+      return '有 ${overdue.length} 项任务已过截止时间，先处理「${_taskTitle(task)}」，拆成 25 分钟一段来推进。';
     }
 
     final dueToday = pending.where((task) => _isSameDay(task.deadline, now));
     if (dueToday.isNotEmpty) {
       final task = dueToday.first;
-      return '本地建议：「${_taskTitle(task)}」今天截止，建议先完成最小可提交版本，再补充细节。';
+      return '「${_taskTitle(task)}」今天截止，建议先完成一个 25 分钟核心步骤，再补充细节。';
     }
 
     final dueSoon = pending.where((task) {
@@ -2210,11 +4437,11 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
     });
     if (dueSoon.isNotEmpty) {
       final task = dueSoon.first;
-      return '本地建议：「${_taskTitle(task)}」将在 48 小时内截止，今天先安排一个专注计时，降低临近截止风险。';
+      return '「${_taskTitle(task)}」将在 48 小时内截止，今天先安排一个专注计时，减少临近截止的压力。';
     }
 
     if (logs.isEmpty) {
-      return '本地建议：还没有学习日志，先写一条今天学了什么、卡在哪里、下一步做什么，后续 AI 才能给出更准建议。';
+      return '还没有学习日志，先写一条今天学了什么、卡在哪里、下一步做什么，后续助手才能给出更准建议。';
     }
 
     final latestLog = logs.reduce(
@@ -2227,15 +4454,15 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
     );
     final gapDays = today.difference(latestDay).inDays;
     if (gapDays >= 2) {
-      return '本地建议：已经 $gapDays 天没有新的学习日志了，今天先补一条 3 分钟复盘，恢复记录节奏。';
+      return '已经 $gapDays 天没有新的学习日志了，今天先补一条 3 分钟学习记录，恢复记录节奏。';
     }
 
     if (pending.isNotEmpty) {
       final task = pending.first;
-      return '本地建议：当前优先推进「${_taskTitle(task)}」，完成后再记录一次学习日志，方便形成闭环。';
+      return '当前优先推进「${_taskTitle(task)}」，完成后再记录一次学习日志，方便回看学习进展。';
     }
 
-    return '本地建议：当前没有明显待办压力，保持学习记录和复盘节奏就很好。';
+    return '当前没有明显待办压力，保持学习记录和回顾节奏就很好。';
   }
 
   String _taskTitle(StudyTaskItem task) {
@@ -2248,28 +4475,25 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
 
   String _friendlyAiSuggestionError(String message) {
     final source = message.trim();
-    if (source.isEmpty) return '云端请求失败';
+    if (source.isEmpty) return '暂时没有整理出建议';
     if (source.contains('BLUEHEART_API_KEY')) {
-      return '后端未配置 BLUEHEART_API_KEY';
+      return '学习助手还没有准备好';
     }
     if (source.contains('BLUEHEART_APP_ID')) {
-      return '后端未配置 BLUEHEART_APP_ID';
+      return '学习助手还没有准备好';
     }
     if (source.contains('请先登录') ||
         source.contains('401') ||
         source.contains('登录已过期')) {
-      return '未登录或登录态已过期';
+      return '登录后可以继续整理';
     }
-    if (source.contains('超时')) return '云端请求超时';
+    if (source.contains('超时')) return '整理超时';
     if (source.contains('无法连接') ||
         source.contains('网络') ||
         source.contains('SocketException')) {
-      return '无法连接后端服务';
+      return '暂时连不上学习助手';
     }
-    const maxLength = 64;
-    return source.length > maxLength
-        ? '${source.substring(0, maxLength)}...'
-        : source;
+    return '智能整理暂时不稳定';
   }
 
   @override
@@ -2291,6 +4515,7 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
     final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
     final bodyColor =
         widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final primaryAction = _suggestionPrimaryAction(_text ?? '');
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 400),
@@ -2330,7 +4555,7 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
                   Row(
                     children: [
                       Text(
-                        _usingLocalFallback ? '本地建议' : 'AI 建议',
+                        _usingLocalFallback ? '今日参考' : '学习建议',
                         style: TextStyle(
                           color: titleColor,
                           fontSize: 13,
@@ -2360,7 +4585,7 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
                               strokeWidth: 2, color: accent),
                         ),
                         const SizedBox(width: 8),
-                        Text('AI 正在分析你的学习数据...',
+                        Text('正在看看今天适合先做什么...',
                             style: TextStyle(color: bodyColor, fontSize: 12)),
                       ],
                     )
@@ -2382,7 +4607,7 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  '云端未生成：${_errorText ?? '原因未知'}',
+                                  '已先给你一条参考，智能整理暂时不稳定。',
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -2392,20 +4617,12 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
                                   ),
                                 ),
                               ),
-                              IconButton(
-                                tooltip: '重试云端建议',
+                              _HomeIconAction(
+                                tooltip: '重新整理建议',
+                                icon: Icons.refresh_rounded,
+                                color: accent,
+                                isDarkMode: widget.isDarkMode,
                                 onPressed: () => _loadOrFetch(force: true),
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 32,
-                                  height: 32,
-                                ),
-                                icon: Icon(
-                                  Icons.refresh_rounded,
-                                  size: 18,
-                                  color: accent,
-                                ),
                               ),
                             ],
                           ),
@@ -2414,47 +4631,40 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
                     ),
                   if (!_loading && _text != null) ...[
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (widget.onOpenTasks != null)
-                          TextButton.icon(
-                            onPressed: widget.onOpenTasks,
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (primaryAction != null)
+                            _HeroTextAction(
+                              icon: primaryAction.icon,
+                              label: primaryAction.label,
+                              color: primaryAction.color,
+                              isDarkMode: widget.isDarkMode,
+                              onTap: primaryAction.onTap,
                             ),
-                            icon: const Icon(Icons.task_alt_rounded, size: 14),
-                            label: const Text('查看任务',
-                                style: TextStyle(fontSize: 12)),
+                          if (widget.onOpenAssistant != null &&
+                              primaryAction?.onTap != widget.onOpenAssistant)
+                            _HeroTextAction(
+                              icon: Icons.auto_awesome_rounded,
+                              label: '整理下一步',
+                              color: StudyUi.secondary,
+                              isDarkMode: widget.isDarkMode,
+                              onTap: widget.onOpenAssistant!,
+                            ),
+                          _HomeIconAction(
+                            tooltip: '刷新建议',
+                            icon: Icons.refresh_rounded,
+                            color: accent,
+                            isDarkMode: widget.isDarkMode,
+                            onPressed: () => _loadOrFetch(force: true),
                           ),
-                        if (widget.onOpenAssistant != null)
-                          TextButton.icon(
-                            onPressed: widget.onOpenAssistant,
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            icon: const StudyAssetIcon(
-                              asset: AppAssets.aiFloatingAssistantIcon,
-                              preserveColor: true,
-                              fallbackIcon: Icons.smart_toy_rounded,
-                              size: 16,
-                            ),
-                            label: const Text('AI 助手',
-                                style: TextStyle(fontSize: 12)),
-                          ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: '刷新建议',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _loadOrFetch(force: true),
-                          icon: const Icon(Icons.refresh_rounded, size: 16),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ],
@@ -2465,4 +4675,65 @@ class _HomeAiSuggestionState extends State<_HomeAiSuggestion> {
       ),
     );
   }
+
+  _SuggestionAction? _suggestionPrimaryAction(String text) {
+    final source = text.trim();
+    if (source.contains('专注计时')) {
+      final onTap = widget.onOpenTimer ?? widget.onOpenTasks;
+      if (onTap == null) return null;
+      return _SuggestionAction(
+        label: '开始专注',
+        icon: Icons.timer_rounded,
+        color: StudyUi.pathBlue,
+        onTap: onTap,
+      );
+    }
+    if (source.contains('任务') ||
+        source.contains('截止') ||
+        source.contains('待办') ||
+        source.contains('优先推进')) {
+      final onTap = widget.onOpenTasks;
+      if (onTap == null) return null;
+      return _SuggestionAction(
+        label: '处理任务',
+        icon: Icons.task_alt_rounded,
+        color: StudyUi.success,
+        onTap: onTap,
+      );
+    }
+    if (source.contains('学习日志') ||
+        source.contains('复盘') ||
+        source.contains('记录学习数据')) {
+      final onTap = widget.onOpenAssistant;
+      if (onTap == null) return null;
+      return _SuggestionAction(
+        label: '开始 2 分钟记录',
+        icon: Icons.edit_note_rounded,
+        color: widget.controller.primaryColor,
+        onTap: onTap,
+      );
+    }
+    final onTap = widget.onOpenAssistant;
+    if (onTap == null) return null;
+    return _SuggestionAction(
+      label: '整理下一步',
+      icon: Icons.auto_awesome_rounded,
+      color: StudyUi.secondary,
+      onTap: onTap,
+    );
+  }
+}
+
+class _SuggestionAction {
+  const _SuggestionAction({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
 }

@@ -1,61 +1,72 @@
 # StudyTrace 学迹
 
-> 面向大学生的 AI 学习操作层与学习证据链社区
+> 面向大学生与自主学习者的 AI 学习复盘、行动规划与学迹回看应用
 
-StudyTrace 不是通用 AI 导学、错题题库或笔记助手，而是把大学生真实学习过程沉淀成「可执行、可复盘、可追溯」证据链的 Flutter 跨平台学习管理应用。App 通过 vivo AIGC/蓝心能力把相机、语音、OCR、图片理解、查询改写、文本相似度排序和 AI actions 串成“拍一下 / 说一句 → 自动安排学习 → 留下证据”的操作层体验。用户可以从课件、课堂笔记、题目或课程通知一键生成学习记录、任务拆解、笔记、闪卡和复习路径，并通过学迹动态、作品证据包、小组共学挑战和证据型排行把学习行为沉淀为可追溯、可分享的长期成果。
+StudyTrace 将日常学习中的任务、日志、笔记、闪卡、专注计时和 AI 整理过程沉淀为可复盘、可追溯的成长轨迹。它不是单一的笔记工具或聊天助手，而是围绕「感知 - 理解 - 规划 - 执行 - 复盘 - 回看」构建的学习操作层。
 
-- **Web 版**：https://studytrace.oykb.cn
-- **API**：https://api.studytrace.oykb.cn
-- **当前状态**：离线优先 App、真实账号、云端同步、AI 后端代理、小组动态和排行榜已接入；比赛版已补齐 AI 学习驾驶舱、学习闭环计划、学迹证据包、AI 动态草稿、能力徽章、小组共学挑战、证据型排行、校园学习地图、能力透明轨迹，以及 vivo 翻译、图片生成、云端语音、文本向量、POI/地理编码适配入口。
+应用采用 Flutter 客户端与 NestJS 后端协同架构：客户端负责离线优先的学习记录与交互体验，后端负责账号、资料备份、AI 能力代理、学习小组、学迹回顾和学习进度等服务。AI 能力由后端统一托管，客户端不保存模型密钥。
 
 ---
 
-## 功能概览
+## 核心能力
 
-### 学习闭环
-- **课程任务管理**：创建、编辑、删除任务，支持状态/类型筛选、搜索、截止时间、提醒时间和子任务。
-- **学习日志**：记录学习内容、问题、思考和下一步计划，支持课程归类和搜索筛选。
-- **学习日历**：月历标记学习记录和截止任务，点击日期查看当天任务与记录，默认展示当天信息。
-- **课程归档**：按课程汇总任务、日志和历史周报，支持课程管理。
-- **学习数据看板**：整合原「学习统计」内容，集中展示总记录、总任务、完成率、课程分布饼图、近 7 天学习记录柱状图、近 4 周趋势、子任务进度、AI 周报、笔记等数据。
-- **专注计时**：番茄钟计时，支持多种时长，计时结束可生成 AI 学习记录。
-- **AI 学习预警中心**：基于任务截止、逾期、子任务进度、学习记录断档和闪卡复习生成本地风险预警，支持每日摘要通知和最高风险即时推送。
-- **云端同步 UI**：展示同步入口、同步状态和多端数据同步相关操作，为接入后端同步接口预留交互。
-- **学习小组 UI**：提供小组入口、邀请制小组、成员、动态和 AI 共学挑战等多人学习场景界面。
-- **排行榜 UI**：提供个人榜、小组周榜/月榜等学习积分排行展示入口，并补充证据轨迹、AI 闭环、证据包和复盘沉淀等证据型维度。
-- **学迹动态**：默认作为私密学习证据链，支持显式发布到小组；可像朋友圈一样发布学习图文，并自动汇聚日志、任务、笔记、闪卡和 AI 操作记录，形成个人学习时间线。
-- **作品证据包 / 精选成果墙**：按课程聚合学习日志、任务完成、笔记、闪卡、AI 操作和图文动态，生成可展示的学习成果证据包。
-- **校园学习地图**：地点打卡默认私密保存，可选择城市、坐标或 POI 检索，并在用户显式选择后分享到小组证据链。
+### 学习路径
+
+* **首页工作台**：聚合今日学习路径、AI 建议、学习轨迹、任务进度和常用入口。
+* **计划管理**：管理课程安排、截止任务、子任务、提醒时间和学习标记。
+* **专注执行**：提供番茄钟专注计时，完成后可回写学习记录。
+* **复习巩固**：通过知识闪卡、AI 判分、熟练度更新和复习节奏提醒巩固知识点。
+* **个人档案**：汇总课程归档、成就、偏好、个人资料和学习状态。
+* **学迹记录**：以私密优先的方式记录图文学习瞬间，并可按用户选择进入学习小组。
+* **学习回顾**：汇总任务、日志、笔记、闪卡和学习助手整理结果，形成阶段性学迹回顾。
+* **数据看板**：展示学习趋势、课程分布、任务完成、闪卡复习和 AI 整理结果。
+* **知识图谱**：根据任务、笔记和闪卡提取知识节点与关联关系，帮助用户看清知识结构。
 
 ### AI 能力
-- **AI 学习驾驶舱**：首屏提供“一拍成学习闭环”“今日最优学习路径”“问我的学习记忆”三条比赛演示链路；拍照链路优先使用图片多模态理解，并保留 vivo OCR 兜底。
-- **学习闭环计划**：`POST /ai/learning-loop` 将材料转成结构化 JSON，生成学习摘要、课程归属、知识点、任务草稿、笔记草稿、闪卡和复习计划。
-- **学习记忆检索**：对任务、日志、笔记、闪卡和 AI 操作记录进行本地预筛，再用 vivo 查询改写与文本相似度排序召回个人学习资料，并展示证据来源卡片。
-- **AI 操作层**：AI 对话可输出结构化 actions，直接创建任务、保存笔记、生成闪卡、启动专注或触发学习闭环。
-- **AI 计划自检**：学习闭环一键落地前可检查截止冲突、任务密度和课程分布，降低 AI 草稿直接落地的误操作风险。
-- **AI 学迹动态卡片**：可根据学习轨迹、课程和图片生成可发布的学习证据动态文案。
-- **vivo 能力透明卡**：AI 结果页展示本次使用的大模型、OCR、图片理解、查询改写、文本相似度/重排等能力。
-- **AI 学习助手**：生成学习日志、拆解任务、分析周报、风险提醒。
-- **AI 流式对话**：支持 Markdown 渲染、历史会话、多会话切换和深度思考模式。
-- **AI 图片理解 / OCR / 语音输入**：支持拍照、选图、OCR 和语音创建任务。
-- **AI 知识闪卡**：从学习记录生成问答卡片，支持列表横向滑动、层叠小卡、放大浏览、翻转、收藏和标签。
-- **AI 设置**：云端 AI 后端代理，支持服务地址、推理参数和连接测试；客户端不保存模型 Key。
 
-### 设置与导航
-- **侧边栏结构**：
-  - 总览：作品总览
-  - AI 管理：AI 学习助手、AI 设置
-  - 学习应用：学习笔记、专注计时、知识闪卡，支持点击展开/收起
-  - 数据与编排：数据看板、任务编排
-  - 系统：系统设置
-- **系统设置**：通知提醒、AI 学习预警中心、皮肤主题和其他系统偏好集中管理。
-- **深色模式**：侧边栏底部小方形按钮切换日间/夜间。
+* **AI 学习座舱**：围绕拍照整理、今日学习路径和个人学习记忆提供高频入口。
+* **学习材料整理**：将课件、笔记、题目或课程通知整理为学习摘要、任务草稿、笔记草稿、闪卡和复习建议。
+* **AI 对话与操作层**：支持流式回复、Markdown 渲染、多会话管理，并可在用户确认边界内生成任务、保存笔记、创建闪卡或启动专注。
+* **笔记辅助写作**：支持续写、扩写、改写、总结等笔记编辑辅助能力。
+* **语义检索**：结合本地候选召回、查询改写和相似度排序，帮助用户找回相关任务、日志、笔记和闪卡。
+* **多模态入口**：支持 OCR、图片理解、录音文件转写、翻译、图片生成、视频生成、POI 检索和逆地理编码等后端托管能力。
+* **整理历史**：记录学习助手整理过的内容、结果和可重试状态，便于用户回看与继续处理。
 
-### 后端上线能力
-- **技术路线**：Node/NestJS + MySQL + Prisma + JWT。
-- **已具备骨架**：认证、用户、同步、AI 代理、学习小组、动态、排行榜、挑战、证据包、地点打卡、记忆索引、备份导出。
-- **主要目录**：`backend/`
-- **注意**：学迹动态默认写入个人私密证据链；只有显式选择小组、挑战提交证据或证据包分享到小组时，才进入组内动态和组榜。
+### 同伴学习与成长回顾
+
+* **学习小组**：支持邀请制小组、成员列表、组内近况和小组回顾。
+* **学习回顾**：可将阶段性学习成果整理为包含任务、日志、笔记、闪卡和学迹的结构化回顾。
+* **地点记录**：地点记录默认私密保存，可按用户选择进入小组回顾。
+* **学习进度**：进度指标覆盖任务推进、复习、学习回顾、小组记录和连续学习等维度。
+
+---
+
+## 当前导航
+
+```text
+底部导航
+├── 首页   — 今日学习路径、AI 建议、学习轨迹和常用入口
+├── 计划   — 课程安排、截止任务、学习记录和日历视图
+├── 专注   — 番茄钟计时、专注记录和任务关联
+├── 复习   — 知识闪卡、AI 判分和复习节奏
+└── 我的   — 个人资料、课程归档、成就和偏好
+
+侧边栏入口
+├── 学习助手
+├── 助手设置
+├── 学习笔记
+├── 学迹
+├── 学习回顾
+├── 数据看板
+├── 系统设置
+├── 成长记录
+├── 知识图谱
+├── 整理历史
+├── 回收站
+└── 应用介绍
+```
+
+部分深层能力也会通过首页卡片、学习助手整理结果或业务页面入口进入，例如学习小组、同伴近况、学习流程和学习回顾详情。
 
 ---
 
@@ -63,14 +74,14 @@ StudyTrace 不是通用 AI 导学、错题题库或笔记助手，而是把大�
 
 | 模块 | 内容 |
 |------|------|
-| App 框架 | Flutter 3.x / Material Design 3 |
-| App 架构 | MVVM / ChangeNotifier |
-| App 存储 | SharedPreferences 本地 JSON + flutter_secure_storage 凭据存储 |
-| AI 服务 | 后端托管 vivo AIGC/蓝心能力，客户端不保存模型 Key |
-| 图表与交互 | `fl_chart`、`table_calendar`、`rive`、`flutter_markdown` |
-| 输入能力 | `image_picker`、`google_mlkit_text_recognition`、`speech_to_text`、`record` |
-| 后端 | NestJS、MySQL、Prisma、JWT、Docker |
-| 平台 | Android / Windows / Web |
+| 客户端 | Flutter / Dart / Material Design 3 |
+| 架构 | MVVM / ChangeNotifier / 单一 AppDataController 协调核心状态 |
+| 本地存储 | SharedPreferences JSON + flutter_secure_storage |
+| 图表与日历 | fl_chart / table_calendar |
+| 多模态输入 | image_picker / google_mlkit_text_recognition / speech_to_text / record |
+| AI 服务 | NestJS 后端统一代理 vivo AIGC/蓝心能力，客户端不保存模型 Key |
+| 后端 | NestJS / Prisma / MySQL / JWT / Docker |
+| 同步策略 | 离线优先，本地更新时间戳与后写胜出冲突策略 |
 
 ---
 
@@ -79,49 +90,44 @@ StudyTrace 不是通用 AI 导学、错题题库或笔记助手，而是把大�
 ```text
 lib/
 ├── main.dart
+├── app/
+│   └── app.dart
 └── src/
     ├── controllers/
     │   └── app_data_controller.dart
     ├── models/
-    │   ├── study_task_item.dart
-    │   ├── study_sub_task_item.dart
-    │   ├── study_log_item.dart
-    │   ├── weekly_report_item.dart
-    │   ├── study_note.dart
-    │   ├── note_block.dart
-    │   ├── ai_config.dart
-    │   ├── ai_chat_message.dart
-    │   └── ai_flash_card.dart
     ├── services/
-    │   ├── local_storage_service.dart
-    │   ├── ai_study_service.dart
-    │   ├── ai_semantic_search_service.dart
-    │   ├── ocr_service.dart
-    │   ├── api_client.dart
-    │   ├── ai_credential_service.dart
-    │   └── report_export_service.dart
     ├── theme/
-    │   └── app_theme.dart
     └── ui/
+        ├── login/
+        ├── shared/
         ├── shell/
         │   ├── app_shell.dart
         │   ├── navigation_models.dart
-        │   ├── admin_section_page.dart
+        │   ├── tool_home_page.dart
         │   ├── create_page.dart
         │   ├── extension_page.dart
         │   └── user_page.dart
         └── study/
-            ├── ai_assistant_page.dart
+            ├── ai_learning_cockpit_page.dart
             ├── ai_chat_page.dart
             ├── ai_settings_page.dart
-            ├── calendar_page.dart
+            ├── learning_moments_page.dart
+            ├── evidence_package_page.dart
             ├── learning_dashboard_page.dart
+            ├── study_group_page.dart
+            ├── leaderboard_page.dart
+            ├── achievements_page.dart
+            ├── knowledge_graph_page.dart
             ├── study_notes_page.dart
+            ├── task_planning_page.dart
             ├── timer_page.dart
             └── flash_card_page.dart
 
 backend/
 ├── src/
+│   ├── modules/
+│   └── prisma/
 ├── prisma/
 ├── Dockerfile
 ├── docker-compose.yml
@@ -130,26 +136,41 @@ backend/
 
 ---
 
-## 后端 API 概览
+## 后端能力
 
-后端位于 `backend/`，第一版接口包括：
+后端位于 `backend/`，采用模块化 NestJS 架构：
 
-- 账号：`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`
-- 用户：`GET /me`、`PATCH /me/profile`
-- 同步：`POST /sync/push`、`GET /sync/pull?cursor=...`、`GET /sync/export`
-- 小组：`POST /groups`、`POST /groups/join`、`GET /groups/:id/members`
-- 动态：`POST /activities`、`GET /groups/:id/activities`
-- 排行榜：`GET /leaderboards/me`、`GET /leaderboards/groups/:id?range=week|month&metric=points|loops|review|evidencePackages|challengeEvidence|streak`
-- 挑战与证据：`POST /groups/:id/challenges/ai-draft`、`POST /groups/:id/challenges`、`GET /groups/:id/challenges`、`POST /groups/:id/challenges/:challengeId/join`、`POST /groups/:id/challenges/:challengeId/evidence`、`GET /groups/:id/challenges/:challengeId/leaderboard`
-- 证据包与地点：`POST /evidence-packages`、`GET /evidence-packages/mine`、`GET /groups/:id/evidence-packages`、`PATCH /evidence-packages/:id`、`POST /locations/check-ins`、`GET /locations/check-ins/mine`
-- AI 代理：`POST /ai/study-log`、`POST /ai/task-plan`、`POST /ai/learning-loop`、`POST /ai/weekly-analysis`、`POST /ai/risk-warnings`、`POST /ai/flash-cards`、`POST /ai/ocr`、`POST /ai/query-rewrite`、`POST /ai/rerank`、`POST /ai/chat`
-- vivo 能力：`GET /ai/capability-badges`、`POST /ai/translate`、`POST /ai/images/tasks`、`POST /ai/images/tasks/status`、`POST /ai/speech/transcribe`、`POST /ai/memory/index`、`POST /ai/memory/search`、`POST /ai/poi-search`、`POST /ai/reverse-geocode`
+* **HealthModule**：服务健康状态。
+* **AuthModule**：注册、登录、刷新、退出和账号删除。
+* **UsersModule**：用户资料、偏好和个人账号管理。
+* **SyncModule**：通用实体同步、增量拉取、导出、软删除和冲突处理。
+* **GroupsModule**：邀请制学习小组、成员列表、加入和退出。
+* **MomentsModule**：学迹记录、可见性、点赞和评论。
+* **ActivitiesModule**：学习活动与积分事件。
+* **LeaderboardsModule**：个人排行、小组排行和多维指标。
+* **CommunityEvidenceModule**：共学挑战、小组回顾、学习回顾和地点记录。
+* **AiModule**：学习生成、对话、OCR、翻译、图片/视频生成、语音转写、语义检索、记忆索引、POI 和能力记录。
+
+常用 API：
+
+* 账号：`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout`、`POST /auth/delete-account`
+* 用户：`GET /me`、`PATCH /me/profile`、`DELETE /me`
+* 同步：`POST /sync/push`、`GET /sync/pull?cursor=...`、`GET /sync/export`
+* 小组：`POST /groups`、`POST /groups/join`、`GET /groups`、`GET /groups/:id`、`GET /groups/:id/members`、`DELETE /groups/:id/membership`
+* 学迹：`POST /moments`、`GET /moments/feed`、`PATCH /moments/:id/visibility`、`DELETE /moments/:id`
+* 互动：`POST /moments/:id/likes/me`、`DELETE /moments/:id/likes/me`、`POST /moments/:id/comments`、`DELETE /moments/:id/comments/:commentId`
+* 活动：`POST /activities`、`GET /activities/mine`、`GET /groups/:id/activities`
+* 排行：`GET /leaderboards/me`、`GET /leaderboards/groups/:id?range=week|month&metric=...`
+* 挑战：`POST /groups/:id/challenges/ai-draft`、`POST /groups/:id/challenges`、`GET /groups/:id/challenges`、`POST /groups/:id/challenges/:challengeId/join`、`POST /groups/:id/challenges/:challengeId/evidence`
+* 学习回顾与地点：`POST /evidence-packages`、`GET /evidence-packages/mine`、`GET /groups/:id/evidence-packages`、`PATCH /evidence-packages/:id`、`POST /locations/check-ins`、`GET /locations/check-ins/mine`
+* AI：`POST /ai/study-log`、`POST /ai/task-plan`、`POST /ai/weekly-plan`、`POST /ai/learning-loop`、`POST /ai/weekly-analysis`、`POST /ai/risk-warnings`、`POST /ai/flash-cards`、`POST /ai/grade-flashcard`、`POST /ai/chat`、`POST /ai/chat/stream`
+* 扩展 AI 能力：`POST /ai/ocr`、`POST /ai/rewrite`、`POST /ai/query-rewrite`、`POST /ai/rerank`、`POST /ai/translate`、`POST /ai/images/tasks`、`POST /ai/images/tasks/status`、`POST /ai/videos/tasks`、`POST /ai/videos/tasks/status`、`POST /ai/speech/transcribe`、`POST /ai/memory/index`、`POST /ai/memory/search`、`POST /ai/poi-search`、`POST /ai/reverse-geocode`、`GET /ai/capability-badges`、`GET /ai/usage/today`
 
 ---
 
 ## 快速开始
 
-### App
+### 客户端
 
 ```bash
 git clone https://github.com/oykb58246/StudyTrace.git
@@ -158,169 +179,64 @@ flutter pub get
 flutter run
 ```
 
-### 后端
+默认情况下客户端指向线上或预设 API 地址。连接本地后端时，可在 `lib/src/controllers/app_data_controller.dart` 的 `_defaultBaseUrl()` 中改为当前运行环境可访问的地址：
 
-后端实际运行链路为 NestJS + Prisma + MySQL。数据库结构以 `backend/prisma/schema.prisma`
-和 `backend/prisma/migrations/` 为准，后端代码通过 `PrismaService` 访问数据库；
-`backend/sql/schema.mysql.sql` 是早期尚未接入后端时整理的手写 SQL 参考，保留为数据库设计草案和后续演进方向，不会被当前后端、Docker 或 Prisma 自动执行。
-
-#### 方式一：本地 MySQL + Prisma（推荐开发方式）
-
-1. 启动你本机的 MySQL 8.x，并创建数据库：
-
-```sql
-CREATE DATABASE IF NOT EXISTS studytrace
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
+```dart
+static String _defaultBaseUrl() {
+  return 'http://localhost:3000';
+}
 ```
 
-2. 准备后端环境变量：
+Android 模拟器通常使用 `http://10.0.2.2:3000`，真机需要使用局域网地址。
+
+### 后端
+
+后端需要 Node.js 18+ 与 MySQL。环境变量以 `backend/.env.example` 为模板。
+
+数据库结构以 `backend/prisma/schema.prisma` 和 `backend/prisma/migrations/`
+为准，后端代码通过 `PrismaService` 访问数据库。`backend/sql/schema.mysql.sql`
+是早期整理的手写 SQL 参考，保留为数据库设计草案和后续演进方向，不会被当前后端、
+Docker 或 Prisma 自动执行。
 
 ```bash
 cd backend
 cp .env.example .env
-```
-
-然后在 `backend/.env` 中配置数据库连接，例如：
-
-```text
-DATABASE_URL="mysql://root:你的密码@localhost:3306/studytrace"
-JWT_SECRET="本地开发用的一段长随机字符串"
-PORT="3000"
-```
-
-3. 安装依赖、生成 Prisma Client、同步数据库结构并启动：
-
-```bash
 npm install
 npm run prisma:generate
 npm run prisma:migrate
 npm run start:dev
 ```
 
-`npm run prisma:migrate` 会读取 `backend/prisma/schema.prisma` 和迁移记录来创建/更新表结构。
-如果只是快速把当前 Prisma schema 推到一个临时数据库，也可以在后端目录手动执行
-`npx prisma db push`；正式开发更建议使用 migration，方便团队同步结构变更。
-
-#### 方式二：Docker Compose（推荐一键本地运行）
+Docker：
 
 ```bash
 cd backend
-docker compose up --build
+docker compose up --build -d
 ```
-
-`backend/docker-compose.yml` 会启动两个服务：
-
-- `mysql`：MySQL 8.0，默认数据库/用户/密码均为 `studytrace`
-- `api`：NestJS 后端，监听 `3000`
-
-Docker 场景下，API 容器访问 MySQL 不能使用 `localhost`，因为 `localhost` 指的是 API 容器自身。
-请把 `backend/.env` 中的数据库地址写成：
-
-```text
-DATABASE_URL="mysql://studytrace:studytrace@mysql:3306/studytrace"
-```
-
-容器启动时会执行 `backend/startup.sh`，其中 `npx prisma db push --accept-data-loss`
-会按当前 `backend/prisma/schema.prisma` 同步数据库结构，然后启动 `node dist/main`。
-
-#### 关于 `backend/sql/schema.mysql.sql`
-
-这个 SQL 文件不是当前后端的初始化入口。它记录了项目早期未接入 NestJS/Prisma
-之前的手写 MySQL 设计，包括课程、任务、日志、笔记、闪卡等学习管理核心表，
-适合作为数据库课程工程、设计说明或后续功能扩展的参考。
-
-当前后端已经演进为 Prisma 模型，使用字符串主键、同步表、活动/积分/小组/证据包/记忆索引等实体。
-如果直接手动执行 `SOURCE backend/sql/schema.mysql.sql;`，生成的表结构不会与当前 Prisma
-模型完全一致，后端运行也不会自动使用这些表。后续若要把该 SQL 中的课程、任务、日志、笔记等设计正式接入后端，应先把它们迁移到 `backend/prisma/schema.prisma`，再生成 Prisma migration。
 
 ---
 
-## 前端通过 API 获取数据
+## AI 配置边界
 
-前端网络请求统一走 ApiClient（基于 package:http）。推荐在 Service 层封装接口，再由 Controller 调用并更新 UI。
-
-1) 配置本地后端地址（本机开发）
-
-当前默认指向 `https://api.studytrace.oykb.cn`。若要访问本地后端，可以在 App 的 AI 设置/服务地址中改为本地地址，或通过 `ApiEndpointConfig`/`AppDataController` 的后端地址配置传入：
-
-- Windows/Web 本机开发：`http://localhost:3000`
-- Android 模拟器：`http://10.0.2.2:3000`
-- 真机：`http://你的局域网IP:3000`
-
-后端地址会保存在本地存储中，后续登录、同步、AI 代理、小组和排行榜接口都会复用这个地址。
-
-2) 在 Service 层调用接口
-
-示例：
-
-```dart
-class ProfileService {
-  ProfileService(this.api);
-
-  final ApiClient api;
-
-  Future<Map<String, dynamic>> getMe() {
-    return api.getJson('/me');
-  }
-}
-```
-
-3) 在 Controller 层触发并更新 UI
-
-```dart
-final api = _ensureBackendClient();
-final profile = await ProfileService(api).getMe();
-// 保存到状态并 notifyListeners()
-```
-
-相关文件参考：
-- [lib/src/services/api_client.dart](lib/src/services/api_client.dart)
-- [lib/src/services/auth_service.dart](lib/src/services/auth_service.dart)
-- [lib/src/controllers/app_data_controller.dart](lib/src/controllers/app_data_controller.dart)
+* 客户端只保存后端服务地址、用户登录凭据和基础偏好，不保存 vivo/蓝心模型密钥。
+* 后端通过环境变量管理 `BLUEHEART_*`、`VIVO_*` 等配置。
+* 当云端能力不可用时，客户端优先保留本地记录、文字输入、本地 OCR 或普通检索结果，不把失败结果包装为成功。
+* 语音能力当前以录音文件转写和本机朗读为主；实时流式语音和官方 TTS 可作为后续专项继续扩展。
+* 学习记忆当前结合本地候选召回、查询改写、相似度排序和可选记忆索引，不把所有历史资料默认上传为全量云端记忆库。
 
 ---
 
-## AI 配置
+## 版本概览
 
-AI 能力统一通过后端代理调用，生产密钥只配置在服务器环境变量：
-
-1. 打开 App → 侧边栏 → AI 管理 → AI 设置
-2. 确认云服务地址为 `https://api.studytrace.oykb.cn`
-3. 后端 `.env` 配置 `BLUEHEART_API_KEY`、`BLUEHEART_APP_ID` 后重启服务；翻译、图片、语音、向量、POI 能力按需补充 `VIVO_*` 环境变量，未配置时前端保留原文/文字输入/本地证据兜底，不伪装成功
-
-### 移动端构建边界
-
-- Android、iOS、macOS 已包含录音相关权限配置；云端语音失败时保留文字输入或本机语音兜底。
-- 当前线上同步只重建并上传 Web 版；APK/IPA 需要在目标真机或签名环境重新构建后分发。
-
-通知提醒、皮肤主题和其他系统偏好位于：侧边栏 → 系统 → 系统设置。
-
----
-
-## 版本
-
-- **v1.5 可审计证据链社区版**：补齐默认私密边界、后端挑战/证据包/地点/记忆索引实体、真实证据型排行、AI 操作留痕、能力透明轨迹，以及 vivo 翻译、绘画任务、云端语音、文本向量和 POI/地理编码适配入口。
-- **v1.4 证据链增强版**：围绕“AI 学习操作层 + 学习证据链社区”升级；新增 AI 学迹动态草稿、作品证据包、精选成果墙、能力徽章、图片多模态闭环、学习记忆证据来源、落地前自检、AI 共学挑战和证据型排行展示。
-- **v1.3**：vivo AIGC 比赛版 AI 学习操作层；新增 AI 学习驾驶舱、学习闭环计划、今日最优路径、学习记忆检索、高价值 actions 和学迹动态时间线。
-- **v1.2**：侧边栏二次重构；AI 设置与系统设置分离；学习统计并入数据看板；云端同步、学习小组、排行榜 UI 加入；知识闪卡浏览与层叠交互增强；学习日历与任务编辑问题修复；自建 NestJS 后端骨架加入。
-- **v1.1**：vivo AIGC/蓝心能力集成、流式对话、Vision 图片理解、皮肤系统和 UI 重构。
-- **v1.0**：基础学习闭环、任务、日志、周报、统计和 AI 接入。
-
----
-
-## 比赛演示建议
-
-1. 拍一页课程 PPT 或课堂笔记，展示图片多模态理解 + vivo OCR 兜底 → 蓝心学习闭环 → 一键落地任务、笔记、闪卡。
-2. 在闭环预览中展示 vivo 能力透明卡和“落地前自检”，说明 AI 结果会先经过冲突、密度和课程分布检查。
-3. 询问“上次数据库索引问题”，展示查询改写 + 语义排序召回个人学习记忆，并展示任务/日志/笔记/闪卡/AI 操作证据来源。
-4. 打开学迹动态，展示 AI 动态草稿、私密证据链、小组发布、作品证据包和精选成果墙。
-5. 打开学习小组生成 AI 共学挑战，提交任务/日志/动态/证据包作为挑战证据，再打开排行榜展示积分之外的 AI 闭环、复盘、证据包、挑战证据和连续学习维度。
-6. 展示学迹动态或证据包的一键翻译、封面生成、语音复盘和地点打卡入口；失败时保留原文或文字模式，强调不伪造能力结果。
-7. 结尾强调 StudyTrace 从“AI 生成内容”升级为“AI 驱动学习行为、沉淀过程证据、连接同伴共学”的学习证据链社区。
+* **v1.5 当前版本**：完成学迹记录、学习回顾、学习进度、知识图谱、成长记录、整理历史、学习小组和多类 AI 能力接入。
+* **v1.4 学习回顾增强版**：补齐私密优先边界、学习回顾、成长记录、地点记录和本地学习提醒中心。
+* **v1.3 AI 学习座舱版**：加入拍照整理、今日学习路径、学习记忆检索和 AI actions。
+* **v1.2 后端与导航重构版**：引入 NestJS 后端、云同步、小组、排行和侧边栏导航。
+* **v1.1 AI 集成版**：接入流式对话、Markdown 渲染、多会话和主题切换。
+* **v1.0 本地学习路径版**：提供课程、任务、学习日志、周报和基础统计。
 
 ---
 
 ## 许可证
 
-MIT License
+当前项目按 MIT License 口径维护。

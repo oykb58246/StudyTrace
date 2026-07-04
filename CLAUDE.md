@@ -8,6 +8,8 @@ StudyTrace — Flutter 大学生学习管理 App。MVVM 架构，SharedPreferenc
 
 ## 每次会话流程
 
+> Trellis 已停用：以后不要创建或启动 `.trellis/tasks`，不要运行 `.trellis/scripts/task.py`，不要加载 `trellis-*` 技能或按 Trellis 流程推进任务。
+
 ### 1. 理解需求 → 进入计划模式 → 并行探索 → 写计划
 
 - 用户给出需求后，**先进入计划模式**（`EnterPlanMode`）
@@ -32,6 +34,7 @@ StudyTrace — Flutter 大学生学习管理 App。MVVM 架构，SharedPreferenc
 
 ## 关键规则
 
+- **不使用 Trellis**：不走 Trellis task / PRD / workflow-state / finish-work 流程；如需计划，使用普通文字计划或内置任务列表即可。
 - **中文思考与交流**：思考过程（thinking）和对 sub-agent 的 prompt 一律用中文，方便用户阅读和理解
 - **计划通过后直接执行**，无需等用户说"开始"或"继续"
 - **不自动 git commit**，等用户确认

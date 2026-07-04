@@ -1,10 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_latex/flutter_markdown_latex.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../../theme/app_theme.dart';
+import 'common_widgets.dart';
 import 'local_image.dart';
 
 const _markdownSecondary = Color(0xFF4F7EE8);
+
+final md.ExtensionSet studyMarkdownExtensionSet = md.ExtensionSet(
+  [
+    LatexBlockSyntax(),
+    ...md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+  ],
+  [
+    LatexInlineSyntax(),
+    ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+  ],
+);
+
+Map<String, MarkdownElementBuilder> buildStudyMarkdownBuilders({
+  required bool isDarkMode,
+  double bodyFontSize = 14,
+  Color? textColor,
+}) {
+  final formulaColor = textColor ?? AppColors.bodyColor(isDarkMode);
+  return {
+    'latex': LatexElementBuilder(
+      textStyle: TextStyle(
+        color: formulaColor,
+        fontSize: bodyFontSize,
+        height: 1.35,
+      ),
+      textScaleFactor: 1.05,
+    ),
+  };
+}
 
 MarkdownStyleSheet buildStudyMarkdownStyleSheet({
   required bool isDarkMode,
@@ -132,7 +164,7 @@ String _markdownImageSource(Uri uri) {
 Widget _markdownImageError(bool isDarkMode) {
   return DecoratedBox(
     decoration: BoxDecoration(
-      color: isDarkMode ? const Color(0xFF1E2430) : const Color(0xFFF2F5FC),
+      color: StudyUi.surfaceAlt(isDarkMode),
     ),
     child: Center(
       child: Icon(

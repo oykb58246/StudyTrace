@@ -13,6 +13,7 @@ analyzer:
   exclude:
     - ui/**
     - build/**
+    - assets/Build-an-Animated-App-with-Rive-and-Flutter-main/**
 
 linter:
   # The lint rules applied to this project can be customized in the

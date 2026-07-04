@@ -38,6 +38,7 @@ class AiStudyService {
   final ApiClient? _backendClient;
   final AiConfig _config;
   static const Duration _generationTimeout = Duration(seconds: 45);
+  static const Duration _chatTimeout = Duration(seconds: 90);
   static const Duration _todayMissionTimeout = Duration(seconds: 75);
 
   Future<AiGeneratedLog> generateStudyLog(String input) =>
@@ -258,10 +259,10 @@ class AiStudyService {
         'purpose': purpose,
         'thinkingEnabled': _resolveThinkingEnabled(thinkingEnabled),
         'options': await _aiOptions(),
-      });
+      }, timeout: _chatTimeout);
       final content = data['content'];
       if (content is String && content.trim().isNotEmpty) return content.trim();
-      throw const AiServiceException('AI学习助手返回格式异常');
+      throw const AiServiceException('这次回复没有整理好，请重新试一次');
     }());
   }
 
@@ -301,7 +302,7 @@ class AiStudyService {
       final response = await http.Client().send(request);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final errorBody = await response.stream.bytesToString();
-        throw AiServiceException('AI学习助手请求失败', detail: errorBody);
+        throw AiServiceException('学习助手暂时没连上，请稍后再试', detail: errorBody);
       }
       final stream =
           response.stream.transform(utf8.decoder).transform(const LineSplitter());
@@ -320,7 +321,7 @@ class AiStudyService {
               ? (decoded['message']?.toString().trim() ?? '')
               : '';
           throw AiServiceException(
-            message.isEmpty ? 'AI学习助手流式回复失败' : message,
+            message.isEmpty ? '学习助手暂时没有回复，请稍后再试' : message,
             detail: data,
           );
         }
@@ -338,7 +339,7 @@ class AiStudyService {
     } on AiServiceException {
       rethrow;
     } catch (error) {
-      throw AiServiceException('AI学习助手暂时不可用，请稍后重试', detail: '$error');
+      throw AiServiceException('学习助手暂时没有回复，请稍后再试', detail: '$error');
     }
   }
 
@@ -378,7 +379,7 @@ class AiStudyService {
       'purpose': 'assistant_turn',
       'thinkingEnabled': _resolveThinkingEnabled(thinkingEnabled),
       'options': await _aiOptions(minMaxTokens: 2200),
-    });
+    }, timeout: _chatTimeout);
     final content = data['content'];
     if (content is String && content.trim().isNotEmpty) {
       try {
@@ -393,7 +394,7 @@ class AiStudyService {
         return AiAssistantTurn(reply: content.trim());
       }
     }
-    throw const AiServiceException('AI学习助手返回格式异常');
+    throw const AiServiceException('这次回复没有整理好，请重新试一次');
   }
 
   String _extractJsonObject(String content) {
@@ -418,7 +419,7 @@ class AiStudyService {
     } on ApiException catch (error) {
       if (error.isNetworkError && error.displayMessage.contains('超时')) {
         throw AiServiceException(
-          'AI 生成耗时较长，请稍后重试或减少上下文',
+          '整理耗时较长，可以减少内容后再试',
           detail: error.detail,
         );
       }
@@ -429,7 +430,7 @@ class AiStudyService {
   ApiClient _requireBackend() {
     final backend = _backendClient;
     if (backend == null) {
-      throw const AiServiceException('请先登录并连接云端AI学习助手');
+      throw const AiServiceException('登录后可以继续使用在线学习整理');
     }
     return backend;
   }

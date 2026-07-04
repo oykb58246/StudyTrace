@@ -391,7 +391,7 @@ AiAppActionType? aiAppActionTypeFromWire(String value) {
       AiAppActionType.noteFromLog,
     // ── 学习操作层 ──
     'create_from_source' || 'create_loop_from_source' ||
-          'learning_loop' || '学习安排' || '学习闭环' =>
+          'learning_loop' || '学习安排' || '复盘安排' =>
       AiAppActionType.createLoopFromSource,
     'generate_today_mission' || 'generate_today_path' ||
           'today_mission' || '今日安排' || '今日路径' =>
@@ -405,7 +405,10 @@ AiAppActionType? aiAppActionTypeFromWire(String value) {
     'start_focus_with_task' || 'focus_with_task' =>
       AiAppActionType.startFocusWithTask,
     'generate_image' || 'create_image' || 'image_generation' ||
-          'text_to_image' || 'draw_image' || '生成图片' || '画图' =>
+          'text_to_image' || 'draw_image' || 'diagram' || 'mind_map_image' ||
+          'note_diagram' || 'flowchart_image' || '生成图片' || '画图' ||
+          '做图' || '图解' || '笔记图解' || '流程图' || '示意图' ||
+          '知识图谱配图' =>
       AiAppActionType.generateImage,
     'refresh_image' || 'query_image' || 'image_status' =>
       AiAppActionType.refreshImage,

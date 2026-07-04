@@ -90,7 +90,9 @@ class AiSemanticSearchService {
         );
         final rewritten = data['query']?.toString().trim() ?? '';
         if (rewritten.isNotEmpty) return rewritten;
-      } on ApiException {}
+      } on ApiException {
+        return query;
+      }
     }
 
     return query;
@@ -118,7 +120,9 @@ class AiSemanticSearchService {
                   : double.negativeInfinity)
               .toList();
         }
-      } on ApiException {}
+      } on ApiException {
+        return const [];
+      }
     }
 
     return const [];

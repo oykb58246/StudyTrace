@@ -21,8 +21,14 @@ enum _CtaState {
   confetti,
 }
 
+const _demoLoginUsername = 'xueji_student';
+const _demoLoginPassword = 'TraceStudent2026';
+const _demoLoginNickname = '学迹学习者';
+
 class WelcomeScreen extends StatefulWidget {
-  const WelcomeScreen({super.key});
+  const WelcomeScreen({super.key, this.controllerFactory});
+
+  final AppDataController Function()? controllerFactory;
 
   @override
   State<WelcomeScreen> createState() => _WelcomeScreenState();
@@ -36,14 +42,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   final ValueNotifier<int> _pageIndex = ValueNotifier<int>(0);
   final ValueNotifier<double> _pageProgress = ValueNotifier<double>(0);
 
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _emailController =
+      TextEditingController(text: _demoLoginUsername);
+  final TextEditingController _passwordController =
+      TextEditingController(text: _demoLoginPassword);
 
   _CtaState _ctaState = _CtaState.idle;
   bool _isRegisterMode = false;
   bool _isAdvancingToLogin = false;
 
   bool get _isOnLoginPage => _pageIndex.value == 1;
+
+  AppDataController _createController() {
+    return widget.controllerFactory?.call() ?? AppDataController();
+  }
 
   void _handlePageScroll() {
     if (!_pageController.hasClients) {
@@ -135,16 +147,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
     final identifier = _emailController.text.trim();
     final password = _passwordController.text;
+    final shouldRefreshDemoSeed = _isDemoCredential(identifier, password);
 
     setState(() => _ctaState = _CtaState.loading);
 
     try {
-      final controller = AppDataController();
+      final controller = _createController();
       await _submitAuth(
         controller: controller,
         identifier: identifier,
         password: password,
       );
+      if (shouldRefreshDemoSeed) {
+        await controller.loadFinalDemoSeed();
+      }
 
       if (!mounted) return;
 
@@ -172,7 +188,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   }
 
   Future<bool> _tryResumeLocalSession() async {
-    final controller = AppDataController();
+    final controller = _createController();
     try {
       await controller.load();
       if (!mounted) {
@@ -197,21 +213,94 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     }
   }
 
+  Future<void> _openLocalExperience() async {
+    if (_ctaState == _CtaState.loading || _ctaState == _CtaState.confetti) {
+      return;
+    }
+    setState(() => _ctaState = _CtaState.loading);
+
+    final controller = _createController();
+    try {
+      await controller.load();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      await _playSuccessTransition();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      _openAppShell(controller);
+    } catch (_) {
+      controller.dispose();
+      if (!mounted) return;
+      setState(() => _ctaState = _CtaState.idle);
+      StudyToast.dialog(
+        context,
+        title: '暂时进不去',
+        message: '本地数据加载失败，请稍后重试',
+      );
+    }
+  }
+
   Future<void> _submitAuth({
     required AppDataController controller,
     required String identifier,
     required String password,
-  }) {
+  }) async {
     if (_isRegisterMode) {
-      return controller.registerAccount(
+      await controller.registerAccount(
         username: identifier,
         password: password,
       );
+      return;
     }
-    return controller.loginWithCredentials(
-      identifier: identifier,
-      password: password,
-    );
+    try {
+      await controller.loginWithCredentials(
+        identifier: identifier,
+        password: password,
+      );
+    } on ApiException catch (error) {
+      if (!_isDemoCredential(identifier, password) ||
+          !_canAutoCreateDemoAccount(error)) {
+        rethrow;
+      }
+      try {
+        await controller.registerAccount(
+          username: _demoLoginUsername,
+          password: _demoLoginPassword,
+          nickname: _demoLoginNickname,
+        );
+      } on ApiException catch (registerError) {
+        if (_isAuthConflict(registerError)) {
+          throw error;
+        }
+        rethrow;
+      }
+    }
+  }
+
+  bool _isDemoCredential(String identifier, String password) {
+    return identifier.trim() == _demoLoginUsername &&
+        password == _demoLoginPassword;
+  }
+
+  bool _canAutoCreateDemoAccount(ApiException error) {
+    final message = error.displayMessage;
+    return error.isUnauthorized ||
+        error.statusCode == 401 ||
+        message.contains('账号或密码错误') ||
+        message.contains('Invalid credentials') ||
+        message.contains('Unauthorized');
+  }
+
+  bool _isAuthConflict(ApiException error) {
+    final message = error.displayMessage;
+    return error.statusCode == 409 ||
+        message.contains('用户名或邮箱已被注册') ||
+        message.contains('already exists') ||
+        message.contains('duplicate');
   }
 
   String _friendlyAuthError(ApiException error) {
@@ -300,8 +389,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                 child: ValueListenableBuilder<double>(
                   valueListenable: _pageProgress,
                   builder: (context, progress, _) {
-                    final sheetHeight = lerpDouble(356, 520, progress)!;
-                    final buttonBottom = lerpDouble(28, 52, progress)!;
+                    final media = MediaQuery.of(context);
+                    final compactHeight = media.size.height < 760;
+                    final landingSheetHeight = compactHeight ? 480.0 : 510.0;
+                    final loginSheetHeight = compactHeight ? 600.0 : 640.0;
+                    final sheetHeight = lerpDouble(
+                        landingSheetHeight, loginSheetHeight, progress)!;
+                    final buttonBottom = lerpDouble(
+                        compactHeight ? 34.0 : 48.0, 58.0, progress)!;
 
                     return SizedBox(
                       key: const Key('welcome_bottom_sheet'),
@@ -354,10 +449,33 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                                 passwordController:
                                                     _passwordController,
                                                 isRegisterMode: _isRegisterMode,
+                                                onLocalExperience:
+                                                    _openLocalExperience,
                                                 onToggleMode: () {
-                                                  setState(() =>
-                                                      _isRegisterMode =
-                                                          !_isRegisterMode);
+                                                  setState(() {
+                                                    _isRegisterMode =
+                                                        !_isRegisterMode;
+                                                    if (_isRegisterMode &&
+                                                        _isDemoCredential(
+                                                          _emailController.text,
+                                                          _passwordController
+                                                              .text,
+                                                        )) {
+                                                      _emailController.clear();
+                                                      _passwordController
+                                                          .clear();
+                                                    } else if (!_isRegisterMode &&
+                                                        _emailController.text
+                                                            .trim()
+                                                            .isEmpty &&
+                                                        _passwordController
+                                                            .text.isEmpty) {
+                                                      _emailController.text =
+                                                          _demoLoginUsername;
+                                                      _passwordController.text =
+                                                          _demoLoginPassword;
+                                                    }
+                                                  });
                                                 },
                                               ),
                                             ],
@@ -510,11 +628,10 @@ class _LandingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(26, 30, 26, 96),
+      padding: const EdgeInsets.fromLTRB(26, 54, 26, 112),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 20),
           Image.asset(
             'logo/logo黑透明.png',
             height: 48,
@@ -539,12 +656,14 @@ class _LoginPage extends StatefulWidget {
     required this.emailController,
     required this.passwordController,
     required this.isRegisterMode,
+    required this.onLocalExperience,
     required this.onToggleMode,
   });
 
   final TextEditingController emailController;
   final TextEditingController passwordController;
   final bool isRegisterMode;
+  final Future<void> Function() onLocalExperience;
   final VoidCallback onToggleMode;
 
   @override
@@ -558,12 +677,12 @@ class _LoginPageState extends State<_LoginPage> {
   Widget build(BuildContext context) {
     final isRegister = widget.isRegisterMode;
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(26, 30, 26, 96),
+      padding: const EdgeInsets.fromLTRB(26, 42, 26, 124),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isRegister ? '创建账号' : '登录',
+            isRegister ? '创建账号' : '登录或本机体验',
             key: ValueKey('auth_title_$isRegister'),
             style: const TextStyle(
               color: AppColors.ink,
@@ -573,13 +692,15 @@ class _LoginPageState extends State<_LoginPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            isRegister ? '注册新账号，开始管理学习。' : '登录以继续使用学迹。',
+            isRegister
+                ? '注册自己的账号，后续可同步学习记录、小组和回顾。'
+                : '登录后可同步学习记录；也可以先在本机试试。',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   fontSize: 16,
                   color: AppColors.body.withValues(alpha: 0.72),
                 ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           if (isRegister)
             TextFormField(
               key: const Key('signup_username_field'),
@@ -653,6 +774,23 @@ class _LoginPageState extends State<_LoginPage> {
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            key: const Key('local_experience_button'),
+            onPressed: widget.onLocalExperience,
+            icon: const Icon(Icons.explore_rounded, size: 18),
+            label: const Text('先在本机试试'),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF4470E8),
+              padding: EdgeInsets.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -777,8 +915,9 @@ class _AnimatedPrimaryActionButtonState
     final isLoading = widget.state == _CtaState.loading;
     final isSuccess =
         widget.state == _CtaState.success || widget.state == _CtaState.confetti;
-    final buttonText =
-        widget.progress < 0.5 ? '开始使用' : (widget.isRegisterMode ? '注册' : '登录');
+    final buttonText = widget.progress < 0.5
+        ? '开始使用'
+        : (widget.isRegisterMode ? '注册' : '开始学迹');
 
     return AnimatedBuilder(
       animation: _errorController,

@@ -5,8 +5,9 @@ import '../../models/ai_app_action.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
 import '../shared/page_wrapper.dart';
-import '../study/ai_assistant_page.dart';
+import '../study/ai_learning_cockpit_page.dart';
 import '../study/ai_settings_page.dart';
+import '../study/evidence_package_page.dart';
 import '../study/flash_card_page.dart';
 import '../study/learning_dashboard_page.dart';
 import '../study/leaderboard_page.dart';
@@ -25,6 +26,7 @@ class AdminSectionPage extends StatelessWidget {
     required this.isDarkMode,
     this.controller,
     this.onOpenSettings,
+    this.onOpenNotes,
     this.onExecuteActions,
     this.onBack,
   });
@@ -33,6 +35,7 @@ class AdminSectionPage extends StatelessWidget {
   final bool isDarkMode;
   final AppDataController? controller;
   final VoidCallback? onOpenSettings;
+  final VoidCallback? onOpenNotes;
   final AiActionHandler? onExecuteActions;
   final VoidCallback? onBack;
 
@@ -49,9 +52,15 @@ class AdminSectionPage extends StatelessWidget {
       return FlashCardPage(
         isDarkMode: isDarkMode,
         controller: controller!,
+        onOpenNotes: onOpenNotes,
       );
     } else if (section == AdminSection.learningMoments && controller != null) {
       body = LearningMomentsPage(
+        isDarkMode: isDarkMode,
+        controller: controller!,
+      );
+    } else if (section == AdminSection.evidencePackage && controller != null) {
+      body = EvidencePackagePage(
         isDarkMode: isDarkMode,
         controller: controller!,
       );
@@ -66,11 +75,9 @@ class AdminSectionPage extends StatelessWidget {
         controller: controller!,
       );
     } else if (section == AdminSection.aiAssistant && controller != null) {
-      body = AiAssistantPage(
+      body = AiLearningCockpitPage(
         isDarkMode: isDarkMode,
         controller: controller!,
-        onOpenSettings: onOpenSettings,
-        onExecuteActions: onExecuteActions,
       );
     } else if (section == AdminSection.aiSettings && controller != null) {
       body = AiSettingsPage(
@@ -109,60 +116,45 @@ class AdminSectionPage extends StatelessWidget {
       final config = _configFor(section, controller: controller);
       body = ListView(
         key: Key('page_admin_${section.name}'),
-        padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 124),
         children: [
-          Text(
-            section.label,
+          StudyPathHero(
             key: Key('admin_title_${section.name}'),
-            style: TextStyle(
-              color: isDarkMode ? Colors.white : Colors.black,
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            config.subtitle,
-            key: Key('admin_subtitle_${section.name}'),
-            style: TextStyle(
-              color: isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body,
-              fontSize: 15,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 18),
-          StudyCard(
-            padding: const EdgeInsets.all(20),
-            borderColor: config.accent.withValues(alpha: isDarkMode ? 0.24 : 0.18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            isDarkMode: isDarkMode,
+            accent: config.accent,
+            badge: '学习模块',
+            title: config.heroTitle,
+            subtitle: config.heroSubtitle,
+            icon: section.icon,
+            steps: const ['查看', '整理', '行动', '回看'],
+            child: Row(
               children: [
-                BadgePill(
-                  label: '学习模块',
-                  background: StudyUi.chipBackground(config.accent, isDarkMode),
-                  foreground: config.accent,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  config.heroTitle,
-                  style: TextStyle(
-                    color: StudyUi.title(isDarkMode),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
+                Expanded(
+                  child: StudyPathMetricPill(
+                    label: section.label,
+                    value: '当前',
+                    icon: section.icon,
+                    color: config.accent,
+                    isDarkMode: isDarkMode,
                   ),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  config.heroSubtitle,
-                  style: TextStyle(
-                    color: StudyUi.body(isDarkMode),
-                    height: 1.55,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: StudyPathMetricPill(
+                    label: '说明',
+                    value: '已就绪',
+                    icon: Icons.check_circle_rounded,
+                    color: StudyUi.success,
+                    isDarkMode: isDarkMode,
                   ),
                 ),
               ],
             ),
           ),
+          if (section == AdminSection.overview) ...[
+            const SizedBox(height: 16),
+            _AdminOverviewPathCard(isDarkMode: isDarkMode),
+          ],
         ],
       );
     }
@@ -173,6 +165,7 @@ class AdminSectionPage extends StatelessWidget {
       onBack: onBack,
       titleIcon: section.icon,
       accent: section.accent,
+      compactHeader: section != AdminSection.evidencePackage,
       child: body,
     );
   }
@@ -192,6 +185,135 @@ class _AdminConfig {
   final String heroSubtitle;
 }
 
+class _AdminOverviewPathCard extends StatelessWidget {
+  const _AdminOverviewPathCard({required this.isDarkMode});
+
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return StudyCard(
+      borderColor: StudyUi.pathBlue.withValues(alpha: isDarkMode ? 0.18 : 0.14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              StudyGlassIconNode(
+                icon: Icons.route_rounded,
+                accent: StudyUi.pathBlue,
+                size: 42,
+                iconSize: 20,
+                isDarkMode: isDarkMode,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '把学习路径上的内容集中管理',
+                  style: TextStyle(
+                    color: StudyUi.title(isDarkMode),
+                    fontSize: 16,
+                    fontWeight: AppTypography.title,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _AdminOverviewItem(
+                  icon: Icons.edit_note_rounded,
+                  label: '记录',
+                  color: StudyUi.pathBlue,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AdminOverviewItem(
+                  icon: Icons.psychology_rounded,
+                  label: '复盘',
+                  color: StudyUi.secondary,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _AdminOverviewItem(
+                  icon: Icons.timer_rounded,
+                  label: '专注',
+                  color: StudyUi.pathMint,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AdminOverviewItem(
+                  icon: Icons.summarize_rounded,
+                  label: '回顾',
+                  color: StudyUi.pathWarm,
+                  isDarkMode: isDarkMode,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminOverviewItem extends StatelessWidget {
+  const _AdminOverviewItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.isDarkMode,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: StudyUi.chipBackground(color, isDarkMode),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: StudyUi.title(isDarkMode),
+                fontSize: 13,
+                fontWeight: AppTypography.title,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
   switch (section) {
     case AdminSection.overview:
@@ -204,17 +326,17 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.aiAssistant:
       return _AdminConfig(
         accent: controller?.primaryColor ?? const Color(0xFF4470E8),
-        subtitle: 'AI学习助手、聊天、日志生成、任务拆解与周报分析。',
-        heroTitle: 'AI学习助手',
+        subtitle: '2 分钟复盘，整理下一步、闪卡和学习回顾。',
+        heroTitle: '学习助手',
         heroSubtitle:
-            '学习对话、结构化日志整理、复杂任务拆解、学习周报和风险提醒，形成日常学习复盘。',
+            '把学习事实、难点和情绪整理成今天能开始的一步。',
       );
     case AdminSection.aiSettings:
       return const _AdminConfig(
         accent: Color(0xFF4F7EE8),
-        subtitle: '助手状态、语音偏好与服务连通性。',
-        heroTitle: 'AI设置',
-        heroSubtitle: '管理AI学习助手开关、语音对话、使用次数和云端连通性。',
+        subtitle: '助手开关、语音偏好与资料备份。',
+        heroTitle: '助手设置',
+        heroSubtitle: '管理学习助手开关、语音复盘、整理次数和资料备份。',
       );
     case AdminSection.notes:
       return const _AdminConfig(
@@ -226,9 +348,9 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.statistics:
       return _AdminConfig(
         accent: controller?.primaryColor ?? const Color(0xFF4470E8),
-        subtitle: '学习数据统计图表与完成率分析。',
+        subtitle: '回看学习节奏、课程时间和完成进展。',
         heroTitle: '学习统计看板',
-        heroSubtitle: '课程分布饼图、近7天学习趋势、任务完成率一目了然。',
+        heroSubtitle: '看看这一周哪里学得稳、时间花在哪些课、哪些安排还要推进。',
       );
     case AdminSection.timer:
       return const _AdminConfig(
@@ -240,16 +362,23 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.flashCard:
       return const _AdminConfig(
         accent: Color(0xFFF8AA5B),
-        subtitle: '从学习记录生成知识闪卡，巩固复习。',
+        subtitle: '从学习记录整理知识闪卡，巩固复习。',
         heroTitle: '知识闪卡',
-        heroSubtitle: '基于学习日志自动生成问答闪卡，点击翻转查看答案，帮助巩固和复习知识点。',
+        heroSubtitle: '基于学习日志整理问答闪卡，点击翻转查看答案，帮助巩固和复习知识点。',
       );
     case AdminSection.learningMoments:
       return const _AdminConfig(
         accent: Color(0xFF19A974),
-        subtitle: '发布学习图文，自动汇聚任务、日志、笔记、闪卡和AI操作轨迹。',
+        subtitle: '记录学习图文，自动汇聚任务、日志、笔记、闪卡和整理历史。',
         heroTitle: '学迹动态',
-        heroSubtitle: '像朋友圈一样分享学习现场，同时把每次学习行为沉淀成可追溯的学习轨迹。',
+        heroSubtitle: '默认先保存给自己看，需要时再选择分享范围，方便回看每次学习。',
+      );
+    case AdminSection.evidencePackage:
+      return const _AdminConfig(
+        accent: Color(0xFF2F7D78),
+        subtitle: '汇总复盘、行动、复习和助手整理，形成 7天学习回顾。',
+        heroTitle: '7天学习回顾',
+        heroSubtitle: '用一页回看 StudyTrace 如何把学习事实变成行动、复习和成长变化。',
       );
     case AdminSection.automations:
       return const _AdminConfig(
@@ -261,16 +390,16 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.studyGroup:
       return const _AdminConfig(
         accent: Color(0xFFFF7C7C),
-        subtitle: '学习小组讨论。',
+        subtitle: '和同伴一起安排计划、留下记录、回看进展。',
         heroTitle: '学习小组',
-        heroSubtitle: '与同伴交流讨论。',
+        heroSubtitle: '用小组计划和学习近况看见彼此的推进节奏。',
       );
     case AdminSection.leaderboard:
       return const _AdminConfig(
         accent: Color(0xFFFFC043),
-        subtitle: '查看积分排行。',
-        heroTitle: '排行榜',
-        heroSubtitle: '激励前行。',
+        subtitle: '查看学习进展。',
+        heroTitle: '学习进度',
+        heroSubtitle: '看见自己和小组的前进节奏。',
       );
     case AdminSection.analytics:
       return const _AdminConfig(
@@ -282,16 +411,16 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.settings:
       return const _AdminConfig(
         accent: AppColors.accentDeep,
-        subtitle: '管理通知、权限、隐私与系统偏好。',
-        heroTitle: '系统设置',
+        subtitle: '管理通知、权限、隐私与应用偏好。',
+        heroTitle: '应用设置',
         heroSubtitle: '管理通知、深色模式、隐私偏好与关于应用。',
       );
     case AdminSection.auditLog:
       return const _AdminConfig(
         accent: Color(0xFF7394F9),
-        subtitle: '查看AI操作历史与执行结果。',
-        heroTitle: 'AI操作记录',
-        heroSubtitle: '记录每次AI操作的输入输出和执行时间。',
+        subtitle: '查看最近的整理历史与结果。',
+        heroTitle: '整理历史',
+        heroSubtitle: '记录每次整理的内容和完成时间。',
       );
     case AdminSection.trash:
       return const _AdminConfig(
@@ -303,16 +432,16 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
     case AdminSection.achievements:
       return const _AdminConfig(
         accent: Color(0xFFFF9F43),
-        subtitle: '积分、徽章与连续打卡，学习更有动力。',
+        subtitle: '成长点、记录徽章与连续学习，给每一次小进步留个标记。',
         heroTitle: '成就殿堂',
-        heroSubtitle: '解锁学习成就徽章，获取积分奖励，见证成长轨迹。',
+        heroSubtitle: '把学习记录、复盘和复习沉淀成徽章，见证成长变化。',
       );
     case AdminSection.knowledgeGraph:
       return const _AdminConfig(
         accent: Color(0xFF4CB9FF),
-        subtitle: '可视化知识点关联，直观展示学习结构。',
-        heroTitle: '知识图谱',
-        heroSubtitle: '从课程、笔记和闪卡中自动提取知识关联，一目了然。',
+        subtitle: '把课程、笔记和复习卡串成学习线索。',
+        heroTitle: '知识地图',
+        heroSubtitle: '按课程整理难点、闪卡和相关笔记，帮你知道下一步先复习哪里。',
       );
   }
 }

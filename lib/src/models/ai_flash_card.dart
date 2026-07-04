@@ -11,6 +11,9 @@ class AiFlashCard {
   final int reviewCount;
   final int easeFactor; // SM-2 ease factor × 100（默认 250 = 2.5）
   final DateTime? nextReviewDate;
+  final int? lastReviewScore;
+  final DateTime? lastReviewedAt;
+  final List<String> weakTags;
 
   const AiFlashCard({
     required this.id,
@@ -24,6 +27,9 @@ class AiFlashCard {
     this.reviewCount = 0,
     this.easeFactor = 250,
     this.nextReviewDate,
+    this.lastReviewScore,
+    this.lastReviewedAt,
+    this.weakTags = const [],
   });
 
   AiFlashCard copyWith({
@@ -36,6 +42,9 @@ class AiFlashCard {
     int? reviewCount,
     int? easeFactor,
     DateTime? nextReviewDate,
+    int? lastReviewScore,
+    DateTime? lastReviewedAt,
+    List<String>? weakTags,
   }) =>
       AiFlashCard(
         id: id,
@@ -49,6 +58,9 @@ class AiFlashCard {
         reviewCount: reviewCount ?? this.reviewCount,
         easeFactor: easeFactor ?? this.easeFactor,
         nextReviewDate: nextReviewDate ?? this.nextReviewDate,
+        lastReviewScore: lastReviewScore ?? this.lastReviewScore,
+        lastReviewedAt: lastReviewedAt ?? this.lastReviewedAt,
+        weakTags: weakTags ?? this.weakTags,
       );
 
   /// 简易 SM-2：根据用户评分（1-5）计算下次复习日期
@@ -71,10 +83,14 @@ class AiFlashCard {
       final prevInterval = n <= 3 ? 3 : (3 * (ef / 100)).round();
       intervalDays = prevInterval;
     }
+    final reviewedAt = DateTime.now();
     return copyWith(
       reviewCount: n,
       easeFactor: ef,
-      nextReviewDate: DateTime.now().add(Duration(days: intervalDays)),
+      nextReviewDate: reviewedAt.add(Duration(days: intervalDays)),
+      lastReviewScore: q,
+      lastReviewedAt: reviewedAt,
+      weakTags: _deriveWeakTags(q),
     );
   }
 
@@ -82,6 +98,28 @@ class AiFlashCard {
   bool get isDueForReview {
     if (nextReviewDate == null) return true; // 从未复习过
     return DateTime.now().isAfter(nextReviewDate!);
+  }
+
+  int get masteryPercent {
+    if (lastReviewScore == null) {
+      return reviewCount == 0 ? 0 : (easeFactor / 3).round().clamp(35, 85);
+    }
+    return (lastReviewScore!.clamp(1, 5) * 20).clamp(20, 100);
+  }
+
+  String get masteryLabel {
+    final score = lastReviewScore;
+    if (score == null) return reviewCount == 0 ? '待复习' : '复习中';
+    if (score >= 5) return '稳固掌握';
+    if (score >= 4) return '基本掌握';
+    if (score >= 3) return '需要巩固';
+    return '薄弱点';
+  }
+
+  static List<String> _deriveWeakTags(int score) {
+    if (score >= 4) return const [];
+    if (score == 3) return const ['待巩固'];
+    return const ['薄弱', '优先复习'];
   }
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +135,10 @@ class AiFlashCard {
         if (easeFactor != 250) 'easeFactor': easeFactor,
         if (nextReviewDate != null)
           'nextReviewDate': nextReviewDate!.toIso8601String(),
+        if (lastReviewScore != null) 'lastReviewScore': lastReviewScore,
+        if (lastReviewedAt != null)
+          'lastReviewedAt': lastReviewedAt!.toIso8601String(),
+        if (weakTags.isNotEmpty) 'weakTags': weakTags,
       };
 
   factory AiFlashCard.fromJson(Map<String, dynamic> json) => AiFlashCard(
@@ -115,5 +157,14 @@ class AiFlashCard {
         nextReviewDate: json['nextReviewDate'] != null
             ? DateTime.tryParse(json['nextReviewDate'] as String)
             : null,
+        lastReviewScore: (json['lastReviewScore'] as num?)?.toInt(),
+        lastReviewedAt: json['lastReviewedAt'] != null
+            ? DateTime.tryParse(json['lastReviewedAt'] as String)
+            : null,
+        weakTags: (json['weakTags'] as List<dynamic>?)
+                ?.map((item) => item.toString().trim())
+                .where((item) => item.isNotEmpty)
+                .toList() ??
+            const [],
       );
 }

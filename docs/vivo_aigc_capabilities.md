@@ -28,6 +28,7 @@
 - 通用后端调用层在 `backend/src/modules/ai/vivo-gateway.service.ts`，默认使用官方 Bearer AppKey。
 - 业务编排在 `backend/src/modules/ai/ai.service.ts`。
 - 前端通用 vivo 能力封装在 `lib/src/services/vivo_capability_service.dart`。
+- 学习记忆当前以本地候选召回、查询改写、相似度排序和可选记忆索引协同工作；主聊天链路不默认把所有历史资料作为完整云端记忆库处理。
 
 ## 已有 AI 功能汇总
 
@@ -52,7 +53,7 @@
 | 查询改写 | `AiSemanticSearchService` | `POST /ai/query-rewrite` | 已接入，失败回退本地搜索 |
 | 文本相似度 | `AiSemanticSearchService` | `POST /ai/rerank` | 已接入，失败回退本地搜索 |
 | 文本向量/记忆索引 | `VivoCapabilityService.indexMemory` | `POST /ai/memory/index` | 已接入后端能力 |
-| 记忆检索 | `VivoCapabilityService.searchMemory` | `POST /ai/memory/search` | 已接入后端能力 |
+| 记忆检索 | `VivoCapabilityService.searchMemory` | `POST /ai/memory/search` | 已接入后端能力；主聊天链路仍结合本地候选召回 |
 | 语音转写 | `VivoCapabilityService.transcribeAudio` | `POST /ai/speech/transcribe` | 已接入官方 LASR 录音文件转写流程 |
 | POI 搜索 | `VivoCapabilityService.searchPoi` | `POST /ai/poi-search` | 已接入后端能力 |
 | 逆地理编码 | `VivoCapabilityService.reverseGeocode` | `POST /ai/reverse-geocode` | 已接入后端能力 |
@@ -72,7 +73,7 @@
 | 2060 | 自然语言处理 | 文本相似度 | `/rerank` | POST | Bearer AppKey | `bge-reranker-large` | `/ai/rerank` |
 | 2061 | 自然语言处理 | 查询改写 | `/query_rewrite_base` | POST | Bearer AppKey | n/a | `/ai/query-rewrite` |
 | 1738 | ASR | 实时短语音识别 | `ws://api-ai.vivo.com.cn/asr/v2` | WebSocket | Bearer AppKey | `shortasrinput` | 仅登记，实时流式识别待后续专项 |
-| 1740 | ASR | 长语音听写 | `ws://asr-test-v2.vivo.com.cn/asr/v2` | WebSocket | Bearer AppKey | n/a | 仅登记，待接入 |
+| 1740 | ASR | 长语音听写 | 官方 WebSocket 地址，详见 vivo 能力文档 | WebSocket | Bearer AppKey | n/a | 仅登记，待接入 |
 | 1739 | ASR | 长语音转写 | `/lasr/create`, `/lasr/upload`, `/lasr/run`, `/lasr/progress`, `/lasr/result` | HTTP 多步 | Bearer AppKey | `fileasrrecorder` | `/ai/speech/transcribe` |
 | 2065 | ASR | 方言自由说 | `ws://api-ai.vivo.com.cn/asr/v2` | WebSocket | Bearer AppKey | `shortasrinput` | 仅登记，待接入 |
 | 2068 | ASR | 同声传译 | `ws://api-ai.vivo.com.cn/asr/v2` | WebSocket | Bearer AppKey | `longasrsubtitle` | 仅登记，待接入 |

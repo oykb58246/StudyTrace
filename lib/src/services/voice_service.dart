@@ -73,8 +73,10 @@ class VoiceService {
         localeId: localeId,
         listenFor: listenFor,
         pauseFor: pauseFor,
-        listenMode: ListenMode.dictation,
-        cancelOnError: true,
+        listenOptions: SpeechListenOptions(
+          listenMode: ListenMode.dictation,
+          cancelOnError: true,
+        ),
       );
       _isListening = true;
       _listeningController.add(true);

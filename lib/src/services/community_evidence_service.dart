@@ -8,7 +8,9 @@ class CommunityEvidenceService {
 
   ApiClient get api {
     final client = _api;
-    if (client == null) throw const ApiException('Backend connection is not initialized');
+    if (client == null) {
+      throw const ApiException('学习小组暂时还不能同步，请稍后再试');
+    }
     return client;
   }
 
@@ -16,7 +18,8 @@ class CommunityEvidenceService {
     _api = client;
   }
 
-  Future<String> draftChallenge(String groupId, {List<String> context = const []}) async {
+  Future<String> draftChallenge(String groupId,
+      {List<String> context = const []}) async {
     final data = await api.postJson(
       '/groups/$groupId/challenges/ai-draft',
       body: {'context': context},

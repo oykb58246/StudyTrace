@@ -8,7 +8,7 @@ class UserProfile {
     this.nickname = '学习者',
     this.avatarEmoji = '🎓',
     this.avatarImagePath,
-    this.bio = '好好学习，天天向上',
+    this.bio = '记录今天的一小步',
   });
 
   Map<String, dynamic> toJson() => {
@@ -22,7 +22,7 @@ class UserProfile {
         nickname: (json['nickname'] as String?) ?? '学习者',
         avatarEmoji: (json['avatarEmoji'] as String?) ?? '🎓',
         avatarImagePath: json['avatarImagePath'] as String?,
-        bio: (json['bio'] as String?) ?? '好好学习，天天向上',
+        bio: (json['bio'] as String?) ?? '记录今天的一小步',
       );
 
   UserProfile copyWith({

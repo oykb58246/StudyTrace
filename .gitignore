@@ -54,12 +54,19 @@ test-flash.err
 
 # Local Codex and presentation scratch artifacts
 .codex/
+.agents/
+.kiro/
+.playwright-mcp/
+.trellis/
+%SystemDrive%/
 output/
 scratch_test.pptx
 shape_test.pptx
 *.ppt
 *.pptx
+*.zip
 ~$*.pptx
+releases/
 
 # StudyTrace backend
 backend/node_modules/

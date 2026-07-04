@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../config/ui_review_config.dart';
 import '../../controllers/app_data_controller.dart';
 import '../../models/community_evidence.dart';
+import '../../models/learning_moment.dart';
 import '../../services/activity_service.dart';
 import '../../services/api_client.dart';
 import '../../services/group_service.dart';
@@ -37,7 +40,151 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
   @override
   void initState() {
     super.initState();
-    unawaited(_loadGroups());
+    if (UiReviewConfig.enabled) {
+      _loadReviewGroups();
+    } else {
+      unawaited(_loadGroups());
+    }
+  }
+
+  void _loadReviewGroups() {
+    final now = DateTime.now();
+    setState(() {
+      _groups = [
+        GroupInfo(
+          id: 'review_group_math',
+          name: '高数复盘小组',
+          description: '围绕极限、洛必达和错题复盘推进。',
+          inviteCode: 'REVIEW24',
+          memberCount: 6,
+          role: 'owner',
+          joinedAt: now.subtract(const Duration(days: 9)),
+        ),
+        GroupInfo(
+          id: 'review_group_algo',
+          name: '算法可视化共学组',
+          description: '把一周算法学习整理成清楚的图解和复盘。',
+          inviteCode: 'ALGO66',
+          memberCount: 4,
+          role: 'member',
+          joinedAt: now.subtract(const Duration(days: 5)),
+        ),
+      ];
+      _challenges = [
+        GroupChallenge(
+          id: 'review_challenge_lhopital',
+          groupId: 'review_group_math',
+          title: '7 天洛必达条件小组回顾',
+          description: '每天保存学习记录或错题复盘，最后形成可回看的条件判断表。',
+          participantCount: 5,
+          evidenceCount: 18,
+          createdAt: now.subtract(const Duration(days: 2)),
+        ),
+        GroupChallenge(
+          id: 'review_challenge_algo_review',
+          groupId: 'review_group_algo',
+          title: '算法图解小组回顾',
+          description: '把本周算法学习整理成复盘、行动、专注、复习、回顾五步。',
+          participantCount: 4,
+          evidenceCount: 11,
+          createdAt: now.subtract(const Duration(days: 1)),
+        ),
+      ];
+      _challengeText =
+          '本周小组回顾：每天留下 1 个小学习动作，优先整理复盘、错题和闪卡记录，周末一起回看路径变化。';
+      _isLoading = false;
+      _error = null;
+    });
+  }
+
+  List<GroupMember> _reviewMembersFor(GroupInfo group) {
+    final now = DateTime.now();
+    final isAlgo = group.id.contains('algo');
+    final names = isAlgo
+        ? const ['林同学', '赵同学', '沈同学', '复盘搭子']
+        : const ['王同学', '陈同学', '林同学', '周同学', '何同学', '赵同学'];
+    final count = group.memberCount > 0 && group.memberCount < names.length
+        ? group.memberCount
+        : names.length;
+    return [
+      for (var index = 0; index < count; index++)
+        GroupMember(
+          id: '${group.id}_member_$index',
+          username: names[index],
+          role: index == 0
+              ? (group.role == 'owner' ? 'owner' : 'admin')
+              : 'member',
+          joinedAt: now.subtract(Duration(days: 9 - index)),
+          profile: {'nickname': names[index]},
+        ),
+    ];
+  }
+
+  List<StudyActivity> _reviewActivitiesFor(GroupInfo group) {
+    final now = DateTime.now();
+    final isAlgo = group.id.contains('algo');
+    final entries = isAlgo
+        ? [
+            (
+              type: 'studyLogCreated',
+              title: '压缩算法复盘路径',
+              summary: '把复盘、任务和学迹串成一条可回看的学习线。',
+              user: '林同学',
+              minutes: 18,
+            ),
+            (
+              type: 'timerCompleted',
+              title: '完成 40 分钟图解整理',
+              summary: '补齐题目背景、推导过程和复杂度小结。',
+              user: '赵同学',
+              minutes: 64,
+            ),
+            (
+              type: 'noteCreated',
+              title: '整理算法错题问答清单',
+              summary: '把边界条件、反例和解题步骤拆成 6 个问题。',
+              user: '沈同学',
+              minutes: 132,
+            ),
+          ]
+        : [
+            (
+              type: 'taskCompleted',
+              title: '完成洛必达条件错题复盘',
+              summary: '补齐“可导、极限型、邻域条件”三个判断点。',
+              user: '王同学',
+              minutes: 22,
+            ),
+            (
+              type: 'flashcardBatchCreated',
+              title: '整理 12 张极限判别闪卡',
+              summary: '把易混条件做成正反例，周末一起抽查。',
+              user: '陈同学',
+              minutes: 78,
+            ),
+            (
+              type: 'timerCompleted',
+              title: '45 分钟专注推导不定式变形',
+              summary: '记录了 3 个还需要回看的难点。',
+              user: '林同学',
+              minutes: 156,
+            ),
+          ];
+    return [
+      for (var index = 0; index < entries.length; index++)
+        StudyActivity(
+          id: '${group.id}_activity_$index',
+          groupId: group.id,
+          type: entries[index].type,
+          title: entries[index].title,
+          summary: entries[index].summary,
+          happenedAt: now.subtract(Duration(minutes: entries[index].minutes)),
+          user: {
+            'username': entries[index].user,
+            'profile': {'nickname': entries[index].user},
+          },
+        ),
+    ];
   }
 
   Future<void> _loadGroups() async {
@@ -77,94 +224,117 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = widget.isDarkMode ? Colors.white : Colors.black;
-    final bodyColor =
-        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final titleColor = StudyUi.title(widget.isDarkMode);
+    final bodyColor = StudyUi.body(widget.isDarkMode);
     final accent = widget.controller.primaryColor;
+    final hasGroupAccess =
+        widget.controller.isLoggedIn || UiReviewConfig.enabled;
 
     return RefreshIndicator(
-      onRefresh: _loadGroups,
-      child: ListView(
-        key: const Key('page_study_group'),
-        padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '学习小组',
-                      style: TextStyle(
-                        color: titleColor,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
+      onRefresh:
+          UiReviewConfig.enabled ? () async => _loadReviewGroups() : _loadGroups,
+      child: StudyScreenBackground(
+        isDarkMode: widget.isDarkMode,
+        accent: StudyUi.pathMint,
+        child: ListView(
+          key: const Key('page_study_group'),
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 124),
+          children: [
+            StudyPathHero(
+              isDarkMode: widget.isDarkMode,
+              accent: StudyUi.pathMint,
+              badge: '同伴路径',
+              title: '同伴学习',
+              subtitle: hasGroupAccess
+                  ? '一起学，更有动力；用计划、记录和同伴学迹看见彼此进步。'
+                  : '登录后可以创建或加入学习小组，和同伴一起推进任务。',
+              icon: Icons.groups_rounded,
+              steps: const ['同伴', '计划', '记录', '回看'],
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: StudyPathMetricPill(
+                          label: '我的小组',
+                          value: '${_groups.length}',
+                          icon: Icons.group_rounded,
+                          color: StudyUi.pathMint,
+                          isDarkMode: widget.isDarkMode,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.controller.isLoggedIn
-                          ? '与同伴一起学习，互相督促'
-                          : '登录后可使用小组功能',
-                      style:
-                          TextStyle(color: bodyColor, fontSize: 14, height: 1.4),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: StudyPathMetricPill(
+                          label: '小组回顾',
+                          value: '${_challenges.length}',
+                          icon: Icons.flag_rounded,
+                          color: StudyUi.secondary,
+                          isDarkMode: widget.isDarkMode,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (hasGroupAccess) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: StudyStatusChip(
+                            label: '创建小组',
+                            color: StudyUi.pathMint,
+                            selected: true,
+                            icon: Icons.add_rounded,
+                            onTap: _showCreateGroupSheet,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: StudyStatusChip(
+                            label: '加入小组',
+                            color: StudyUi.secondary,
+                            selected: true,
+                            icon: Icons.group_add_rounded,
+                            onTap: _showJoinGroupSheet,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ),
-              if (widget.controller.isLoggedIn) ...[
-                _circleBtn(
-                  icon: Icons.add_rounded,
-                  onTap: _showCreateGroupSheet,
-                  accent: accent,
-                ),
-                const SizedBox(width: 10),
-                _circleBtn(
-                  icon: Icons.group_add_rounded,
-                  onTap: _showJoinGroupSheet,
-                  accent: accent,
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 24),
-          if (widget.controller.isLoggedIn) ...[
-            _buildChallengePanel(titleColor, bodyColor, accent),
-            const SizedBox(height: 18),
-          ],
-          if (!widget.controller.isLoggedIn)
-            _buildLoginPrompt(bodyColor, titleColor, accent)
-          else if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.only(top: 60),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null)
-            _buildErrorState(bodyColor, accent)
-          else if (_groups.isEmpty) ...[
-            _buildEmptyState(),
-            const SizedBox(height: 12),
-            Center(
-              child: FilledButton.icon(
-                onPressed: _showJoinGroupSheet,
-                icon: const Icon(Icons.group_add_rounded),
-                label: const Text('加入小组'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
+                ],
               ),
             ),
-          ]
-          else
-            ..._groups.map((g) => _buildGroupCard(g, titleColor, bodyColor, accent)),
-        ],
+            const SizedBox(height: 18),
+            if (hasGroupAccess) ...[
+              _buildChallengePanel(titleColor, bodyColor, accent),
+              const SizedBox(height: 18),
+            ],
+            if (!hasGroupAccess)
+              _buildLoginPrompt(bodyColor, titleColor, accent)
+            else if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.only(top: 60),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_error != null)
+              _buildErrorState(bodyColor, accent)
+            else if (_groups.isEmpty) ...[
+              _buildEmptyState(),
+              const SizedBox(height: 12),
+              Center(
+                child: _GroupActionPill(
+                  label: '加入小组',
+                  icon: Icons.group_add_rounded,
+                  accent: accent,
+                  isDarkMode: widget.isDarkMode,
+                  onPressed: _showJoinGroupSheet,
+                ),
+              ),
+            ]
+            else
+              ..._groups.map((g) => _buildGroupCard(g, titleColor, bodyColor, accent)),
+          ],
+        ),
       ),
     );
   }
@@ -181,14 +351,12 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         children: [
           Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(Icons.flag_rounded, color: accent, size: 20),
+              StudyGlassIconNode(
+                icon: Icons.flag_rounded,
+                accent: accent,
+                size: 42,
+                iconSize: 20,
+                isDarkMode: widget.isDarkMode,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -196,16 +364,16 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '共学挑战',
+                      '小组回顾',
                       style: TextStyle(
                         color: titleColor,
                         fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '把小组从排名升级成可执行的共同学习行动。',
+                      '把小组目标整理成每天能跟上的学习动作。',
                       style: TextStyle(color: bodyColor, fontSize: 12),
                     ),
                   ],
@@ -215,98 +383,128 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           ),
           const SizedBox(height: 12),
           if (_challengeText.trim().isNotEmpty)
-            Container(
+            SizedBox(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: widget.isDarkMode ? 0.14 : 0.08),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                _challengeText,
-                style: TextStyle(color: titleColor, height: 1.45),
+              child: StudyCard(
+                padding: const EdgeInsets.all(12),
+                color: StudyUi.chipBackground(accent, widget.isDarkMode),
+                borderColor: accent.withValues(alpha: 0.16),
+                child: Text(
+                  _challengeText,
+                  style: TextStyle(color: titleColor, height: 1.45),
+                ),
               ),
             )
           else
             Text(
-              '会基于当前课程、任务和学习轨迹生成 3-7 天挑战；成员完成任务、番茄钟或动态后进入组内动态与排行榜。',
+              '会基于当前课程、任务和学习记录整理出 3-7 天计划；成员完成任务、番茄钟或学迹后进入组内近况与学习进度。',
               style: TextStyle(color: bodyColor, fontSize: 13, height: 1.45),
             ),
           if (_challenges.isNotEmpty) ...[
             const SizedBox(height: 12),
-            ..._challenges.take(2).map(
-                  (challenge) => Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: accent.withValues(alpha: 0.18)),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          challenge.title,
-                          style: TextStyle(color: titleColor, fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${challenge.participantCount} 人参与 · ${challenge.evidenceCount} 条学习记录',
-                          style: TextStyle(color: bodyColor, fontSize: 12),
-                        ),
-                        if ((challenge.coverImageUrl ?? '').startsWith('vivo-task:')) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            '封面生成中，稍后刷新查看',
-                            style: TextStyle(color: bodyColor, fontSize: 11),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 10.0;
+                final useTwoColumns = constraints.maxWidth >= 500;
+                final itemWidth = useTwoColumns
+                    ? (constraints.maxWidth - spacing) / 2
+                    : constraints.maxWidth;
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: 10,
+                  children: [
+                    ..._challenges.take(2).map(
+                          (challenge) => SizedBox(
+                            width: itemWidth,
+                            child: _buildChallengeCard(
+                              challenge,
+                              titleColor,
+                              bodyColor,
+                              accent,
+                            ),
                           ),
-                        ],
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            OutlinedButton(
-                              onPressed: () => _joinChallenge(challenge),
-                              child: const Text('加入'),
-                            ),
-                            FilledButton.tonal(
-                              onPressed: () => _submitLatestEvidence(challenge),
-                              child: const Text('提交最新记录'),
-                            ),
-                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
+                  ],
+                );
+              },
+            ),
           ],
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor:
-                    accent.withValues(alpha: widget.isDarkMode ? 0.18 : 0.12),
-                foregroundColor: accent,
-                disabledBackgroundColor:
-                    accent.withValues(alpha: widget.isDarkMode ? 0.12 : 0.08),
-                disabledForegroundColor: bodyColor,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              onPressed: _isGeneratingChallenge ? null : _generateChallenge,
-              icon: _isGeneratingChallenge
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.flag_rounded),
-              label: Text(_isGeneratingChallenge ? '生成中...' : '生成共学挑战'),
+          _GroupActionPill(
+            label: _groups.isEmpty
+                ? '先创建或加入小组'
+                : (_isGeneratingChallenge ? '整理中...' : '创建小组回顾'),
+            icon: _groups.isEmpty ? Icons.group_add_rounded : Icons.flag_rounded,
+            accent: accent,
+            isDarkMode: widget.isDarkMode,
+            busy: _isGeneratingChallenge,
+            fullWidth: true,
+            onPressed: _isGeneratingChallenge
+                ? null
+                : (_groups.isEmpty ? _showJoinGroupSheet : _generateChallenge),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChallengeCard(
+    GroupChallenge challenge,
+    Color titleColor,
+    Color bodyColor,
+    Color accent,
+  ) {
+    return StudyCard(
+      padding: const EdgeInsets.all(12),
+      borderColor: accent.withValues(alpha: 0.16),
+      color: StudyUi.surfaceAlt(widget.isDarkMode),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            challenge.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: titleColor,
+              fontWeight: FontWeight.w700,
             ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${challenge.participantCount} 人共学 · ${challenge.evidenceCount} 条学习记录',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: bodyColor, fontSize: 12),
+          ),
+          if ((challenge.coverImageUrl ?? '').startsWith('vivo-task:')) ...[
+            const SizedBox(height: 4),
+            Text(
+              '封面整理中，稍后刷新查看',
+              style: TextStyle(color: bodyColor, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _GroupActionPill(
+                label: '跟进计划',
+                icon: Icons.add_rounded,
+                accent: accent,
+                isDarkMode: widget.isDarkMode,
+                filled: false,
+                onPressed: () => _joinChallenge(challenge),
+              ),
+              _GroupActionPill(
+                label: '保存到回顾',
+                icon: Icons.upload_rounded,
+                accent: accent,
+                isDarkMode: widget.isDarkMode,
+                onPressed: () => _submitLatestEvidence(challenge),
+              ),
+            ],
           ),
         ],
       ),
@@ -334,26 +532,32 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         context: [
           '课程：$courses',
           '待办：$pending',
-          '已有学习记录数：$evidenceCount',
+          '已有学习记录：$evidenceCount 条',
         ],
       );
       String? coverImageUrl;
       try {
         final cover = await widget.controller.vivoCapabilityService.createCover(
-          prompt: '为学习小组共学挑战生成清晰、积极、适合展示的封面。挑战内容：${text.trim()}',
+          prompt: '为学习小组回顾制作清晰、积极、适合回看的封面。回顾内容：${text.trim()}',
           purpose: 'challenge_cover',
         );
-        coverImageUrl = 'vivo-task:${cover.taskId}';
+        coverImageUrl = cover.imagesUrl.isNotEmpty
+            ? cover.imagesUrl.first
+            : 'vivo-task:${cover.taskId}';
         unawaited(
           widget.controller.activityService
               .create(
                 type: 'imageGenerated',
-                title: '小组挑战封面已提交生成',
+                title: cover.imagesUrl.isNotEmpty ? '小组计划封面已生成' : '小组计划封面整理中',
                 summary: group.name,
                 groupId: group.id,
                 sourceType: 'group_challenge_cover',
                 sourceId: cover.taskId,
-                payloadJson: {'taskId': cover.taskId, 'purpose': 'challenge_cover'},
+                payloadJson: {
+                  'taskId': cover.taskId,
+                  'imageUrl': cover.imagesUrl.isNotEmpty ? cover.imagesUrl.first : '',
+                  'purpose': 'challenge_cover',
+                },
               )
               .catchError((_) {}),
         );
@@ -362,14 +566,14 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       }
       final saved = await widget.controller.communityEvidenceService.createChallenge(
         groupId: group.id,
-        title: '${group.name} 学习轨迹挑战',
+        title: '${group.name} 小组回顾',
         description: text.trim(),
         planJson: {'draftText': text.trim(), 'durationDays': 7},
         scoringJson: const {
           'task': 10,
           'focus': 5,
           'review': 5,
-          'evidencePackage': 8,
+          'learningTrace': 8,
         },
         coverImageUrl: coverImageUrl,
       );
@@ -381,9 +585,9 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _challengeText = '7 天学习轨迹挑战：每天完成 1 个可验证行动，'
-            '如提交学习日志、完成番茄钟、沉淀笔记或发布学迹动态；'
-            '最终按连续天数、复盘次数和记录完整度进行组内展示。';
+        _challengeText = '7 天小组回顾：每天完成 1 个可完成行动，'
+            '如保存学习日志、完成番茄钟、沉淀笔记或留下学迹；'
+            '周末一起回看哪些方法有帮助、下一步从哪里继续。';
       });
     } finally {
       if (mounted) setState(() => _isGeneratingChallenge = false);
@@ -395,25 +599,37 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       await widget.controller.communityEvidenceService
           .joinChallenge(challenge.groupId, challenge.id);
       if (!mounted) return;
-      StudyToast.show(context, '已加入共学挑战');
+      StudyToast.show(context, '已加入小组回顾');
       await _loadGroups();
     } catch (_) {
       if (!mounted) return;
       await StudyToast.dialog(
         context,
-        title: '加入挑战失败',
+        title: '加入小组回顾失败',
         message: '请稍后重试。',
       );
     }
   }
 
   Future<void> _submitLatestEvidence(GroupChallenge challenge) async {
-    final events = widget.controller.learningTraceEvents;
+    final events = widget.controller.learningTraceEvents
+        .where((event) => event.isShareable)
+        .toList();
     if (events.isEmpty) {
-      StudyToast.show(context, '请先完成一次学习行动，生成可提交记录');
+      StudyToast.show(context, '请先保存一次复盘、专注或闪卡复习，再加入小组回顾');
       return;
     }
     final event = events.first;
+    final group = _groupFor(challenge.groupId);
+    final groupName = group?.name.trim().isNotEmpty == true
+        ? group!.name.trim()
+        : '当前学习小组';
+    final confirmed = await _confirmChallengeSubmission(
+      event: event,
+      challenge: challenge,
+      groupName: groupName,
+    );
+    if (!confirmed || !mounted) return;
     try {
       await widget.controller.communityEvidenceService.submitEvidence(
         groupId: challenge.groupId,
@@ -423,27 +639,134 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         summary: event.summary,
         sourceType: event.type.name,
         sourceId: event.sourceId,
+        payloadJson: {
+          'visibility': 'groupChallenge',
+          'groupName': groupName,
+          'challengeTitle': challenge.title,
+          'eventId': event.id,
+        },
       );
       if (!mounted) return;
-      StudyToast.show(context, '学习记录已提交到挑战');
+      StudyToast.show(context, '学习记录已保存到小组回顾');
       await _loadGroups();
     } catch (_) {
       if (!mounted) return;
       await StudyToast.dialog(
         context,
-        title: '提交记录失败',
+        title: '保存到回顾失败',
         message: '请稍后重试。',
       );
     }
   }
 
-  Widget _buildLoginPrompt(Color bodyColor, Color titleColor, Color accent) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
+  GroupInfo? _groupFor(String groupId) {
+    for (final group in _groups) {
+      if (group.id == groupId) return group;
+    }
+    return null;
+  }
+
+  Future<bool> _confirmChallengeSubmission({
+    required LearningTraceEvent event,
+    required GroupChallenge challenge,
+    required String groupName,
+  }) async {
+    final titleColor = widget.isDarkMode ? Colors.white : AppColors.ink;
+    final bodyColor =
+        widget.isDarkMode ? const Color(0xFFC2C8D6) : AppColors.body;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _GroupDialogSurface(
+        isDarkMode: widget.isDarkMode,
+        icon: Icons.upload_rounded,
+        accent: widget.controller.primaryColor,
+        title: '把记录保存到小组回顾？',
+        subtitle: '这条学习记录会进入小组一起回看的学习线。',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '这条记录会保存到「$groupName」的「${challenge.title}」，小组成员可以看到。',
+              style: TextStyle(color: bodyColor, height: 1.45),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: StudyUi.surfaceAlt(widget.isDarkMode),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: StudyUi.border(widget.isDarkMode)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: titleColor,
+                      fontWeight: AppTypography.title,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    [
+                      event.typeLabel,
+                      _relativeTime(event.happenedAt),
+                      if (event.summary.trim().isNotEmpty)
+                        _clip(event.summary.trim(), 72),
+                    ].join(' · '),
+                    style: TextStyle(color: bodyColor, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _GroupActionPill(
+                    label: '取消',
+                    icon: Icons.close_rounded,
+                    accent: StudyUi.muted(widget.isDarkMode),
+                    isDarkMode: widget.isDarkMode,
+                    filled: false,
+                    fullWidth: true,
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _GroupActionPill(
+                    label: '保存到共学回看',
+                    icon: Icons.upload_rounded,
+                    accent: widget.controller.primaryColor,
+                    isDarkMode: widget.isDarkMode,
+                    fullWidth: true,
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
+    );
+    return confirmed == true;
+  }
+
+  String _clip(String value, int maxLength) {
+    final trimmed = value.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+    return '${trimmed.substring(0, maxLength)}...';
+  }
+
+  Widget _buildLoginPrompt(Color bodyColor, Color titleColor, Color accent) {
+    return StudyCard(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
       child: Column(
         children: [
           StudyAssetIcon(
@@ -453,7 +776,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            '请先登录',
+            '登录后加入同学小组',
             style: TextStyle(
               color: titleColor,
               fontSize: 16,
@@ -462,7 +785,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            '登录后可以创建或加入学习小组',
+            '本机学习记录可以继续保存，登录后再同步到小组复盘空间。',
             style: TextStyle(color: bodyColor, fontSize: 13),
           ),
         ],
@@ -471,12 +794,8 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
   }
 
   Widget _buildErrorState(Color bodyColor, Color accent) {
-    return Container(
+    return StudyCard(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? const Color(0xFF1E2128) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
       child: Column(
         children: [
           StudyAssetIcon(
@@ -487,9 +806,13 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           const SizedBox(height: 16),
           Text(_error!, style: TextStyle(color: bodyColor, fontSize: 14)),
           const SizedBox(height: 16),
-          TextButton(
+          _GroupActionPill(
+            label: '重试',
+            icon: Icons.refresh_rounded,
+            accent: accent,
+            isDarkMode: widget.isDarkMode,
+            filled: false,
             onPressed: _loadGroups,
-            child: const Text('重试'),
           ),
         ],
       ),
@@ -516,19 +839,13 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         onTap: () => _showGroupDetail(group),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: StudyAssetIcon(
-                asset: AppAssets.featureGroupRankIcon,
-                color: accent,
-                size: 28,
-                fallbackIcon: Icons.groups_rounded,
-              ),
+            StudyGlassIconNode(
+              asset: AppAssets.featureGroupRankIcon,
+              icon: Icons.groups_rounded,
+              accent: accent,
+              size: 48,
+              iconSize: 24,
+              isDarkMode: widget.isDarkMode,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -571,21 +888,136 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     }
   }
 
-  Widget _circleBtn({
-    required IconData icon,
-    required VoidCallback onTap,
-    required Color accent,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: accent.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
+  BoxDecoration _groupSheetDecoration() {
+    final accent = widget.controller.primaryColor;
+    final sheetBase = widget.isDarkMode
+        ? const Color(0xFF17222C)
+        : const Color(0xFFF9FCFF);
+    final sheetGlow = widget.isDarkMode
+        ? const Color(0xFF1F2F3A)
+        : Color.alphaBlend(
+            accent.withValues(alpha: 0.08),
+            const Color(0xFFF8FBFF),
+          );
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          sheetBase,
+          sheetGlow,
+          sheetBase,
+        ],
+      ),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      border: Border(
+        top: BorderSide(
+          color: widget.isDarkMode
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.white.withValues(alpha: 0.82),
         ),
-        child: Icon(icon, color: accent, size: 22),
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: widget.isDarkMode ? 0.30 : 0.14),
+          blurRadius: 30,
+          offset: const Offset(0, -14),
+        ),
+      ],
+    );
+  }
+
+  Widget _groupSheetSurface({required Widget child}) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: _groupSheetDecoration(),
+          child: StudyFontScope(child: child),
+        ),
+      ),
+    );
+  }
+
+  Widget _groupSheetHandle() {
+    return Center(
+      child: Container(
+        width: 42,
+        height: 4,
+        decoration: BoxDecoration(
+          color: widget.isDarkMode
+              ? Colors.white.withValues(alpha: 0.20)
+              : widget.controller.primaryColor.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
+  }
+
+  Widget _groupSheetTitle({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    final accent = widget.controller.primaryColor;
+    return Row(
+      children: [
+        StudyGlassIconNode(
+          icon: icon,
+          accent: accent,
+          size: 42,
+          iconSize: 20,
+          isDarkMode: widget.isDarkMode,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: StudyUi.title(widget.isDarkMode),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: StudyUi.body(widget.isDarkMode),
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  InputDecoration _groupInputDecoration(String hintText) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(
+        color: StudyUi.body(widget.isDarkMode).withValues(alpha: 0.66),
+      ),
+      filled: true,
+      fillColor: StudyUi.surface(widget.isDarkMode),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: StudyUi.border(widget.isDarkMode)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          color: widget.controller.primaryColor.withValues(alpha: 0.42),
+          width: 1.2,
+        ),
       ),
     );
   }
@@ -606,14 +1038,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
           ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: widget.isDarkMode
-                  ? const Color(0xFF1A1F2E)
-                  : const Color(0xFFF5F7FF),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(30)),
-            ),
+          child: _groupSheetSurface(
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(ctx).size.height * 0.82,
@@ -624,40 +1049,19 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: widget.isDarkMode ? Colors.white24 : Colors.black26,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
+                _groupSheetHandle(),
                 const SizedBox(height: 18),
-                const Text('创建小组',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                _groupSheetTitle(
+                  title: '创建小组',
+                  subtitle: '把同伴、任务和学习记录放进同一条共学路径。',
+                  icon: Icons.group_add_rounded,
+                ),
                 const SizedBox(height: 18),
                 TextField(
                   controller: nameCtrl,
                   style: TextStyle(
                       color: widget.isDarkMode ? Colors.white : AppColors.ink),
-                  decoration: InputDecoration(
-                    hintText: '小组名称（必填）',
-                    hintStyle: TextStyle(
-                        color: widget.isDarkMode
-                            ? Colors.white38
-                            : Colors.black38),
-                    filled: true,
-                    fillColor: widget.isDarkMode
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : const Color(0xFFF2F5FC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+                  decoration: _groupInputDecoration('小组名称（必填）'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -665,29 +1069,19 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   maxLines: 2,
                   style: TextStyle(
                       color: widget.isDarkMode ? Colors.white : AppColors.ink),
-                  decoration: InputDecoration(
-                    hintText: '小组简介（选填）',
-                    hintStyle: TextStyle(
-                        color: widget.isDarkMode
-                            ? Colors.white38
-                            : Colors.black38),
-                    filled: true,
-                    fillColor: widget.isDarkMode
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : const Color(0xFFF2F5FC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+                  decoration: _groupInputDecoration('小组简介（选填）'),
                 ),
                 const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: isCreating
-                        ? null
-                        : () async {
+                _GroupActionPill(
+                  label: isCreating ? '创建中...' : '创建小组',
+                  icon: Icons.add_rounded,
+                  accent: widget.controller.primaryColor,
+                  isDarkMode: widget.isDarkMode,
+                  busy: isCreating,
+                  fullWidth: true,
+                  onPressed: isCreating
+                      ? null
+                      : () async {
                             final name = nameCtrl.text.trim();
                             if (name.isEmpty) return;
                             setSheetState(() => isCreating = true);
@@ -718,15 +1112,6 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                               }
                             }
                           },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: widget.controller.primaryColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: Text(isCreating ? '创建中...' : '创建'),
-                  ),
                 ),
                   ],
                 ),
@@ -751,14 +1136,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
           ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: widget.isDarkMode
-                  ? const Color(0xFF1A1F2E)
-                  : const Color(0xFFF5F7FF),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(30)),
-            ),
+          child: _groupSheetSurface(
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(ctx).size.height * 0.82,
@@ -769,20 +1147,13 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: widget.isDarkMode ? Colors.white24 : Colors.black26,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
+                _groupSheetHandle(),
                 const SizedBox(height: 18),
-                const Text('加入小组',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                _groupSheetTitle(
+                  title: '加入小组',
+                  subtitle: '输入同伴的邀请码，把自己的学习轨迹接入小组。',
+                  icon: Icons.groups_rounded,
+                ),
                 const SizedBox(height: 18),
                 TextField(
                   controller: codeCtrl,
@@ -792,32 +1163,27 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                       letterSpacing: 2,
                       fontSize: 18,
                       fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: '输入邀请码',
+                  decoration: _groupInputDecoration('输入邀请码').copyWith(
                     hintStyle: TextStyle(
-                        color: widget.isDarkMode
-                            ? Colors.white38
-                            : Colors.black38,
-                        letterSpacing: 0,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w400),
-                    filled: true,
-                    fillColor: widget.isDarkMode
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : const Color(0xFFF2F5FC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
+                      color:
+                          StudyUi.body(widget.isDarkMode).withValues(alpha: 0.66),
+                      letterSpacing: 0,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: isJoining
-                        ? null
-                        : () async {
+                _GroupActionPill(
+                  label: isJoining ? '加入中...' : '加入小组',
+                  icon: Icons.login_rounded,
+                  accent: widget.controller.primaryColor,
+                  isDarkMode: widget.isDarkMode,
+                  busy: isJoining,
+                  fullWidth: true,
+                  onPressed: isJoining
+                      ? null
+                      : () async {
                             final code = codeCtrl.text.trim();
                             if (code.isEmpty) return;
                             setSheetState(() => isJoining = true);
@@ -845,15 +1211,6 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                               }
                             }
                           },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: widget.controller.primaryColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: Text(isJoining ? '加入中...' : '加入'),
-                  ),
                 ),
                   ],
                 ),
@@ -868,14 +1225,15 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
   void _showInviteCodeDialog(GroupInfo group) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('小组已创建'),
-        content: Column(
+      builder: (ctx) => _GroupDialogSurface(
+        isDarkMode: widget.isDarkMode,
+        icon: Icons.verified_rounded,
+        accent: widget.controller.primaryColor,
+        title: '小组已创建',
+        subtitle: '分享邀请码，让同伴加入这条共学路径。',
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('分享以下邀请码给同伴：'),
-            const SizedBox(height: 16),
             GestureDetector(
               onTap: () {
                 if (group.inviteCode != null) {
@@ -894,7 +1252,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   group.inviteCode ?? '无',
                   style: TextStyle(
                     fontSize: 22,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 3,
                     color: widget.controller.primaryColor,
                   ),
@@ -908,14 +1266,23 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   color: widget.isDarkMode ? Colors.white54 : Colors.black38,
                   fontSize: 12),
             ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 128,
+                child: _GroupActionPill(
+                  label: '完成',
+                  icon: Icons.check_rounded,
+                  accent: widget.controller.primaryColor,
+                  isDarkMode: widget.isDarkMode,
+                  fullWidth: true,
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+              ),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('完成'),
-          ),
-        ],
       ),
     );
   }
@@ -1038,9 +1405,9 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       case 'noteCreated':
         return '新增笔记';
       case 'flashcardBatchCreated':
-        return '生成闪卡';
+        return '整理闪卡';
       default:
-        return '学习动态';
+        return '学习学迹';
     }
   }
 
@@ -1054,10 +1421,12 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
   }
 
   void _showGroupDetail(GroupInfo group) {
-    List<GroupMember> members = [];
-    List<StudyActivity> activities = [];
-    bool isLoading = true;
-    bool didStartLoad = false;
+    List<GroupMember> members =
+        UiReviewConfig.enabled ? _reviewMembersFor(group) : [];
+    List<StudyActivity> activities =
+        UiReviewConfig.enabled ? _reviewActivitiesFor(group) : [];
+    bool isLoading = !UiReviewConfig.enabled;
+    bool didStartLoad = UiReviewConfig.enabled;
 
     showModalBottomSheet(
       context: context,
@@ -1093,66 +1462,35 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             initialChildSize: 0.6,
             maxChildSize: 0.85,
             minChildSize: 0.3,
-            builder: (_, scrollCtrl) => Container(
-              decoration: BoxDecoration(
-                color: widget.isDarkMode
-                    ? const Color(0xFF1A1F2E)
-                    : const Color(0xFFF5F7FF),
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(30)),
-              ),
+            builder: (_, scrollCtrl) => _groupSheetSurface(
               child: ListView(
                 controller: scrollCtrl,
                 padding: const EdgeInsets.fromLTRB(22, 18, 22, 40),
                 children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: widget.isDarkMode
-                            ? Colors.white24
-                            : Colors.black26,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
+                  _groupSheetHandle(),
                   const SizedBox(height: 18),
-                  Text(
-                    group.name,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: titleColor,
-                    ),
+                  _groupSheetTitle(
+                    title: group.name,
+                    subtitle: group.description?.trim().isNotEmpty == true
+                        ? group.description!.trim()
+                        : '查看成员、邀请码和最近的共学近况。',
+                    icon: Icons.groups_rounded,
                   ),
-                  if (group.description != null &&
-                      group.description!.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(group.description!,
-                        style: TextStyle(color: bodyColor, fontSize: 14)),
-                  ],
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
                   if (group.inviteCode != null)
-                    GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(
-                            ClipboardData(text: group.inviteCode!));
-                        StudyToast.show(context, '邀请码已复制');
-                      },
-                      child: Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              '邀请码：${group.inviteCode}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: bodyColor, fontSize: 13),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Icon(Icons.copy_rounded, size: 14, color: bodyColor),
-                        ],
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _GroupActionPill(
+                        label: '邀请码 ${group.inviteCode}',
+                        icon: Icons.copy_rounded,
+                        accent: widget.controller.primaryColor,
+                        isDarkMode: widget.isDarkMode,
+                        filled: false,
+                        onPressed: () {
+                          Clipboard.setData(
+                              ClipboardData(text: group.inviteCode!));
+                          StudyToast.show(context, '邀请码已复制');
+                        },
                       ),
                     ),
                   const SizedBox(height: 20),
@@ -1229,7 +1567,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                         )),
                   const SizedBox(height: 24),
                   Text(
-                    '组内动态',
+                    '组内近况',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -1244,7 +1582,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ))
                   else if (activities.isEmpty)
-                    Text('暂无动态，完成任务或番茄钟后会出现在这里',
+                    Text('暂无近况，完成任务或番茄钟后会出现在这里',
                         style: TextStyle(color: bodyColor, fontSize: 13))
                   else
                     ...activities.map(
@@ -1256,37 +1594,31 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                     ),
                   if (group.role != 'owner') ...[
                     const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          try {
-                            await widget.controller.groupService
-                                .leave(group.id);
-                            if (mounted) {
-                              Navigator.of(ctx).pop();
-                              _loadGroups();
-                            }
-                          } on ApiException catch (e) {
-                            if (mounted) {
-                              await StudyToast.dialog(
-                                context,
-                                title: '退出小组失败',
-                                message: e.message,
-                              );
-                            }
+                    _GroupActionPill(
+                      label: '退出小组',
+                      icon: Icons.logout_rounded,
+                      accent: StudyUi.danger,
+                      isDarkMode: widget.isDarkMode,
+                      filled: false,
+                      fullWidth: true,
+                      onPressed: () async {
+                        try {
+                          final navigator = Navigator.of(ctx);
+                          await widget.controller.groupService.leave(group.id);
+                          if (mounted) {
+                            navigator.pop();
+                            _loadGroups();
                           }
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFEF6850),
-                          side: const BorderSide(
-                              color: Color(0xFFEF6850), width: 1.2),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: const Text('退出小组'),
-                      ),
+                        } on ApiException catch (e) {
+                          if (mounted) {
+                            await StudyToast.dialog(
+                              context,
+                              title: '退出小组失败',
+                              message: e.message,
+                            );
+                          }
+                        }
+                      },
                     ),
                   ],
                 ],
@@ -1295,6 +1627,212 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           );
         },
       ),
+    );
+  }
+}
+
+class _GroupDialogSurface extends StatelessWidget {
+  const _GroupDialogSurface({
+    required this.isDarkMode,
+    required this.icon,
+    required this.accent,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final bool isDarkMode;
+  final IconData icon;
+  final Color accent;
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: StudyFontScope(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 390),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isDarkMode
+                      ? const [
+                          Color(0xEE17222C),
+                          Color(0xEE1D2A35),
+                        ]
+                      : [
+                          Colors.white.withValues(alpha: 0.94),
+                          const Color(0xFFF4FCF8).withValues(alpha: 0.90),
+                        ],
+                ),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: isDarkMode ? 0.12 : 0.84),
+                ),
+                boxShadow: [
+                  if (!isDarkMode)
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.15),
+                      blurRadius: 32,
+                      offset: const Offset(0, 18),
+                    ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      StudyGlassIconNode(
+                        icon: icon,
+                        accent: accent,
+                        isDarkMode: isDarkMode,
+                        size: 46,
+                        iconSize: 21,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: StudyUi.title(isDarkMode),
+                                fontSize: 21,
+                                fontWeight: AppTypography.hero,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              subtitle,
+                              style: TextStyle(
+                                color: StudyUi.body(isDarkMode),
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  child,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupActionPill extends StatelessWidget {
+  const _GroupActionPill({
+    required this.label,
+    required this.icon,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onPressed,
+    this.filled = true,
+    this.busy = false,
+    this.fullWidth = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+  final bool filled;
+  final bool busy;
+  final bool fullWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null && !busy;
+    final foreground = filled ? Colors.white : accent;
+    final background = filled
+        ? accent
+        : StudyUi.chipBackground(accent, isDarkMode);
+    final borderColor = filled
+        ? Colors.white.withValues(alpha: isDarkMode ? 0.12 : 0.42)
+        : accent.withValues(alpha: isDarkMode ? 0.34 : 0.22);
+    final content = AnimatedOpacity(
+      opacity: enabled || busy ? 1 : 0.55,
+      duration: const Duration(milliseconds: 160),
+      child: Container(
+        width: fullWidth ? double.infinity : null,
+        constraints:
+            fullWidth ? const BoxConstraints() : const BoxConstraints(maxWidth: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            if (filled)
+              BoxShadow(
+                color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.20),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (busy)
+              SizedBox(
+                width: 15,
+                height: 15,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(foreground),
+                ),
+              )
+            else
+              Icon(icon, size: 16, color: foreground),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!enabled) return content;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onPressed,
+      child: content,
     );
   }
 }

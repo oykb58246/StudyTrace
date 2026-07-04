@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/app_data_controller.dart';
@@ -20,6 +22,7 @@ class StudyLogsPage extends StatefulWidget {
 }
 
 class _StudyLogsPageState extends State<StudyLogsPage> {
+  final _searchController = TextEditingController();
   String _searchQuery = '';
   String? _courseFilter;
 
@@ -43,10 +46,21 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
     return result;
   }
 
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _searchQuery = '');
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: () async => widget.controller.notifyListeners(),
+      onRefresh: widget.controller.load,
       child: AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
@@ -55,23 +69,49 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
         final allLogs = widget.controller.studyLogs;
         final logs = _filteredLogs(allLogs);
         final availableCourses = widget.controller.courseNames;
+        final compactHeader = StudyCompactHeaderScope.of(context);
 
         return ListView(
           key: const Key('page_study_logs'),
-          padding: const EdgeInsets.fromLTRB(22, 94, 22, 124),
+          padding: EdgeInsets.fromLTRB(22, compactHeader ? 8 : 54, 22, 124),
           children: [
-            Text(
-              '学习记录',
-              style: TextStyle(
-                color: StudyUi.title(isDarkMode),
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
+            StudyPathHero(
+              isDarkMode: isDarkMode,
+              accent: accent,
+              badge: '学习记录',
+              title: '把今天学过的沉淀下来',
+              subtitle: '按课程记录内容、难点、收获和下一步，方便复盘时快速回看。',
+              icon: Icons.edit_note_rounded,
+              steps: const ['记录', '难点', '收获', '下一步'],
+              child: Row(
+                children: [
+                  Expanded(
+                    child: StudyPathMetricPill(
+                      label: '总记录',
+                      value: '${allLogs.length}',
+                      icon: Icons.library_books_rounded,
+                      color: accent,
+                      isDarkMode: isDarkMode,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: StudyPathMetricPill(
+                      label: '筛选结果',
+                      value: '${logs.length}',
+                      icon: Icons.manage_search_rounded,
+                      color: StudyUi.secondary,
+                      isDarkMode: isDarkMode,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 14),
             // Search bar
             TextField(
               key: const Key('log_search_field'),
+              controller: _searchController,
               onChanged: (v) => setState(() => _searchQuery = v),
               style: TextStyle(
                 color: StudyUi.title(isDarkMode),
@@ -88,30 +128,35 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                   size: 22,
                 ),
                 suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.clear_rounded,
+                    ? Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _LogIconButton(
+                          icon: Icons.clear_rounded,
                           color: StudyUi.muted(isDarkMode),
-                          size: 20,
+                          isDarkMode: isDarkMode,
+                          tooltip: '清空搜索',
+                          onPressed: _clearSearch,
                         ),
-                        onPressed: () => setState(() => _searchQuery = ''),
                       )
                     : null,
                 filled: true,
-                fillColor: StudyUi.surfaceAlt(isDarkMode),
+                fillColor: StudyUi.surfaceAlt(isDarkMode).withValues(
+                  alpha: isDarkMode ? 0.72 : 0.88,
+                ),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide(color: StudyUi.border(isDarkMode)),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide(color: StudyUi.border(isDarkMode)),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: StudyUi.primary),
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide:
+                      BorderSide(color: accent.withValues(alpha: 0.50)),
                 ),
               ),
             ),
@@ -152,25 +197,14 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
               ),
             ],
             const SizedBox(height: 14),
-            SizedBox(
-              height: 48,
-              child: ElevatedButton.icon(
-                key: const Key('add_log_button'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: () => _showLogForm(context),
-                icon: const Icon(Icons.edit_note_rounded, size: 20),
-                label: const Text(
-                  '添加学习记录',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
+            _LogActionButton(
+              key: const Key('add_log_button'),
+              icon: Icons.edit_note_rounded,
+              label: '添加学习记录',
+              color: accent,
+              isDarkMode: isDarkMode,
+              expand: true,
+              onPressed: () => _showLogForm(context),
             ),
             const SizedBox(height: 18),
             if (allLogs.isEmpty)
@@ -181,7 +215,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
               )
             else if (logs.isEmpty)
               const StudyEmptyState.logs(
-                key: const Key('logs_filter_empty_state'),
+                key: Key('logs_filter_empty_state'),
                 title: '没有匹配的记录',
                 message: '试着清空课程筛选，或换一个关键词搜索。',
                 compact: true,
@@ -218,15 +252,10 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          return Container(
+          return _LogSheetSurface(
+            isDarkMode: widget.isDarkMode,
+            accent: accent,
             height: MediaQuery.of(ctx).size.height * 0.92,
-            decoration: BoxDecoration(
-              color: widget.isDarkMode
-                  ? const Color(0xFF1A1F2E)
-                  : const Color(0xFFF5F7FF),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(30)),
-            ),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 34),
               children: [
@@ -242,31 +271,38 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                Text(
-                  '添加学习记录',
-                  style: TextStyle(
-                    color: widget.isDarkMode ? Colors.white : AppColors.ink,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
+                Row(
+                  children: [
+                    StudyGlassIconNode(
+                      icon: Icons.edit_note_rounded,
+                      accent: accent,
+                      size: 44,
+                      iconSize: 19,
+                      isDarkMode: widget.isDarkMode,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '添加学习记录',
+                        style: TextStyle(
+                          color: StudyUi.title(widget.isDarkMode),
+                          fontSize: 22,
+                          fontWeight: AppTypography.hero,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 18),
                 _LogFormField(
                   label: '日期',
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: widget.isDarkMode
-                          ? Colors.white
-                          : accent,
-                      side: BorderSide(
-                        color: widget.isDarkMode
-                            ? Colors.white24
-                            : accent.withValues(alpha: 0.2),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
+                  child: _LogActionButton(
+                    icon: Icons.calendar_today_rounded,
+                    label: _fmtDate(selectedDate),
+                    color: accent,
+                    isDarkMode: widget.isDarkMode,
+                    filled: false,
+                    expand: true,
                     onPressed: () async {
                       final picked = await showDatePicker(
                         context: ctx,
@@ -278,8 +314,6 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                         setSheetState(() => selectedDate = picked);
                       }
                     },
-                    icon: const Icon(Icons.calendar_today_rounded, size: 18),
-                    label: Text(_fmtDate(selectedDate)),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -302,7 +336,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     controller: contentController,
                     maxLines: 3,
                     style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                      color: StudyUi.title(widget.isDarkMode),
                     ),
                     decoration: _logInputDeco('今天学了什么...', widget.isDarkMode),
                   ),
@@ -314,7 +348,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     controller: problemsController,
                     maxLines: 2,
                     style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                      color: StudyUi.title(widget.isDarkMode),
                     ),
                     decoration: _logInputDeco('遇到什么困难...', widget.isDarkMode),
                   ),
@@ -326,7 +360,7 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     controller: thoughtsController,
                     maxLines: 2,
                     style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                      color: StudyUi.title(widget.isDarkMode),
                     ),
                     decoration: _logInputDeco('有什么感悟...', widget.isDarkMode),
                   ),
@@ -338,46 +372,33 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
                     controller: nextPlanController,
                     maxLines: 2,
                     style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : AppColors.ink,
+                      color: StudyUi.title(widget.isDarkMode),
                     ),
                     decoration: _logInputDeco('后续安排...', widget.isDarkMode),
                   ),
                 ),
                 const SizedBox(height: 22),
-                SizedBox(
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      elevation: 0,
-                    ),
-                    onPressed: () async {
-                      if (courseController.text.trim().isEmpty) {
-                        StudyToast.show(ctx, '请至少填写课程名称');
-                        return;
-                      }
-                      await widget.controller.addStudyLog(
-                        date: selectedDate,
-                        courseName: courseController.text.trim(),
-                        content: contentController.text.trim(),
-                        problems: problemsController.text.trim(),
-                        thoughts: thoughtsController.text.trim(),
-                        nextPlan: nextPlanController.text.trim(),
-                      );
-                      if (ctx.mounted) Navigator.of(ctx).pop();
-                    },
-                    child: const Text(
-                      '保存记录',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
+                _LogActionButton(
+                  icon: Icons.save_rounded,
+                  label: '保存记录',
+                  color: accent,
+                  isDarkMode: widget.isDarkMode,
+                  expand: true,
+                  onPressed: () async {
+                    if (courseController.text.trim().isEmpty) {
+                      StudyToast.show(ctx, '请至少填写课程名称');
+                      return;
+                    }
+                    await widget.controller.addStudyLog(
+                      date: selectedDate,
+                      courseName: courseController.text.trim(),
+                      content: contentController.text.trim(),
+                      problems: problemsController.text.trim(),
+                      thoughts: thoughtsController.text.trim(),
+                      nextPlan: nextPlanController.text.trim(),
+                    );
+                    if (ctx.mounted) Navigator.of(ctx).pop();
+                  },
                 ),
               ],
             ),
@@ -388,27 +409,207 @@ class _StudyLogsPageState extends State<StudyLogsPage> {
   }
 
   InputDecoration _logInputDeco(String? hint, bool isDark) {
+    final accent = widget.controller.primaryColor;
     return InputDecoration(
       hintText: hint,
       hintStyle: TextStyle(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.4)
-            : Colors.black.withValues(alpha: 0.35),
+        color: StudyUi.muted(isDark),
       ),
       filled: true,
-      fillColor: isDark
-          ? Colors.white.withValues(alpha: 0.06)
-          : const Color(0xFFF2F5FC),
+      fillColor: StudyUi.surfaceAlt(isDark).withValues(
+        alpha: isDark ? 0.72 : 0.88,
+      ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: StudyUi.border(isDark)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: StudyUi.border(isDark)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: accent.withValues(alpha: 0.50)),
       ),
     );
   }
 
   String _fmtDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+}
+
+class _LogSheetSurface extends StatelessWidget {
+  const _LogSheetSurface({
+    required this.isDarkMode,
+    required this.accent,
+    required this.height,
+    required this.child,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final double height;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: StudyUi.background(isDarkMode).withValues(
+                alpha: isDarkMode ? 0.94 : 0.90,
+              ),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(30)),
+              border: Border(
+                top: BorderSide(
+                  color:
+                      Colors.white.withValues(alpha: isDarkMode ? 0.08 : 0.70),
+                ),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: isDarkMode ? 0.16 : 0.10),
+                  blurRadius: 28,
+                  offset: const Offset(0, -12),
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LogActionButton extends StatelessWidget {
+  const _LogActionButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.isDarkMode,
+    required this.onPressed,
+    this.filled = true,
+    this.expand = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+  final bool filled;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null;
+    final foreground = filled
+        ? Colors.white
+        : (disabled ? StudyUi.muted(isDarkMode) : color);
+    final background = filled
+        ? color.withValues(alpha: disabled ? 0.48 : 1)
+        : StudyUi.chipBackground(color, isDarkMode);
+    final button = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: disabled ? null : onPressed,
+        child: Ink(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: filled
+                  ? Colors.white.withValues(alpha: disabled ? 0.08 : 0.18)
+                  : color.withValues(alpha: disabled ? 0.10 : 0.22),
+            ),
+            boxShadow: [
+              if (filled && !disabled && !isDarkMode)
+                BoxShadow(
+                  color: color.withValues(alpha: 0.18),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: foreground, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 14,
+                    fontWeight: AppTypography.title,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return expand ? SizedBox(width: double.infinity, child: button) : button;
+  }
+}
+
+class _LogIconButton extends StatelessWidget {
+  const _LogIconButton({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.isDarkMode,
+    required this.onPressed,
+    this.tooltip,
+  });
+
+  final IconData icon;
+  final Color color;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = SizedBox(
+      width: 36,
+      height: 36,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(13),
+          onTap: onPressed,
+          child: Ink(
+            decoration: BoxDecoration(
+              color: StudyUi.chipBackground(color, isDarkMode),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: color.withValues(alpha: 0.18)),
+            ),
+            child: Center(child: Icon(icon, color: color, size: 18)),
+          ),
+        ),
+      ),
+    );
+    if (tooltip == null) return button;
+    return Tooltip(message: tooltip!, child: button);
   }
 }
 
@@ -500,7 +701,7 @@ class _LogCourseSelectorState extends State<_LogCourseSelector> {
         TextField(
           controller: widget.controller,
           style: TextStyle(
-            color: widget.isDarkMode ? Colors.white : AppColors.ink,
+            color: StudyUi.title(widget.isDarkMode),
           ),
           onChanged: (_) {
             _updateSuggestions();
@@ -509,25 +710,39 @@ class _LogCourseSelectorState extends State<_LogCourseSelector> {
           decoration: InputDecoration(
             hintText: '选择或输入课程名...',
             hintStyle: TextStyle(
-              color: widget.isDarkMode
-                  ? Colors.white.withValues(alpha: 0.4)
-                  : Colors.black26,
+              color: StudyUi.muted(widget.isDarkMode),
             ),
             filled: true,
-            fillColor: widget.isDarkMode
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF2F5FC),
+            fillColor: StudyUi.surfaceAlt(widget.isDarkMode).withValues(
+              alpha: widget.isDarkMode ? 0.72 : 0.88,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
+              borderSide: BorderSide(color: StudyUi.border(widget.isDarkMode)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: StudyUi.border(widget.isDarkMode)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: widget.accentColor.withValues(alpha: 0.50),
+              ),
             ),
             suffixIcon: widget.controller.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      widget.controller.clear();
-                      _updateSuggestions();
-                    },
+                ? Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _LogIconButton(
+                      icon: Icons.close_rounded,
+                      color: StudyUi.muted(widget.isDarkMode),
+                      isDarkMode: widget.isDarkMode,
+                      tooltip: '清空课程',
+                      onPressed: () {
+                        widget.controller.clear();
+                        _updateSuggestions();
+                      },
+                    ),
                   )
                 : null,
           ),
@@ -583,9 +798,7 @@ class _LogCourseSelectorState extends State<_LogCourseSelector> {
                               child: Text(
                                 course,
                                 style: TextStyle(
-                                  color: widget.isDarkMode
-                                      ? Colors.white
-                                      : AppColors.ink,
+                                  color: StudyUi.title(widget.isDarkMode),
                                   fontSize: 14,
                                 ),
                               ),
@@ -651,19 +864,17 @@ class _LogCard extends StatelessWidget {
                   style: TextStyle(
                     color: titleColor,
                     fontSize: 16,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: AppTypography.hero,
                   ),
                 ),
               ),
-              IconButton(
+              _LogIconButton(
                 key: Key('log_delete_${log.id}'),
+                icon: Icons.delete_outline_rounded,
+                color: StudyUi.muted(isDarkMode),
+                isDarkMode: isDarkMode,
+                tooltip: '删除记录',
                 onPressed: onDelete,
-                icon: Icon(
-                  Icons.delete_outline_rounded,
-                  color: StudyUi.muted(isDarkMode),
-                  size: 20,
-                ),
-                visualDensity: VisualDensity.compact,
               ),
             ],
           ),

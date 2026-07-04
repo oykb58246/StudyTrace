@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../config/ui_review_config.dart';
 import '../models/achievement.dart';
 import '../models/analysis_item.dart';
 import '../models/ai_action_record.dart';
@@ -31,6 +32,7 @@ import '../services/activity_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/community_evidence_service.dart';
 import '../services/cloud_speech_service.dart';
+import '../services/demo_seed_service.dart';
 import '../services/gamification_service.dart';
 import '../services/group_service.dart';
 import '../services/leaderboard_service.dart';
@@ -55,13 +57,17 @@ class AppDataController extends ChangeNotifier {
     SyncService? syncService,
     ApiClient? apiClient,
     ConnectivityService? connectivity,
+    DemoSeedService? demoSeedService,
+    bool enableBuiltInDemoSeed = true,
   })  : _storage = storage ?? LocalStorageService(),
         _credentials = credentials ?? AiCredentialService(),
         _reportService = reportService ?? const WeeklyReportService(),
         _authService = authService ?? AuthService(),
         _syncService = syncService ?? SyncService(),
-        _apiClient = apiClient,
-        _connectivity = connectivity ?? ConnectivityService();
+        _backendApi = apiClient,
+        _connectivity = connectivity ?? ConnectivityService(),
+        _demoSeedService = demoSeedService ?? const DemoSeedService(),
+        _enableBuiltInDemoSeed = enableBuiltInDemoSeed;
 
   final LocalStorageService _storage;
   final AiCredentialService _credentials;
@@ -69,8 +75,9 @@ class AppDataController extends ChangeNotifier {
   final AuthService _authService;
   final SyncService _syncService;
   final ActivityService _activityService = ActivityService();
-  final ApiClient? _apiClient;
   final ConnectivityService _connectivity;
+  final DemoSeedService _demoSeedService;
+  final bool _enableBuiltInDemoSeed;
 
   /// 全局导航 key，在 AppShell 中注入，供深层页面（如 AI Chat）切换 Tab
   GlobalKey<NavigatorState>? navigatorKey;
@@ -79,7 +86,9 @@ class AppDataController extends ChangeNotifier {
   String _currentPrimaryTab = 'assistant';
   String get currentPrimaryTab => _currentPrimaryTab;
   void setCurrentPrimaryTab(String tab) {
+    if (_currentPrimaryTab == tab) return;
     _currentPrimaryTab = tab;
+    notifyListeners();
   }
 
   // --- legacy ---
@@ -98,8 +107,7 @@ class AppDataController extends ChangeNotifier {
   final List<TrashItem> _trashItems = [];
   final List<AiActionRecord> _actionRecords = [];
   final List<LearningMoment> _learningMoments = [];
-  LearningAlertSettings _learningAlertSettings =
-      LearningAlertSettings.defaults;
+  LearningAlertSettings _learningAlertSettings = LearningAlertSettings.defaults;
   final LearningAlertService _learningAlertService =
       const LearningAlertService();
   final LearningTraceService _learningTraceService =
@@ -116,6 +124,7 @@ class AppDataController extends ChangeNotifier {
   static String _normalizeBaseUrl(String? value) {
     return ApiEndpointConfig.normalizeBaseUrl(value);
   }
+
   bool _isLoggedIn = false;
   ApiClient? _backendApi;
   bool _isHandlingUnauthorizedSession = false;
@@ -173,6 +182,7 @@ class AppDataController extends ChangeNotifier {
     _connectivity.dispose();
     super.dispose();
   }
+
   bool get darkMode => _darkMode;
   bool get skinVivo => _skinVivo;
   String get apiBaseUrl => _apiBaseUrl;
@@ -307,8 +317,13 @@ class AppDataController extends ChangeNotifier {
 
   Future<void> load() async {
     await _loadLocalDataFromStorage();
-    final token = await _credentials.getAuthToken();
-    _isLoggedIn = token != null && token.isNotEmpty;
+    if (UiReviewConfig.enabled) {
+      _isLoggedIn = false;
+      await applyUiReviewSeedInMemory();
+    } else {
+      final token = await _credentials.getAuthToken();
+      _isLoggedIn = token != null && token.isNotEmpty;
+    }
     if (_isLoggedIn) {
       await ensureBackendAuth();
       try {
@@ -316,6 +331,9 @@ class AppDataController extends ChangeNotifier {
       } catch (_) {
         // 同步失败不阻断本地加载
       }
+    }
+    if (!UiReviewConfig.enabled) {
+      await _loadBuiltInDemoSeedWhenEmpty();
     }
     _isLoaded = true;
     notifyListeners();
@@ -559,6 +577,117 @@ class AppDataController extends ChangeNotifier {
     _queueSync();
   }
 
+  Future<StudyTaskItem?> completeStudyTaskAction(
+    String taskId, {
+    String? subTaskId,
+  }) async {
+    final index = _studyTasks.indexWhere((t) => t.id == taskId);
+    if (index == -1) return null;
+    final previous = _studyTasks[index];
+    if (previous.subTasks.isEmpty) {
+      if (previous.effectiveStatus == StudyTaskStatus.completed) {
+        return null;
+      }
+      await updateStudyTaskStatus(taskId, StudyTaskStatus.completed);
+      final current = _studyTasks[index];
+      await _recordTaskProgressMoment(
+        task: current,
+        completedWholeTask: true,
+      );
+      return current;
+    }
+
+    final targetSubTaskId = subTaskId ??
+        previous.subTasks
+            .firstWhere(
+              (item) => item.status != SubTaskStatus.completed,
+              orElse: () => previous.subTasks.first,
+            )
+            .id;
+    final targetBefore = previous.subTasks
+        .cast<StudySubTaskItem?>()
+        .firstWhere((item) => item?.id == targetSubTaskId, orElse: () => null);
+    final now = DateTime.now();
+    final updatedSubTasks = previous.subTasks.map((item) {
+      if (item.id != targetSubTaskId ||
+          item.status == SubTaskStatus.completed) {
+        return item;
+      }
+      return item.copyWith(
+        status: SubTaskStatus.completed,
+        updatedAt: now,
+        completedAt: item.completedAt ?? now,
+      );
+    }).toList();
+    final allDone = updatedSubTasks.every(
+      (item) => item.status == SubTaskStatus.completed,
+    );
+    final current = previous.copyWith(
+      status: allDone ? StudyTaskStatus.completed : StudyTaskStatus.inProgress,
+      subTasks: updatedSubTasks,
+      updatedAt: now,
+    );
+    _studyTasks[index] = current;
+    await _storage.saveStudyTasks(_studyTasks);
+    notifyListeners();
+    await _recordCompletedSubTasks(previous, current);
+    if (targetBefore != null &&
+        targetBefore.status != SubTaskStatus.completed) {
+      await _recordTaskProgressMoment(
+        task: current,
+        completedSubTask: targetBefore,
+        completedWholeTask: allDone,
+      );
+    }
+    if (allDone) {
+      await NotificationService().cancelForTask(current);
+      if (previous.effectiveStatus != StudyTaskStatus.completed) {
+        await _recordActivity(
+          type: 'taskCompleted',
+          title: current.title,
+          summary: current.courseName,
+          sourceType: 'study_task',
+          sourceId: current.id,
+        );
+      }
+    } else {
+      await NotificationService().scheduleForTask(current);
+    }
+    await _refreshLearningAlertDigest();
+    _queueSync();
+    return current;
+  }
+
+  Future<void> _recordTaskProgressMoment({
+    required StudyTaskItem task,
+    StudySubTaskItem? completedSubTask,
+    bool completedWholeTask = false,
+  }) async {
+    final completedTitle = completedSubTask?.title.trim();
+    final nextStep = task.subTasks
+        .where((item) => item.status != SubTaskStatus.completed)
+        .map((item) => item.title.trim())
+        .firstWhere((title) => title.isNotEmpty, orElse: () => '');
+    final lines = <String>[
+      if (completedTitle != null && completedTitle.isNotEmpty)
+        '完成了「$completedTitle」。'
+      else
+        '完成了「${task.title.trim().isEmpty ? '今日安排' : task.title.trim()}」。',
+      if (task.title.trim().isNotEmpty) '来自：${task.title.trim()}',
+      if (completedWholeTask)
+        '这项安排已经完成，可以在学迹里回看今天的推进。'
+      else if (nextStep.isNotEmpty)
+        '下一步：$nextStep',
+    ];
+    await publishLearningMoment(
+      content: lines.join('\n'),
+      courseName: task.courseName,
+      visibility: LearningMomentVisibility.private,
+      sourceType: 'task_progress',
+      sourceId: completedSubTask?.id ?? task.id,
+    );
+  }
+
   Future<void> updateStudyTask(
     String taskId, {
     required String title,
@@ -632,7 +761,7 @@ class AppDataController extends ChangeNotifier {
     final task = _studyTasks.cast<StudyTaskItem?>().firstWhere(
           (t) => t?.id == taskId,
           orElse: () => null,
-    );
+        );
     if (task == null) return;
     await NotificationService().cancelForTask(task);
     final trashItem = TrashItem(
@@ -656,20 +785,6 @@ class AppDataController extends ChangeNotifier {
       payloadJson: task.toJson(),
       deletedAt: trashItem.deletedAt,
     );
-  }
-
-  Future<void> _permanentlyDeleteTask(String taskId) async {
-    final task = _studyTasks.cast<StudyTaskItem?>().firstWhere(
-          (t) => t?.id == taskId,
-          orElse: () => null,
-    );
-    if (task != null) {
-      await NotificationService().cancelForTask(task);
-    }
-    _studyTasks.removeWhere((t) => t.id == taskId);
-    await _storage.saveStudyTasks(_studyTasks);
-    notifyListeners();
-    await _refreshLearningAlertDigest();
   }
 
   Future<DailyReminderSettings> loadDailyReminderSettings() {
@@ -752,7 +867,7 @@ class AppDataController extends ChangeNotifier {
     final log = _studyLogs.cast<StudyLogItem?>().firstWhere(
           (l) => l?.id == logId,
           orElse: () => null,
-    );
+        );
     if (log == null) return;
     final trashItem = TrashItem(
       id: 'trash_${DateTime.now().microsecondsSinceEpoch}',
@@ -775,13 +890,6 @@ class AppDataController extends ChangeNotifier {
       payloadJson: log.toJson(),
       deletedAt: trashItem.deletedAt,
     );
-  }
-
-  Future<void> _permanentlyDeleteLog(String logId) async {
-    _studyLogs.removeWhere((l) => l.id == logId);
-    await _storage.saveStudyLogs(_studyLogs);
-    notifyListeners();
-    await _refreshLearningAlertDigest();
   }
 
   // --- StudyTrace: Weekly Reports ---
@@ -903,6 +1011,183 @@ class AppDataController extends ChangeNotifier {
     await _storage.saveLearningMoments(_learningMoments);
     await _storage.saveGamificationState(_gamificationState);
     notifyListeners();
+  }
+
+  Future<FinalDemoSeedResult> applyUiReviewSeedInMemory() async {
+    final seed = _demoSeedService.build();
+    _applyFinalDemoSeedToMemory(seed);
+    _applyFinalDemoGamification();
+    notifyListeners();
+    await _refreshLearningAlertDigest();
+    return _finalDemoSeedResult(seed);
+  }
+
+  Future<FinalDemoSeedResult> loadFinalDemoSeed() async {
+    final seed = _demoSeedService.build();
+    _applyFinalDemoSeedToMemory(seed);
+    _applyFinalDemoGamification();
+
+    await _storage.saveStudyTasks(_studyTasks);
+    await _storage.saveStudyLogs(_studyLogs);
+    await _storage.saveStudyNotes(_studyNotes);
+    await _storage.saveFlashCardBatch(_flashCards);
+    await _storage.saveCourses(_courses);
+    await _storage.saveWeeklyReports(_weeklyReports);
+    await _storage.saveAiActionRecords(_actionRecords);
+    await _storage.saveLearningMoments(_learningMoments);
+    await _storage.saveGamificationState(_gamificationState);
+    notifyListeners();
+    await _refreshLearningAlertDigest();
+    _queueSync();
+
+    return _finalDemoSeedResult(seed);
+  }
+
+  Future<void> _loadBuiltInDemoSeedWhenEmpty() async {
+    if (!_shouldLoadBuiltInDemoSeed()) return;
+    final seed = _demoSeedService.build();
+    _applyFinalDemoSeedToMemory(seed);
+    _applyFinalDemoGamification();
+
+    await _storage.saveStudyTasks(_studyTasks);
+    await _storage.saveStudyLogs(_studyLogs);
+    await _storage.saveStudyNotes(_studyNotes);
+    await _storage.saveFlashCardBatch(_flashCards);
+    await _storage.saveCourses(_courses);
+    await _storage.saveWeeklyReports(_weeklyReports);
+    await _storage.saveAiActionRecords(_actionRecords);
+    await _storage.saveLearningMoments(_learningMoments);
+    await _storage.saveGamificationState(_gamificationState);
+    _queueSync();
+  }
+
+  bool _shouldLoadBuiltInDemoSeed() {
+    if (!_enableBuiltInDemoSeed) return false;
+
+    bool hasUserItem<T>(List<T> items) {
+      for (final item in items) {
+        final dynamic value = item;
+        final id = value.id as String?;
+        if (id == null || !id.startsWith(DemoSeedService.idPrefix)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    return !hasUserItem(_studyTasks) &&
+        !hasUserItem(_studyLogs) &&
+        !hasUserItem(_studyNotes) &&
+        !hasUserItem(_flashCards) &&
+        !hasUserItem(_weeklyReports) &&
+        !hasUserItem(_actionRecords) &&
+        !hasUserItem(_learningMoments);
+  }
+
+  void _applyFinalDemoSeedToMemory(FinalDemoSeed seed) {
+    _studyTasks
+        .removeWhere((item) => item.id.startsWith(DemoSeedService.idPrefix));
+    _studyLogs
+        .removeWhere((item) => item.id.startsWith(DemoSeedService.idPrefix));
+    _studyNotes
+        .removeWhere((item) => item.id.startsWith(DemoSeedService.idPrefix));
+    _flashCards
+        .removeWhere((item) => item.id.startsWith(DemoSeedService.idPrefix));
+    _weeklyReports
+        .removeWhere((item) => item.id.startsWith(DemoSeedService.idPrefix));
+    _actionRecords
+        .removeWhere((item) => item.id.startsWith(DemoSeedService.idPrefix));
+    _learningMoments
+        .removeWhere((item) => item.id.startsWith(DemoSeedService.idPrefix));
+
+    for (final course in seed.courses) {
+      if (!_courses.contains(course)) _courses.add(course);
+    }
+    _courses.sort();
+
+    _studyTasks.insertAll(0, seed.tasks);
+    _studyLogs.insertAll(0, seed.logs);
+    _studyNotes.insertAll(0, seed.notes);
+    _flashCards.insertAll(0, seed.flashCards);
+    _weeklyReports.insertAll(0, seed.reports);
+    _actionRecords.insertAll(0, seed.actionRecords);
+    _learningMoments.insertAll(0, seed.moments);
+
+    _studyLogs.sort((a, b) => b.date.compareTo(a.date));
+    _weeklyReports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    _actionRecords.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    _learningMoments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  void _applyFinalDemoGamification() {
+    final now = DateTime.now();
+    final unlocked = List<UnlockedAchievement>.from(
+      _gamificationState.unlockedAchievements,
+    );
+    final existing = unlocked.map((item) => item.type).toSet();
+
+    void add(AchievementType type) {
+      if (existing.add(type)) {
+        unlocked.add(UnlockedAchievement(type: type, unlockedAt: now));
+      }
+    }
+
+    add(AchievementType.firstLog);
+    add(AchievementType.firstTask);
+    add(AchievementType.streak3);
+    add(AchievementType.streak7);
+    add(AchievementType.firstReport);
+    add(AchievementType.firstNote);
+
+    final nextPoints = _gamificationState.totalPoints < 180
+        ? 180
+        : _gamificationState.totalPoints;
+    _gamificationState = _gamificationState.copyWith(
+      totalPoints: nextPoints,
+      unlockedAchievements: unlocked,
+    );
+  }
+
+  FinalDemoSeedResult _finalDemoSeedResult(FinalDemoSeed seed) {
+    return FinalDemoSeedResult(
+      logs: seed.logs.length,
+      tasks: seed.tasks.length,
+      flashCards: seed.flashCards.length,
+      moments: seed.moments.length,
+      totalItems: seed.itemCount,
+    );
+  }
+
+  Future<int> resetFinalDemoSeed() async {
+    var removed = 0;
+    removed += _removeDemoItems(_studyTasks);
+    removed += _removeDemoItems(_studyLogs);
+    removed += _removeDemoItems(_studyNotes);
+    removed += _removeDemoItems(_flashCards);
+    removed += _removeDemoItems(_weeklyReports);
+    removed += _removeDemoItems(_actionRecords);
+    removed += _removeDemoItems(_learningMoments);
+    await _storage.saveStudyTasks(_studyTasks);
+    await _storage.saveStudyLogs(_studyLogs);
+    await _storage.saveStudyNotes(_studyNotes);
+    await _storage.saveFlashCardBatch(_flashCards);
+    await _storage.saveWeeklyReports(_weeklyReports);
+    await _storage.saveAiActionRecords(_actionRecords);
+    await _storage.saveLearningMoments(_learningMoments);
+    notifyListeners();
+    await _refreshLearningAlertDigest();
+    _queueSync();
+    return removed;
+  }
+
+  int _removeDemoItems<T>(List<T> items) {
+    final before = items.length;
+    items.removeWhere((item) {
+      final dynamic value = item;
+      final id = value.id as String?;
+      return id?.startsWith(DemoSeedService.idPrefix) == true;
+    });
+    return before - items.length;
   }
 
   Future<SavedExportFile> exportAllUserData() async {
@@ -1186,7 +1471,8 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _applyTaskItem(String entityId, Map<String, dynamic> payload, bool isDeleted) {
+  void _applyTaskItem(
+      String entityId, Map<String, dynamic> payload, bool isDeleted) {
     final idx = _studyTasks.indexWhere((t) => t.id == entityId);
     if (isDeleted) {
       if (idx >= 0) _studyTasks.removeAt(idx);
@@ -1203,7 +1489,8 @@ class AppDataController extends ChangeNotifier {
     }
   }
 
-  void _applyLogItem(String entityId, Map<String, dynamic> payload, bool isDeleted) {
+  void _applyLogItem(
+      String entityId, Map<String, dynamic> payload, bool isDeleted) {
     final idx = _studyLogs.indexWhere((t) => t.id == entityId);
     if (isDeleted) {
       if (idx >= 0) _studyLogs.removeAt(idx);
@@ -1220,7 +1507,8 @@ class AppDataController extends ChangeNotifier {
     }
   }
 
-  void _applyNoteItem(String entityId, Map<String, dynamic> payload, bool isDeleted) {
+  void _applyNoteItem(
+      String entityId, Map<String, dynamic> payload, bool isDeleted) {
     final idx = _studyNotes.indexWhere((t) => t.id == entityId);
     if (isDeleted) {
       if (idx >= 0) _studyNotes.removeAt(idx);
@@ -1237,7 +1525,8 @@ class AppDataController extends ChangeNotifier {
     }
   }
 
-  void _applyFlashCardItem(String entityId, Map<String, dynamic> payload, bool isDeleted) {
+  void _applyFlashCardItem(
+      String entityId, Map<String, dynamic> payload, bool isDeleted) {
     final idx = _flashCards.indexWhere((t) => t.id == entityId);
     if (isDeleted) {
       if (idx >= 0) _flashCards.removeAt(idx);
@@ -1290,7 +1579,8 @@ class AppDataController extends ChangeNotifier {
     _userProfile = UserProfile.fromJson(payload);
   }
 
-  void _applyTrashItem(String entityId, Map<String, dynamic> payload, bool isDeleted) {
+  void _applyTrashItem(
+      String entityId, Map<String, dynamic> payload, bool isDeleted) {
     final idx = _trashItems.indexWhere((t) => t.id == entityId);
     if (isDeleted) {
       if (idx >= 0) _trashItems.removeAt(idx);
@@ -1453,7 +1743,7 @@ class AppDataController extends ChangeNotifier {
     final note = _studyNotes.cast<StudyNote?>().firstWhere(
           (n) => n?.id == noteId,
           orElse: () => null,
-    );
+        );
     if (note == null) return;
     final children = _studyNotes.where((n) => n.parentId == noteId).toList();
     final now = DateTime.now();
@@ -1488,12 +1778,6 @@ class AppDataController extends ChangeNotifier {
       payloadJson: note.toJson(),
       deletedAt: now,
     );
-  }
-
-  Future<void> _permanentlyDeleteNote(String noteId) async {
-    _studyNotes.removeWhere((n) => n.id == noteId || n.parentId == noteId);
-    await _storage.saveStudyNotes(_studyNotes);
-    notifyListeners();
   }
 
   List<StudyNote> notesForFolder(String? folderId) {
@@ -1561,6 +1845,44 @@ class AppDataController extends ChangeNotifier {
     _queueSync();
   }
 
+  Future<AiFlashCard?> recordFlashCardReview(
+    String cardId,
+    int score,
+  ) async {
+    final i = _flashCards.indexWhere((c) => c.id == cardId);
+    if (i == -1) return null;
+    final updated = _flashCards[i].recordReview(score);
+    _flashCards[i] = updated;
+    await _storage.saveFlashCardBatch(_flashCards);
+    notifyListeners();
+    await _recordActivity(
+      type: 'flashcardReviewed',
+      title: updated.question,
+      summary:
+          'AI 判分 $score 分，掌握度 ${updated.masteryPercent}%，下次复习 ${_shortDateLabel(updated.nextReviewDate)}',
+      sourceType: 'flash_card',
+      sourceId: updated.id,
+      payloadJson: {
+        'score': score,
+        'reviewCount': updated.reviewCount,
+        'easeFactor': updated.easeFactor,
+        'masteryPercent': updated.masteryPercent,
+        'masteryLabel': updated.masteryLabel,
+        'weakTags': updated.weakTags,
+        'lastReviewedAt': updated.lastReviewedAt?.toIso8601String(),
+        'nextReviewDate': updated.nextReviewDate?.toIso8601String(),
+      },
+    );
+    await _refreshLearningAlertDigest();
+    _queueSync();
+    return updated;
+  }
+
+  String _shortDateLabel(DateTime? value) {
+    if (value == null) return '待安排';
+    return '${value.month}/${value.day}';
+  }
+
   Future<void> deleteFlashCard(String cardId) async {
     await _moveFlashCardToTrash(cardId);
   }
@@ -1569,7 +1891,7 @@ class AppDataController extends ChangeNotifier {
     final card = _flashCards.cast<AiFlashCard?>().firstWhere(
           (c) => c?.id == cardId,
           orElse: () => null,
-    );
+        );
     if (card == null) return;
     final trashItem = TrashItem(
       id: 'trash_${DateTime.now().microsecondsSinceEpoch}',
@@ -1592,13 +1914,6 @@ class AppDataController extends ChangeNotifier {
       payloadJson: card.toJson(),
       deletedAt: trashItem.deletedAt,
     );
-  }
-
-  Future<void> _permanentlyDeleteFlashCard(String cardId) async {
-    _flashCards.removeWhere((c) => c.id == cardId);
-    await _storage.saveFlashCardBatch(_flashCards);
-    notifyListeners();
-    await _refreshLearningAlertDigest();
   }
 
   // --- Course Management ---
@@ -1712,7 +2027,7 @@ class AppDataController extends ChangeNotifier {
     _queueSync();
   }
 
-  // --- AI 操作审计 ---
+  // --- 助手动作记录 ---
 
   Future<void> appendActionRecord(AiActionRecord record) async {
     _actionRecords.add(record);
@@ -1746,7 +2061,7 @@ class AppDataController extends ChangeNotifier {
     _queueSync();
   }
 
-  // --- 学迹动态 ---
+  // --- 学迹 ---
 
   Future<LearningMoment> publishLearningMoment({
     required String content,
@@ -1760,10 +2075,9 @@ class AppDataController extends ChangeNotifier {
     String? sourceId,
   }) async {
     final now = DateTime.now();
-    final effectiveAllowedGroupIds =
-        allowedGroupIds.isNotEmpty
-            ? allowedGroupIds
-            : (groupId == null || groupId.isEmpty ? const <String>[] : [groupId]);
+    final effectiveAllowedGroupIds = allowedGroupIds.isNotEmpty
+        ? allowedGroupIds
+        : (groupId == null || groupId.isEmpty ? const <String>[] : [groupId]);
     final moment = LearningMoment(
       id: 'moment_${now.microsecondsSinceEpoch}',
       content: content.trim(),
@@ -1791,8 +2105,8 @@ class AppDataController extends ChangeNotifier {
       await _recordActivity(
         type: 'momentShared',
         title: courseName.trim().isEmpty
-            ? '分享了一条学迹动态'
-            : '分享了 ${courseName.trim()} 的学习动态',
+            ? '同步了一条学迹'
+            : '同步了 ${courseName.trim()} 的学迹',
         summary: content.trim(),
         groupId: effectiveAllowedGroupIds.first,
         sourceType: sourceType ?? 'learning_moment',
@@ -1839,17 +2153,44 @@ class AppDataController extends ChangeNotifier {
 
   Future<void> recordTimerCompleted({
     required int durationMinutes,
+    String focusTitle = '',
     String sourceId = '',
   }) async {
+    final now = DateTime.now();
+    final trimmedTitle = focusTitle.trim();
+    final timerSourceId =
+        sourceId.isNotEmpty ? sourceId : 'timer_${now.microsecondsSinceEpoch}';
+    final summary = trimmedTitle.isEmpty
+        ? '$durationMinutes 分钟'
+        : '$durationMinutes 分钟 · $trimmedTitle';
+    _actionRecords.add(AiActionRecord(
+      id: 'timer_completed_${now.microsecondsSinceEpoch}',
+      toolId: 'timer.start_focus',
+      targetId: timerSourceId,
+      targetTitle: trimmedTitle.isEmpty ? null : trimmedTitle,
+      status: AiActionStatus.executed,
+      resultMessage: summary,
+      params: {
+        'durationMinutes': durationMinutes,
+        'completedFromTimer': true,
+        if (trimmedTitle.isNotEmpty) 'focusTitle': trimmedTitle,
+      },
+      createdAt: now,
+    ));
+    await _storage.saveAiActionRecords(_actionRecords);
+    notifyListeners();
+    _queueSync();
     await _recordActivity(
       type: 'timerCompleted',
-      title: '完成专注计时',
-      summary: '$durationMinutes 分钟',
+      title: trimmedTitle.isEmpty ? '完成专注计时' : '完成专注：$trimmedTitle',
+      summary: summary,
       sourceType: 'timer',
-      sourceId: sourceId.isNotEmpty
-          ? sourceId
-          : 'timer_${DateTime.now().microsecondsSinceEpoch}',
-      payloadJson: {'durationMinutes': durationMinutes},
+      sourceId: timerSourceId,
+      payloadJson: {
+        'durationMinutes': durationMinutes,
+        'completedFromTimer': true,
+        if (trimmedTitle.isNotEmpty) 'focusTitle': trimmedTitle,
+      },
     );
   }
 

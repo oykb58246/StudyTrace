@@ -7,7 +7,6 @@ import '../../models/note_block.dart';
 import '../../models/study_note.dart';
 import '../../services/ai_semantic_search_service.dart';
 import '../../services/ai_exceptions.dart';
-import '../../services/ai_study_service.dart';
 import '../../services/picked_image_store.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
@@ -144,6 +143,14 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
       animation: widget.controller,
       builder: (context, _) {
         final notes = _currentNotes();
+        final showRootOverview =
+            _folderId == null && _search.isEmpty && !_selectionMode;
+        final folders = showRootOverview
+            ? notes.where((note) => note.isFolder).toList(growable: false)
+            : const <StudyNote>[];
+        final visibleNotes = showRootOverview
+            ? notes.where((note) => !note.isFolder).toList(growable: false)
+            : notes;
         final textColor = StudyUi.title(widget.isDarkMode);
         final bodyColor = StudyUi.body(widget.isDarkMode);
 
@@ -153,7 +160,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
             backgroundColor: Colors.transparent,
             foregroundColor: textColor,
             title: _selectionMode
-                ? Text('已选择 ${_selectedNoteIds.length} 项', style: const TextStyle(fontWeight: FontWeight.w800))
+                ? Text('已选择 ${_selectedNoteIds.length} 项', style: const TextStyle(fontWeight: AppTypography.title))
                 : _folderId != null
                 ? Row(children: [
                     GestureDetector(onTap: _goUp, child: Text('笔记', style: TextStyle(color: bodyColor, fontSize: 18))),
@@ -163,28 +170,19 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
                         _findFolderName(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                        style: const TextStyle(fontWeight: AppTypography.title),
                       ),
                     ),
                   ])
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: StudyUi.chipBackground(
-                            StudyUi.primary,
-                            widget.isDarkMode,
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.menu_book_rounded,
-                          color: StudyUi.primary,
-                          size: 17,
-                        ),
+                      StudyGlassIconNode(
+                        icon: Icons.menu_book_rounded,
+                        accent: StudyUi.pathViolet,
+                        size: 32,
+                        iconSize: 16,
+                        isDarkMode: widget.isDarkMode,
                       ),
                       const SizedBox(width: 10),
                       const Flexible(
@@ -192,102 +190,392 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
                           '学习笔记',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w800),
+                          style: TextStyle(fontWeight: AppTypography.title),
                         ),
                       ),
                     ],
                   ),
             actions: [
               if (_selectionMode) ...[
-                IconButton(
+                _NotesToolbarAction(
                   tooltip: '批量删除',
-                  icon: const Icon(Icons.delete_sweep_rounded),
+                  icon: Icons.delete_sweep_rounded,
+                  accent: StudyUi.warning,
+                  isDarkMode: widget.isDarkMode,
                   onPressed: _selectedNoteIds.isEmpty ? null : _deleteSelectedNotes,
                 ),
-                IconButton(
+                _NotesToolbarAction(
                   tooltip: '取消多选',
-                  icon: const Icon(Icons.close_rounded),
+                  icon: Icons.close_rounded,
+                  accent: StudyUi.pathViolet,
+                  isDarkMode: widget.isDarkMode,
                   onPressed: () => setState(_exitSelectionMode),
                 ),
               ] else if (notes.isNotEmpty)
-                IconButton(
+                _NotesToolbarAction(
                   tooltip: '多选',
-                  icon: const Icon(Icons.checklist_rounded),
+                  icon: Icons.checklist_rounded,
+                  accent: StudyUi.pathViolet,
+                  isDarkMode: widget.isDarkMode,
                   onPressed: _toggleSelectionMode,
                 ),
+              const SizedBox(width: 8),
             ],
           ),
-          body: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
-              child: TextField(
-                controller: _searchController,
-                autofocus: false,
-                onChanged: _onSearchChanged,
-                style: TextStyle(color: textColor, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: '搜索笔记...',
-                  hintStyle: TextStyle(color: StudyUi.muted(widget.isDarkMode)),
-                  prefixIcon: Icon(Icons.search_rounded, color: bodyColor, size: 20),
-                  suffixIcon: _isSemanticSearching
-                      ? Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: StudyUi.primary,
+          body: StudyScreenBackground(
+            isDarkMode: widget.isDarkMode,
+            accent: StudyUi.pathViolet,
+            child: Column(children: [
+              if (_folderId == null && !_selectionMode) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
+                  child: _notesHero(notes),
+                ),
+                const SizedBox(height: 10),
+              ],
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  22,
+                  _folderId == null && !_selectionMode ? 0 : 8,
+                  22,
+                  0,
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: false,
+                  onChanged: _onSearchChanged,
+                  style: TextStyle(color: textColor, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: '搜索笔记...',
+                    hintStyle:
+                        TextStyle(color: StudyUi.muted(widget.isDarkMode)),
+                    prefixIcon:
+                        Icon(Icons.search_rounded, color: bodyColor, size: 20),
+                    suffixIcon: _isSemanticSearching
+                        ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: StudyUi.pathViolet,
+                              ),
                             ),
-                          ),
-                        )
-                      : _search.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear_rounded),
-                              onPressed: () {
-                                _searchController.clear();
-                                _onSearchChanged('');
-                              },
-                            )
-                          : null,
-                  filled: true,
-                  fillColor: StudyUi.surfaceAlt(widget.isDarkMode),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: StudyUi.border(widget.isDarkMode)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: StudyUi.border(widget.isDarkMode)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: StudyUi.primary),
+                          )
+	                        : _search.isNotEmpty
+	                            ? Center(
+	                                widthFactor: 1,
+	                                child: GestureDetector(
+	                                  onTap: () {
+	                                    _searchController.clear();
+	                                    _onSearchChanged('');
+	                                  },
+	                                  child: StudyGlassIconNode(
+	                                    icon: Icons.clear_rounded,
+	                                    accent: StudyUi.pathViolet,
+	                                    size: 28,
+	                                    iconSize: 14,
+	                                    isDarkMode: widget.isDarkMode,
+	                                  ),
+	                                ),
+	                              )
+	                            : null,
+                    filled: true,
+                    fillColor: StudyUi.surfaceAlt(widget.isDarkMode)
+                        .withValues(alpha: widget.isDarkMode ? 0.92 : 0.86),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide:
+                          BorderSide(color: StudyUi.border(widget.isDarkMode)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide:
+                          BorderSide(color: StudyUi.border(widget.isDarkMode)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: StudyUi.pathViolet),
+                    ),
                   ),
                 ),
               ),
-            ),
-            // Content
-            Expanded(
-              child: notes.isEmpty
-                  ? _emptyBody()
-                  : RefreshIndicator(
-                      onRefresh: () async => widget.controller.notifyListeners(),
-                      child: Scrollbar(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(22, 8, 22, 120),
-                        itemCount: notes.length,
-                        itemBuilder: (_, i) => _noteTile(notes[i], textColor, bodyColor),
+              Expanded(
+                child: notes.isEmpty
+                    ? _emptyBody()
+                    : RefreshIndicator(
+                        onRefresh: widget.controller.load,
+                        child: Scrollbar(
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(22, 8, 22, 120),
+                            children: [
+                              if (folders.isNotEmpty) ...[
+                                _folderOverviewCard(folders),
+                                const SizedBox(height: 14),
+                              ],
+                              _notesSectionHeader(
+                                showRootOverview ? '最近笔记' : '当前笔记',
+                                '${visibleNotes.length} 条',
+                              ),
+                              const SizedBox(height: 10),
+                              if (visibleNotes.isEmpty)
+                                const StudyEmptyState.notes(
+                                  title: '这里还没有笔记',
+                                  message: '新建一条笔记后，会显示在最近笔记里。',
+                                  compact: true,
+                                )
+                              else
+                                ...visibleNotes.map((note) =>
+                                    _noteTile(note, textColor, bodyColor)),
+                            ],
+                          ),
+                        ), // RefreshIndicator
                       ),
-                      ), // RefreshIndicator
-                    ),
-            ),
-          ]),
+              ),
+            ]),
+          ),
           floatingActionButton: _buildFab(),
           bottomNavigationBar: const SizedBox(height: 80),
         );
       },
+    );
+  }
+
+  Widget _notesHero(List<StudyNote> notes) {
+    final folderCount = notes.where((note) => note.isFolder).length;
+    final noteCount = notes.length - folderCount;
+    return StudyPathHero(
+      isDarkMode: widget.isDarkMode,
+      accent: StudyUi.pathViolet,
+      badge: '学习笔记',
+      title: '记录、整理、再回顾',
+      subtitle: '把课堂灵感、拍照资料和复盘内容整理成清楚的学习笔记。',
+      icon: Icons.edit_note_rounded,
+      steps: const ['记录', '整理', '回顾'],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final metrics = [
+            _notesMetric(
+              label: '笔记',
+              value: '$noteCount',
+              color: StudyUi.pathViolet,
+            ),
+            _notesMetric(
+              label: '文件夹',
+              value: '$folderCount',
+              color: StudyUi.pathBlue,
+            ),
+            _notesMetric(
+              label: '搜索',
+              value: _semanticQuery.isEmpty ? '可用' : '已整理',
+              color: StudyUi.pathMint,
+            ),
+          ];
+          if (constraints.maxWidth < 310) {
+            return Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: metrics[0]),
+                    const SizedBox(width: 8),
+                    Expanded(child: metrics[1]),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(width: double.infinity, child: metrics[2]),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: metrics[0]),
+              const SizedBox(width: 8),
+              Expanded(child: metrics[1]),
+              const SizedBox(width: 8),
+              Expanded(child: metrics[2]),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _folderOverviewCard(List<StudyNote> folders) {
+    return StudyCard(
+      padding: const EdgeInsets.all(16),
+      borderColor: StudyUi.pathBlue.withValues(
+        alpha: widget.isDarkMode ? 0.22 : 0.16,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              StudyGlassIconNode(
+                icon: Icons.folder_open_rounded,
+                accent: StudyUi.pathBlue,
+                size: 38,
+                iconSize: 17,
+                isDarkMode: widget.isDarkMode,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '文件夹',
+                  style: TextStyle(
+                    color: StudyUi.title(widget.isDarkMode),
+                    fontSize: 17,
+                    fontWeight: AppTypography.hero,
+                  ),
+                ),
+              ),
+              StudyActionPill(
+                icon: Icons.add_rounded,
+                label: '新建',
+                color: StudyUi.pathBlue,
+                isDarkMode: widget.isDarkMode,
+                filled: false,
+                onPressed: _showCreateMenu,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: folders.take(4).map(_folderChip).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _folderChip(StudyNote folder) {
+    final count = widget.controller.notesForFolder(folder.id).length;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _goTo(folder),
+      child: Container(
+        width: 145,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: StudyUi.surfaceAlt(widget.isDarkMode).withValues(
+            alpha: widget.isDarkMode ? 0.76 : 0.88,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: StudyUi.border(widget.isDarkMode)),
+        ),
+        child: Row(
+          children: [
+            StudyGlassIconNode(
+              icon: Icons.folder_rounded,
+              accent: StudyUi.pathBlue,
+              size: 34,
+              iconSize: 15,
+              isDarkMode: widget.isDarkMode,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                folder.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: StudyUi.title(widget.isDarkMode),
+                  fontSize: 13,
+                  fontWeight: AppTypography.title,
+                ),
+              ),
+            ),
+            BadgePill(
+              label: '$count',
+              background: StudyUi.chipBackground(
+                StudyUi.pathBlue,
+                widget.isDarkMode,
+              ),
+              foreground: StudyUi.pathBlue,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _notesSectionHeader(String title, String trailing) {
+    return Row(
+      children: [
+        StudyGlassIconNode(
+          icon: Icons.schedule_rounded,
+          accent: StudyUi.pathCyan,
+          size: 34,
+          iconSize: 15,
+          isDarkMode: widget.isDarkMode,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(
+              color: StudyUi.title(widget.isDarkMode),
+              fontSize: 17,
+              fontWeight: AppTypography.hero,
+            ),
+          ),
+        ),
+        Text(
+          trailing,
+          style: TextStyle(
+            color: StudyUi.muted(widget.isDarkMode),
+            fontSize: 12,
+            fontWeight: AppTypography.title,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _notesMetric({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: widget.isDarkMode ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: StudyUi.muted(widget.isDarkMode),
+              fontSize: 11,
+              fontWeight: AppTypography.title,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 15,
+              fontWeight: AppTypography.hero,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -333,19 +621,16 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
                   ),
                 ),
               ],
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: isFolder
-                      ? StudyUi.chipBackground(StudyUi.warning, widget.isDarkMode)
-                      : StudyUi.chipBackground(accent, widget.isDarkMode),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  isFolder ? Icons.folder_rounded : (hasBlocks ? Icons.article_rounded : Icons.notes_rounded),
-                  size: 18,
-                  color: isFolder ? StudyUi.warning : accent,
-                ),
+              StudyGlassIconNode(
+                icon: isFolder
+                    ? Icons.folder_rounded
+                    : (hasBlocks
+                        ? Icons.article_rounded
+                        : Icons.notes_rounded),
+                accent: isFolder ? StudyUi.pathWarm : StudyUi.pathViolet,
+                size: 38,
+                iconSize: 17,
+                isDarkMode: widget.isDarkMode,
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -391,15 +676,14 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
       );
 
   Widget _buildFab() {
-    const accent = StudyUi.primary;
+    const accent = StudyUi.pathViolet;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: FloatingActionButton(
+      child: _NotesFloatingAction(
         heroTag: 'new_note_menu',
-        backgroundColor: accent,
-        foregroundColor: Colors.white,
+        accent: accent,
+        isDarkMode: widget.isDarkMode,
         onPressed: _showCreateMenu,
-        child: const Icon(Icons.add_rounded),
       ),
     );
   }
@@ -409,78 +693,214 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: widget.isDarkMode ? const Color(0xFF1A1F2E) : const Color(0xFFF5F7FF),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      builder: (ctx) => _NotesSheetSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: accent,
+        icon: Icons.menu_book_rounded,
+        title: '整理新的学习材料',
+        subtitle: '选择一种方式，把课堂、资料或灵感沉淀成可回看的笔记。',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _NotesSheetOption(
+              icon: Icons.note_add_rounded,
+              title: '新建笔记',
+              subtitle: '从空白文档开始记录',
+              accent: accent,
+              isDarkMode: widget.isDarkMode,
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _openEditor();
+              },
+            ),
+            _NotesSheetOption(
+              icon: Icons.create_new_folder_rounded,
+              title: '新建文件夹',
+              subtitle: '按课程、章节或主题整理资料',
+              accent: StudyUi.pathWarm,
+              isDarkMode: widget.isDarkMode,
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _createFolder();
+              },
+            ),
+            _NotesSheetOption(
+              icon: Icons.document_scanner_rounded,
+              title: '拍照成笔记',
+              subtitle: '识别板书、资料或手写内容',
+              accent: StudyUi.pathCyan,
+              isDarkMode: widget.isDarkMode,
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _createNoteFromPhoto();
+              },
+            ),
+          ],
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: widget.isDarkMode ? Colors.white24 : Colors.black26, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 18),
-          ListTile(
-            leading: Icon(Icons.note_add_rounded, color: accent),
-            title: const Text('新建笔记'),
-            onTap: () {
-              Navigator.of(ctx).pop();
-              _openEditor();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.create_new_folder_rounded, color: Color(0xFFF8AA5B)),
-            title: const Text('新建文件夹'),
-            onTap: () {
-              Navigator.of(ctx).pop();
-              _createFolder();
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.document_scanner_rounded, color: accent),
-            title: const Text('拍照成笔记'),
-            onTap: () {
-              Navigator.of(ctx).pop();
-              _createNoteFromPhoto();
-            },
-          ),
-        ]),
       ),
     );
   }
 
-  void _createFolder() {
+  Future<void> _createFolder() async {
     final accent = widget.controller.primaryColor;
     final ctrl = TextEditingController();
-    showDialog(
+    final title = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('新建文件夹'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: '文件夹名称',
-            filled: true,
-            fillColor: widget.isDarkMode ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF2F5FC),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-          ),
+      builder: (ctx) => _NotesDialogSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: accent,
+        icon: Icons.create_new_folder_rounded,
+        title: '新建文件夹',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+              decoration: InputDecoration(
+                hintText: '文件夹名称',
+                filled: true,
+                fillColor: StudyUi.surfaceAlt(widget.isDarkMode),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _NotesActionPill(
+                  label: '取消',
+                  icon: Icons.close_rounded,
+                  accent: StudyUi.muted(widget.isDarkMode),
+                  isDarkMode: widget.isDarkMode,
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+                const Spacer(),
+                _NotesActionPill(
+                  label: '创建',
+                  icon: Icons.check_rounded,
+                  accent: accent,
+                  isDarkMode: widget.isDarkMode,
+                  filled: true,
+                  onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                ),
+              ],
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('取消')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.white),
-            onPressed: () {
-              final title = ctrl.text.trim();
-              if (title.isNotEmpty) {
-                widget.controller.addStudyNote(title: title, content: '', isFolder: true, parentId: _folderId);
-                Navigator.of(ctx).pop();
-              }
-            },
-            child: const Text('创建'),
-          ),
-        ],
       ),
     );
+    ctrl.dispose();
+    if (title == null || title.isEmpty) return;
+    widget.controller.addStudyNote(
+      title: title,
+      content: '',
+      isFolder: true,
+      parentId: _folderId,
+    );
+  }
+
+  void _showNoteMenu(StudyNote note) {
+    final accent = widget.controller.primaryColor;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _NotesSheetSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: accent,
+        icon: note.isFolder ? Icons.folder_rounded : Icons.note_alt_rounded,
+        title: note.title,
+        subtitle: note.isFolder ? '打开或管理这个文件夹' : '打开编辑，或把这条笔记移入回收站。',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _NotesSheetOption(
+              icon: Icons.edit_rounded,
+              title: '打开编辑',
+              subtitle: note.isFolder ? '进入文件夹查看内容' : '继续整理正文与图片',
+              accent: accent,
+              isDarkMode: widget.isDarkMode,
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _openEditor(note: note);
+              },
+            ),
+            _NotesSheetOption(
+              icon: Icons.delete_outline_rounded,
+              title: '删除',
+              subtitle: '移入回收站，可在回收站恢复',
+              accent: StudyUi.danger,
+              isDarkMode: widget.isDarkMode,
+              onTap: () {
+                Navigator.of(ctx).pop();
+                widget.controller.deleteStudyNote(note.id);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteSelectedNotes() async {
+    final selectedCount = _selectedNoteIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _NotesDialogSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: StudyUi.danger,
+        icon: Icons.delete_sweep_rounded,
+        title: '批量删除',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '确定删除已选中的 $selectedCount 项吗？',
+              style: TextStyle(
+                color: StudyUi.body(widget.isDarkMode),
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _NotesActionPill(
+                  label: '取消',
+                  icon: Icons.close_rounded,
+                  accent: StudyUi.muted(widget.isDarkMode),
+                  isDarkMode: widget.isDarkMode,
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                ),
+                const Spacer(),
+                _NotesActionPill(
+                  label: '删除',
+                  icon: Icons.delete_outline_rounded,
+                  accent: StudyUi.danger,
+                  isDarkMode: widget.isDarkMode,
+                  filled: true,
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final ids = _selectedNoteIds.toList(growable: false);
+    for (final id in ids) {
+      await widget.controller.deleteStudyNote(id);
+    }
+
+    if (!mounted) return;
+    setState(_exitSelectionMode);
+    StudyToast.show(context, '已删除 $selectedCount 项');
   }
 
   Future<void> _createNoteFromPhoto() async {
@@ -519,7 +939,7 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
         await StudyToast.dialog(
           context,
           title: '拍照笔记创建失败',
-          message: '$error',
+          message: '图片文字没有识别成功，可以重新拍照或手动新建笔记。',
         );
       }
     } finally {
@@ -540,68 +960,6 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
     );
   }
 
-  void _showNoteMenu(StudyNote note) {
-    final accent = widget.controller.primaryColor;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: widget.isDarkMode ? const Color(0xFF1A1F2E) : const Color(0xFFF5F7FF),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: widget.isDarkMode ? Colors.white24 : Colors.black26, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 18),
-          ListTile(
-            leading: Icon(Icons.edit_rounded, color: accent),
-            title: const Text('打开编辑'),
-            onTap: () { Navigator.of(ctx).pop(); _openEditor(note: note); },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF6850)),
-            title: const Text('删除'),
-            onTap: () {
-              Navigator.of(ctx).pop();
-              widget.controller.deleteStudyNote(note.id);
-            },
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Future<void> _deleteSelectedNotes() async {
-    final selectedCount = _selectedNoteIds.length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('批量删除'),
-        content: Text('确定删除已选中的 $selectedCount 项吗？'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('取消')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF6850), foregroundColor: Colors.white),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    final ids = _selectedNoteIds.toList(growable: false);
-    for (final id in ids) {
-      await widget.controller.deleteStudyNote(id);
-    }
-
-    if (!mounted) return;
-    setState(_exitSelectionMode);
-    StudyToast.show(context, '已删除 $selectedCount 项');
-  }
 
   String _fmtNoteDate(DateTime d) {
     final h = d.hour.toString().padLeft(2, '0');
@@ -611,6 +969,446 @@ class _StudyNotesPageState extends State<StudyNotesPage> {
 }
 
 // ─── Block Editor ───
+
+class _NotesFloatingAction extends StatelessWidget {
+  const _NotesFloatingAction({
+    required this.heroTag,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onPressed,
+  });
+
+  final String heroTag;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Hero(
+      tag: heroTag,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onPressed,
+          child: Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  Colors.white.withValues(alpha: isDarkMode ? 0.16 : 0.96),
+                  accent.withValues(alpha: isDarkMode ? 0.34 : 0.82),
+                  accent,
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDarkMode ? 0.16 : 0.9),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: isDarkMode ? 0.20 : 0.24),
+                  blurRadius: 24,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotesToolbarAction extends StatelessWidget {
+  const _NotesToolbarAction({
+    required this.tooltip,
+    required this.icon,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Tooltip(
+        message: tooltip,
+        child: Opacity(
+          opacity: enabled ? 1 : 0.42,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: onPressed,
+            child: StudyGlassIconNode(
+              icon: icon,
+              accent: accent,
+              size: 36,
+              iconSize: 18,
+              isDarkMode: isDarkMode,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotesSheetSurface extends StatelessWidget {
+  const _NotesSheetSurface({
+    required this.isDarkMode,
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.subtitle,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.82;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                StudyUi.surface(isDarkMode),
+                StudyUi.surfaceAlt(isDarkMode),
+              ],
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+            border: Border.all(color: StudyUi.border(isDarkMode)),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: isDarkMode ? 0.16 : 0.12),
+                blurRadius: 28,
+                offset: const Offset(0, -8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: StudyUi.muted(isDarkMode).withValues(alpha: 0.36),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  StudyGlassIconNode(
+                    icon: icon,
+                    accent: accent,
+                    size: 42,
+                    iconSize: 20,
+                    isDarkMode: isDarkMode,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: StudyUi.title(isDarkMode),
+                            fontSize: 17,
+                            fontWeight: AppTypography.title,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle!,
+                            style: TextStyle(
+                              color: StudyUi.body(isDarkMode),
+                              fontSize: 12,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                fit: FlexFit.loose,
+                child: SingleChildScrollView(
+                  child: child,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotesSheetOption extends StatelessWidget {
+  const _NotesSheetOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+            decoration: BoxDecoration(
+              color: StudyUi.surface(isDarkMode).withValues(alpha: 0.78),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: StudyUi.border(isDarkMode)),
+            ),
+            child: Row(
+              children: [
+                StudyGlassIconNode(
+                  icon: icon,
+                  accent: accent,
+                  size: 40,
+                  iconSize: 19,
+                  isDarkMode: isDarkMode,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: StudyUi.title(isDarkMode),
+                          fontSize: 14,
+                          fontWeight: AppTypography.emphasis,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: StudyUi.body(isDarkMode),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: StudyUi.muted(isDarkMode),
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotesActionPill extends StatelessWidget {
+  const _NotesActionPill({
+    required this.label,
+    required this.icon,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onPressed,
+    this.filled = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback? onPressed;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    final foreground = filled ? Colors.white : accent;
+    return Opacity(
+      opacity: enabled ? 1 : 0.46,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onPressed,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              gradient: filled
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        accent.withValues(alpha: 0.92),
+                        accent.withValues(alpha: 0.72),
+                      ],
+                    )
+                  : null,
+              color: filled
+                  ? null
+                  : StudyUi.chipBackground(accent, isDarkMode),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: filled
+                    ? Colors.white.withValues(alpha: 0.22)
+                    : accent.withValues(alpha: isDarkMode ? 0.26 : 0.18),
+              ),
+              boxShadow: [
+                if (filled)
+                  BoxShadow(
+                    color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.20),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: foreground, size: 17),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 13,
+                    fontWeight: AppTypography.emphasis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotesDialogSurface extends StatelessWidget {
+  const _NotesDialogSurface({
+    required this.isDarkMode,
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  final bool isDarkMode;
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: StudyUi.surface(isDarkMode),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: StudyUi.border(isDarkMode)),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.14),
+              blurRadius: 28,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                StudyGlassIconNode(
+                  icon: icon,
+                  accent: accent,
+                  size: 40,
+                  iconSize: 18,
+                  isDarkMode: isDarkMode,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: StudyUi.title(isDarkMode),
+                      fontSize: 17,
+                      fontWeight: AppTypography.title,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class NoteBlockEditor extends StatefulWidget {
   const NoteBlockEditor(
@@ -723,30 +1521,32 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-        decoration: BoxDecoration(
-          color: widget.isDarkMode
-              ? const Color(0xFF1A1F2E)
-              : const Color(0xFFF5F7FF),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library_rounded),
-                title: const Text('从相册选择'),
-                onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_rounded),
-                title: const Text('拍照插入'),
-                onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
-              ),
-            ],
-          ),
+      builder: (ctx) => _NotesSheetSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: StudyUi.pathCyan,
+        icon: Icons.image_rounded,
+        title: '插入图片',
+        subtitle: '把课件、板书或资料照片放进当前笔记。',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _NotesSheetOption(
+              icon: Icons.photo_library_rounded,
+              title: '从相册选择',
+              subtitle: '选择本地已有图片',
+              accent: StudyUi.pathCyan,
+              isDarkMode: widget.isDarkMode,
+              onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
+            ),
+            _NotesSheetOption(
+              icon: Icons.photo_camera_rounded,
+              title: '拍照插入',
+              subtitle: '立即拍下课堂材料',
+              accent: StudyUi.pathWarm,
+              isDarkMode: widget.isDarkMode,
+              onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
+            ),
+          ],
         ),
       ),
     );
@@ -772,7 +1572,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
       await StudyToast.dialog(
         context,
         title: '插入图片失败',
-        message: '$error',
+        message: '图片没有插入成功，请检查图片权限或换一张图片再试。',
       );
     }
   }
@@ -787,55 +1587,55 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
         final bottom = MediaQuery.of(ctx).viewInsets.bottom;
         return Padding(
           padding: EdgeInsets.only(bottom: bottom),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-            decoration: BoxDecoration(
-              color: widget.isDarkMode
-                  ? const Color(0xFF1A1F2E)
-                  : const Color(0xFFF5F7FF),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '生成笔记配图',
-                    style: TextStyle(
-                      color: AppColors.inkColor(widget.isDarkMode),
-                      fontWeight: AppTypography.title,
-                      fontSize: 16,
+          child: _NotesSheetSurface(
+            isDarkMode: widget.isDarkMode,
+            accent: StudyUi.pathViolet,
+            icon: Icons.auto_awesome_rounded,
+            title: '生成笔记配图',
+            subtitle: '描述你需要的学习插图，生成后会插入当前笔记。',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: promptController,
+                  autofocus: true,
+                  minLines: 2,
+                  maxLines: 4,
+                  style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+                  decoration: InputDecoration(
+                    hintText: '描述你想插入的学习图片...',
+                    filled: true,
+                    fillColor: StudyUi.surfaceAlt(widget.isDarkMode),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: promptController,
-                    autofocus: true,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      hintText: '描述你想插入的学习图片...',
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _NotesActionPill(
+                      label: '取消',
+                      icon: Icons.close_rounded,
+                      accent: StudyUi.muted(widget.isDarkMode),
+                      isDarkMode: widget.isDarkMode,
+                      onPressed: () => Navigator.of(ctx).pop(),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        child: const Text('取消'),
-                      ),
-                      const Spacer(),
-                      FilledButton.icon(
-                        onPressed: () =>
-                            Navigator.of(ctx).pop(promptController.text.trim()),
-                        icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                        label: const Text('生成'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    const Spacer(),
+                    _NotesActionPill(
+                      label: '生成',
+                      icon: Icons.auto_awesome_rounded,
+                      accent: StudyUi.pathViolet,
+                      isDarkMode: widget.isDarkMode,
+                      filled: true,
+                      onPressed: () =>
+                          Navigator.of(ctx).pop(promptController.text.trim()),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         );
@@ -867,14 +1667,14 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
       _scrollToBottom();
       StudyToast.show(
         context,
-        task.imagesUrl.isNotEmpty ? '图片已插入' : '图片生成中，稍后可刷新',
+        task.imagesUrl.isNotEmpty ? '图片已插入' : '配图正在准备，稍后可刷新',
       );
     } catch (error) {
       if (!mounted) return;
       await StudyToast.dialog(
         context,
-        title: '生成图片失败',
-        message: '$error',
+        title: '配图生成失败',
+        message: '配图暂时没有生成成功，笔记内容已保留，可稍后重试。',
       );
     } finally {
       if (mounted) setState(() => _isGeneratingImage = false);
@@ -889,7 +1689,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
       final task = await widget.controller.vivoCapabilityService.refreshImageTask(taskId);
       if (!mounted) return;
       if (task.imagesUrl.isEmpty) {
-        StudyToast.show(context, '图片仍在生成中，稍后再试');
+        StudyToast.show(context, '配图正在准备，稍后再试');
         return;
       }
       setState(() {
@@ -901,7 +1701,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
       await StudyToast.dialog(
         context,
         title: '刷新图片失败',
-        message: '$error',
+        message: '还没拿到配图结果，请稍后再刷新。',
       );
     } finally {
       if (mounted) setState(() => _isGeneratingImage = false);
@@ -945,61 +1745,43 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: widget.isDarkMode
-              ? const Color(0xFF1A1F2E)
-              : const Color(0xFFF5F7FF),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(left: 140),
-                decoration: BoxDecoration(
-                  color: widget.isDarkMode ? Colors.white24 : Colors.black26,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      builder: (ctx) => _NotesSheetSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: StudyUi.pathViolet,
+        icon: Icons.tips_and_updates_rounded,
+        title: '整理当前段落',
+        subtitle: '选择一种整理方式，把当前内容变得更清楚。',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ...items.map(
+              (item) => _NotesSheetOption(
+                icon: item.$3,
+                title: item.$2,
+                subtitle: _aiPolishSubtitle(item.$1),
+                accent: StudyUi.pathViolet,
+                isDarkMode: widget.isDarkMode,
+                onTap: () => Navigator.of(ctx).pop(item.$1),
               ),
-              const SizedBox(height: 14),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Row(
-                  children: [
-                    const Icon(Icons.tips_and_updates_rounded,
-                        color: Color(0xFF4470E8), size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      '整理当前段落',
-                      style: TextStyle(
-                          color: widget.isDarkMode
-                              ? Colors.white
-                              : AppColors.ink,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              ...items.map((t) => ListTile(
-                    leading: Icon(t.$3),
-                    title: Text(t.$2),
-                    onTap: () => Navigator.of(ctx).pop(t.$1),
-                  )),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
     if (action == null || !mounted) return;
     await _runAiTransform(srcIndex, action);
+  }
+
+  String _aiPolishSubtitle(String action) {
+    return switch (action) {
+      'continue' => '顺着现有语气补充下一段',
+      'expand' => '把要点展开成更完整说明',
+      'rewrite_formal' => '整理成更适合复习的书面表达',
+      'rewrite_casual' => '改成更自然好懂的口语表达',
+      'rewrite_concise' => '压缩冗余，留下关键句',
+      'outline' => '提炼成可扫读的复习要点',
+      _ => '整理这段内容',
+    };
   }
 
   Future<void> _runAiTransform(int index, String intent) async {
@@ -1061,7 +1843,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
         await StudyToast.dialog(
           context,
           title: '生成失败',
-          message: '$e',
+          message: '这次没有生成成功，笔记内容已保留，可以稍后再试。',
         );
       }
     } finally {
@@ -1224,10 +2006,16 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
               isDarkMode: widget.isDarkMode,
               bodyFontSize: 15,
             ),
-            imageBuilder: (uri, title, alt) => buildStudyMarkdownImage(
-              uri,
-              title,
-              alt,
+            extensionSet: studyMarkdownExtensionSet,
+            builders: buildStudyMarkdownBuilders(
+              isDarkMode: widget.isDarkMode,
+              bodyFontSize: 15,
+              textColor: textColor,
+            ),
+            sizedImageBuilder: (config) => buildStudyMarkdownImage(
+              config.uri,
+              config.title,
+              config.alt,
               isDarkMode: widget.isDarkMode,
             ),
           ),
@@ -1289,10 +2077,16 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
         isDarkMode: widget.isDarkMode,
         bodyFontSize: fontSize,
       ),
-      imageBuilder: (uri, title, alt) => buildStudyMarkdownImage(
-        uri,
-        title,
-        alt,
+      extensionSet: studyMarkdownExtensionSet,
+      builders: buildStudyMarkdownBuilders(
+        isDarkMode: widget.isDarkMode,
+        bodyFontSize: fontSize,
+        textColor: widget.isDarkMode ? Colors.white : AppColors.ink,
+      ),
+      sizedImageBuilder: (config) => buildStudyMarkdownImage(
+        config.uri,
+        config.title,
+        config.alt,
         isDarkMode: widget.isDarkMode,
       ),
     );
@@ -1320,11 +2114,16 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
           if (content.isNotEmpty) const SizedBox(height: 10),
           TextField(
             key: ValueKey('${block.id}_image_path'),
-            controller: TextEditingController(text: block.content),
-            onChanged: (v) => _blocks[index] = block.copyWith(content: v),
+            controller: TextEditingController(
+              text: isPending ? '配图正在准备，稍后刷新即可' : block.content,
+            ),
+            readOnly: isPending,
+            onChanged: (v) {
+              if (!isPending) _blocks[index] = block.copyWith(content: v);
+            },
             style: appCodeTextStyle(color: textColor, fontSize: 12),
             decoration: InputDecoration(
-              hintText: '图片路径、URL 或 vivo-task:任务ID',
+              hintText: isPending ? '配图正在准备，稍后刷新即可' : '图片路径或 URL',
               hintStyle: TextStyle(color: bodyColor),
               border: InputBorder.none,
               isDense: true,
@@ -1334,18 +2133,14 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
           ),
           if (isPending) ...[
             const SizedBox(height: 10),
-            OutlinedButton.icon(
+            _NotesActionPill(
+              label: '刷新生成结果',
+              icon: Icons.refresh_rounded,
+              accent: StudyUi.pathViolet,
+              isDarkMode: widget.isDarkMode,
               onPressed: _isGeneratingImage
                   ? null
                   : () => _refreshImageBlock(index, block),
-              icon: _isGeneratingImage
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('刷新生成结果'),
             ),
           ],
         ],
@@ -1362,15 +2157,13 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
         width: double.infinity,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: widget.isDarkMode
-              ? const Color(0xFF1E2430)
-              : const Color(0xFFF2F5FC),
+          color: StudyUi.surfaceAlt(widget.isDarkMode),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: StudyUi.border(widget.isDarkMode)),
         ),
         child: Text(
-          isPending ? '图片生成中，点击刷新获取结果' : '未设置图片',
-          style: TextStyle(color: AppColors.mutedColor(widget.isDarkMode)),
+          isPending ? '配图正在准备，点击刷新查看结果' : '未设置图片',
+          style: TextStyle(color: StudyUi.muted(widget.isDarkMode)),
         ),
       );
     }
@@ -1403,14 +2196,12 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
   Widget _imageErrorBox() {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: widget.isDarkMode
-            ? const Color(0xFF1E2430)
-            : const Color(0xFFF2F5FC),
+        color: StudyUi.surfaceAlt(widget.isDarkMode),
       ),
       child: Center(
         child: Icon(
           Icons.broken_image_rounded,
-          color: AppColors.mutedColor(widget.isDarkMode),
+          color: StudyUi.muted(widget.isDarkMode),
         ),
       ),
     );
@@ -1427,33 +2218,76 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
         if (!didPop) {
           final ok = await showDialog<bool>(
             context: context,
-            builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              title: const Text('保存更改？'),
-              content: const Text('你有未保存的内容。'),
-              actions: [
-                TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('放弃')),
-                ElevatedButton(onPressed: () { Navigator.of(ctx).pop(true); _save(); }, child: const Text('保存')),
-              ],
+            builder: (ctx) => _NotesDialogSurface(
+              isDarkMode: widget.isDarkMode,
+              accent: StudyUi.pathViolet,
+              icon: Icons.save_rounded,
+              title: '保存更改？',
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '你有未保存的内容。',
+                    style: TextStyle(
+                      color: StudyUi.body(widget.isDarkMode),
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      _NotesActionPill(
+                        label: '放弃',
+                        icon: Icons.close_rounded,
+                        accent: StudyUi.muted(widget.isDarkMode),
+                        isDarkMode: widget.isDarkMode,
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                      ),
+                      const Spacer(),
+                      _NotesActionPill(
+                        label: '保存',
+                        icon: Icons.check_rounded,
+                        accent: StudyUi.pathViolet,
+                        isDarkMode: widget.isDarkMode,
+                        filled: true,
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
           if (ok == true && mounted) _save();
         }
       },
       child: Scaffold(
-        backgroundColor: widget.isDarkMode ? const Color(0xFF141923) : const Color(0xFFF5F7FF),
+        backgroundColor: StudyUi.background(widget.isDarkMode),
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           foregroundColor: textColor,
-          title: Text(_previewMode ? '预览' : widget.existingNote != null ? '编辑' : '新建', style: const TextStyle(fontWeight: FontWeight.w800)),
+          title: Text(_previewMode ? '预览' : widget.existingNote != null ? '编辑' : '新建', style: const TextStyle(fontWeight: AppTypography.title)),
           actions: [
-            IconButton(
-              icon: Icon(_previewMode ? Icons.edit_rounded : Icons.visibility_rounded, color: textColor.withValues(alpha: 0.6)),
+            _NotesToolbarAction(
+              icon: _previewMode ? Icons.edit_rounded : Icons.visibility_rounded,
               tooltip: _previewMode ? '编辑' : '预览',
+              accent: StudyUi.pathViolet,
+              isDarkMode: widget.isDarkMode,
               onPressed: () => setState(() => _previewMode = !_previewMode),
             ),
             if (!_previewMode)
-              TextButton(onPressed: _save, child: Text('保存', style: TextStyle(fontWeight: FontWeight.w800, color: accent))),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, right: 8),
+                child: _NotesActionPill(
+                  label: '保存',
+                  icon: Icons.check_rounded,
+                  accent: accent,
+                  isDarkMode: widget.isDarkMode,
+                  filled: true,
+                  onPressed: _save,
+                ),
+              ),
           ],
         ),
         body: GestureDetector(
@@ -1483,7 +2317,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
             children: [
               _toolbarChip(
                 icon: Icons.tips_and_updates_rounded,
-                label: _isAiRunning ? '生成中…' : '整理',
+                label: _isAiRunning ? '正在整理笔记' : '整理段落',
                 color: accent,
                 onTap: _isAiRunning ? null : _showAiCommandSheet,
                 busy: _isAiRunning,
@@ -1491,7 +2325,7 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
               const SizedBox(width: 8),
               _toolbarChip(
                 icon: Icons.image_search_rounded,
-                label: _isGeneratingImage ? '生成中…' : 'AI 配图',
+                label: _isGeneratingImage ? '配图准备中' : '插入学习图解',
                 color: StudyUi.secondary,
                 onTap: _isGeneratingImage ? null : _showAiImageSheet,
                 busy: _isGeneratingImage,
@@ -1795,26 +2629,50 @@ class _NoteBlockEditorState extends State<NoteBlockEditor> {
     };
   }
 
+  String _blockTypeSubtitle(NoteBlockType type) {
+    return switch (type) {
+      NoteBlockType.heading => '章节标题或重点标题',
+      NoteBlockType.text => '普通课堂笔记正文',
+      NoteBlockType.bullet => '可扫读的要点列表',
+      NoteBlockType.markdown => '保留 Markdown 格式',
+      NoteBlockType.image => '图片、截图或生成配图',
+      NoteBlockType.todo => '待完成的小行动',
+      NoteBlockType.code => '公式、代码或结构化文本',
+      NoteBlockType.divider => '分隔不同主题内容',
+    };
+  }
+
   void _showBlockTypeMenu(int index) {
     final accent = widget.controller.primaryColor;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(color: widget.isDarkMode ? const Color(0xFF1A1F2E) : const Color(0xFFF5F7FF), borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: widget.isDarkMode ? Colors.white24 : Colors.black26, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 18),
-          ..._blockTypes.map((t) => ListTile(
-                leading: Icon(_blockIcon(t), color: accent),
-                title: Text(t.label),
+      builder: (ctx) => _NotesSheetSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: accent,
+        icon: Icons.view_agenda_rounded,
+        title: '切换块类型',
+        subtitle: '把当前内容转换成更适合复习的结构。',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ..._blockTypes.map(
+              (type) => _NotesSheetOption(
+                icon: _blockIcon(type),
+                title: type.label,
+                subtitle: _blockTypeSubtitle(type),
+                accent: accent,
+                isDarkMode: widget.isDarkMode,
                 onTap: () {
-                  setState(() => _blocks[index] = _blocks[index].copyWith(type: t));
+                  setState(() {
+                    _blocks[index] = _blocks[index].copyWith(type: type);
+                  });
                   Navigator.of(ctx).pop();
                 },
-              )),
-        ]),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

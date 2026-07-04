@@ -93,65 +93,76 @@ class AiToolRegistry {
       AiToolIds.openTimer => '打开专注计时器',
       AiToolIds.openFlashcard => '打开知识闪卡',
       AiToolIds.openNotes => '打开学习笔记',
-      AiToolIds.openAiSettings => '打开AI设置',
+      AiToolIds.openAiSettings => '打开助手设置',
       AiToolIds.openDashboard => '打开数据看板',
-      AiToolIds.openTaskPlanning => '打开任务编排',
-      AiToolIds.openAiAssistant => '打开AI学习助手',
+      AiToolIds.openTaskPlanning => '打开学习流程',
+      AiToolIds.openAiAssistant => '打开学习助手',
       AiToolIds.openUserProfile => '打开个人资料',
       AiToolIds.openAbout => '打开应用介绍',
       AiToolIds.openStudyGroup => '打开学习小组',
-      AiToolIds.openLeaderboard => '打开排行榜',
+      AiToolIds.openLeaderboard => '打开学习进度',
       AiToolIds.openWeeklyReport => '打开学习周报',
-      AiToolIds.openSystemSettings => '打开系统设置',
+      AiToolIds.openSystemSettings => '打开应用设置',
       AiToolIds.switchTab => '切换页面',
       AiToolIds.addTask => '创建任务',
       AiToolIds.createLog => '创建日志',
       AiToolIds.markTaskStatus => '标记任务状态',
       AiToolIds.saveNote => '保存笔记',
       AiToolIds.summarizeStarredCards => '整理闪卡',
-      AiToolIds.createLoopFromSource => '生成学习安排',
-      AiToolIds.generateTodayMission => '生成今日安排',
+      AiToolIds.createLoopFromSource => '整理学习安排',
+      AiToolIds.generateTodayMission => '整理今日安排',
       AiToolIds.searchMemory => '查找学习资料',
-      AiToolIds.noteFromOcr => 'OCR 成笔记',
-      AiToolIds.createFlashcardBatch => '批量生成闪卡',
+      AiToolIds.noteFromOcr => '从图片整理笔记',
+      AiToolIds.createFlashcardBatch => '批量整理闪卡',
       _ => _humanizeToolId(toolId),
     };
   }
 
   String _humanizeToolId(String toolId) {
     final normalized = toolId.trim();
-    if (normalized.isEmpty) return '未知 AI 操作';
+    if (normalized.isEmpty) return '未知助手动作';
     if (normalized.startsWith('navigation.open_')) {
-      final name = normalized
-          .replaceFirst('navigation.open_', '')
-          .replaceAll('_', ' ');
+      final name =
+          normalized.replaceFirst('navigation.open_', '').replaceAll('_', ' ');
       return '打开 $name';
     }
-    return normalized
-        .replaceAll('.', ' ')
-        .replaceAll('_', ' ')
-        .trim();
+    return normalized.replaceAll('.', ' ').replaceAll('_', ' ').trim();
   }
 
   /// 生成给 AI system prompt 的"可用动作"段落
   String buildToolListForPrompt() {
-    final nav = navigationTools.map((t) => '- ${t.toolId}：${t.description}').toList();
+    final nav =
+        navigationTools.map((t) => '- ${t.toolId}：${t.description}').toList();
     final data = _tools
         .where((t) => !t.isNavigation && t.riskLevel == AiRiskLevel.safe)
         .map((t) => '- ${t.toolId}：${t.description}')
         .toList();
+    final destructive = dangerousTools
+        .map((t) => '- ${t.toolId}：${t.description}')
+        .toList();
     return [
+      '工具调用规则：',
+      '- 你可以先返回少量 action 获取或修改 App 状态；App 会把执行结果回传给你继续判断。',
+      '- 每轮只返回完成当前目标必要的 action；拿到工具结果后再决定是否继续，不要一次性猜测后续结果。',
+      '- 已经成功执行过的同一工具不要重复返回。',
+      '- 用户要求保存、生成、打开、修改、删除或整理到 App 内时，必须返回对应 action，不要只在 reply 里口头答应。',
+      '- action 真正执行前，不要在 reply 里写“已生成”“已保存”“已打开”“已完成”。可以写“我来帮你整理/生成”。',
+      '- 不要编造整理进度、图片链接、视频链接或保存结果；最终状态以 App 执行结果为准。',
+      '- 用户可见 reply 不要提到 action、tool、targetId、status、执行结果、App 状态等内部字段，要改成自然的学习建议或下一步说明。',
       '导航动作：',
       ...nav,
       '数据动作（安全）：',
       ...data,
+      '危险动作（需要用户确认后才能执行）：',
+      ...destructive,
     ].join('\n');
   }
 
   /// 生成给 AiChatPage 上下文的"可打开页面"字符串
   String buildOpenablePagesString() {
     final navIds = navigationTools
-        .where((t) => t.toolId.startsWith('navigation.open_') ||
+        .where((t) =>
+            t.toolId.startsWith('navigation.open_') ||
             t.toolId == 'navigation.switch_tab')
         .map((t) => t.toolId.replaceFirst('navigation.', ''))
         .toList();
@@ -256,7 +267,8 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.switchTab,
     label: '切换页面',
-    description: '切换底部主页面。targetId 只能是 assistant/scenarios/calendar/create/profile。',
+    description:
+        '切换底部主页面。targetId 只能是 assistant/scenarios/calendar/create/profile。',
     isNavigation: true,
     riskLevel: AiRiskLevel.safe,
     params: {'targetId': 'assistant|scenarios|calendar|create|profile'},
@@ -281,8 +293,8 @@ void registerAllTools() {
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.openAiSettings,
-    label: 'AI设置',
-    description: '打开AI设置。',
+    label: '助手设置',
+    description: '打开助手设置。',
     isNavigation: true,
   ));
   r.register(const AiToolDefinition(
@@ -293,14 +305,14 @@ void registerAllTools() {
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.openTaskPlanning,
-    label: '任务编排',
-    description: '打开任务编排。',
+    label: '学习流程',
+    description: '打开学习流程。',
     isNavigation: true,
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.openAiAssistant,
-    label: 'AI学习助手',
-    description: '打开AI学习助手。',
+    label: '学习助手',
+    description: '打开学习助手。',
     isNavigation: true,
   ));
   r.register(const AiToolDefinition(
@@ -323,20 +335,20 @@ void registerAllTools() {
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.openLeaderboard,
-    label: '排行榜',
-    description: '打开排行榜。',
+    label: '学习进度',
+    description: '打开学习进度。',
     isNavigation: true,
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.openWeeklyReport,
     label: '学习周报',
-    description: '生成学习周报。',
+    description: '整理学习周报。',
     isNavigation: true,
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.openSystemSettings,
-    label: '系统设置',
-    description: '打开系统设置。',
+    label: '应用设置',
+    description: '打开应用设置。',
     isNavigation: true,
   ));
   r.register(const AiToolDefinition(
@@ -367,7 +379,8 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.markTaskStatus,
     label: '标记任务状态',
-    description: '标记任务状态。必须尽量使用上下文里的任务 id 作为 targetId；status 只能是 completed 或 in_progress。',
+    description:
+        '标记任务状态。必须尽量使用上下文里的任务 id 作为 targetId；status 只能是 completed 或 in_progress。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'targetId': '任务 id', 'status': 'completed|in_progress'},
@@ -375,7 +388,8 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.saveNote,
     label: '保存笔记',
-    description: '新建学习笔记。title 写笔记标题，content 写整理后的笔记正文。',
+    description:
+        '新建学习笔记。title 写笔记标题，content 写可直接转成 Notion 块的 Markdown：小标题、短段落、列表和待办要分明。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'title': '笔记标题', 'content': '笔记正文'},
@@ -390,39 +404,40 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.generateImage,
     label: '生成图片',
-    description: '调用 StudyTrace 后端的 vivo 图片生成任务。sourceText 写完整画面提示词。',
+    description:
+        '调用 StudyTrace 在线图片整理能力。仅在用户明确要生成图片、图解、流程图或示意图时使用；sourceText 写完整画面描述。用户只是提供流程文本、步骤或学习路径并要求整理时，不要改成生成图解；未说明用途时不要补充笔记场景。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
-    params: {'sourceText': '图片提示词'},
+    params: {'sourceText': '画面描述'},
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.refreshImage,
-    label: '刷新图片任务',
-    description: '查询 vivo 图片生成任务状态。targetId 填 taskId。',
+    label: '查看图片进度',
+    description: '查看图片生成进度。targetId 填上一次生成返回的记录标识。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
-    params: {'targetId': '图片任务 taskId'},
+    params: {'targetId': '图片生成记录标识'},
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.generateVideo,
-    label: '生成视频',
-    description: '调用 StudyTrace 后端的 vivo 视频生成任务。sourceText 写完整视频提示词。',
+    label: '制作回顾短片',
+    description: '调用 StudyTrace 在线短片整理能力。sourceText 写完整短片描述。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
-    params: {'sourceText': '视频提示词'},
+    params: {'sourceText': '短片描述'},
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.refreshVideo,
-    label: '刷新视频任务',
-    description: '查询 vivo 视频生成任务状态。targetId 填 taskId。',
+    label: '查看短片进度',
+    description: '查看回顾短片整理进度。targetId 填上一次整理返回的记录标识。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
-    params: {'targetId': '视频任务 taskId'},
+    params: {'targetId': '短片整理记录标识'},
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.translateText,
     label: '文本翻译',
-    description: '调用 StudyTrace 后端的 vivo 翻译能力。sourceText 写待翻译文本，status 可写目标语言。',
+    description: '调用 StudyTrace 在线翻译能力。sourceText 写待翻译文本，status 可写目标语言。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'sourceText': '待翻译文本', 'status': '目标语言，如 en/zh'},
@@ -430,7 +445,8 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.searchPoi,
     label: '地点搜索',
-    description: '调用 StudyTrace 后端的 vivo POI 搜索。sourceText 写地点关键词，targetTitle 可写城市。',
+    description:
+        '调用 StudyTrace 在线地点搜索。sourceText 写地点关键词，targetTitle 可写城市。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'sourceText': '地点关键词', 'targetTitle': '城市，可选'},
@@ -438,7 +454,7 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.reverseGeocode,
     label: '逆地理编码',
-    description: '调用 StudyTrace 后端的 vivo 逆地理编码。sourceText 写经纬度 location。',
+    description: '调用 StudyTrace 在线位置解析。sourceText 写经纬度 location。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'sourceText': '经纬度，如 116.397,39.908'},
@@ -486,7 +502,7 @@ void registerAllTools() {
     params: {'targetId': '笔记 id', 'content': '新内容'},
   ));
 
-  // ── 系统设置（安全） ──
+  // ── 应用设置（安全） ──
   r.register(const AiToolDefinition(
     toolId: AiToolIds.setDarkMode,
     label: '切换深色模式',
@@ -511,14 +527,14 @@ void registerAllTools() {
     riskLevel: AiRiskLevel.safe,
     params: {'status': 'on|off', 'time': 'HH:mm（可选）'},
   ));
-  // ── 云服务 ──
+  // ── 在线连接 ──
   r.register(const AiToolDefinition(
     toolId: AiToolIds.setServerUrl,
-    label: '云服务地址',
-    description: '尝试修改云端AI学习助手服务地址。当前版本不允许在应用内修改，执行时会给出说明。',
+    label: '在线连接',
+    description: '尝试修改在线连接地址。当前版本不允许在应用内修改，执行时会给出说明。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
-    params: {'content': '服务地址'},
+    params: {'content': '连接地址'},
   ));
   // ── 账号（危险） ──
   r.register(const AiToolDefinition(
@@ -574,8 +590,8 @@ void registerAllTools() {
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.generateTodayFlashcards,
-    label: '生成今日闪卡',
-    description: '从今天的学习日志生成闪卡。status 可选指定张数（默认 5）。',
+    label: '整理今日闪卡',
+    description: '从今天的学习日志整理闪卡。status 可选指定张数（默认 5）。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'status': '闪卡张数（可选，默认 5）'},
@@ -595,7 +611,8 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.addTaskDirect,
     label: '直接创建任务',
-    description: '跳过自动拆解直接创建任务。title 任务名，content 备注（可选），targetTitle 课程（可选），status 填 ISO 截止日期（可选）。',
+    description:
+        '跳过自动拆解直接创建任务。title 任务名，content 备注（可选），targetTitle 课程（可选），status 填 ISO 截止日期（可选）。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {
@@ -608,7 +625,8 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.updateSubtask,
     label: '标记子任务状态',
-    description: '标记指定任务的单个子任务状态。targetId 填父任务 id，targetTitle 填子任务标题，status 填 completed/in_progress/not_started。',
+    description:
+        '标记指定任务的单个子任务状态。targetId 填父任务 id，targetTitle 填子任务标题，status 填 completed/in_progress/not_started。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {
@@ -630,8 +648,8 @@ void registerAllTools() {
   // ── 扩展：学习规划 / 日志扩写 ──
   r.register(const AiToolDefinition(
     toolId: AiToolIds.generateWeeklyPlan,
-    label: '生成周学习计划',
-    description: '结合未完成任务与最近学习日志生成未来一周的学习计划并落入任务列表。status 可选 "7" 表示天数。',
+    label: '整理周学习安排',
+    description: '结合未完成任务与最近学习日志整理未来一周的学习安排并落入任务列表。status 可选 "7" 表示天数。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'status': '天数（可选，默认 7）'},
@@ -639,7 +657,8 @@ void registerAllTools() {
   r.register(const AiToolDefinition(
     toolId: AiToolIds.noteFromLog,
     label: '日志扩写成笔记',
-    description: '把指定学习日志扩写成结构化学习笔记。targetId 填日志 id（优先），否则 targetTitle 填课程或关键词。',
+    description:
+        '把指定学习日志扩写成结构化学习笔记。targetId 填日志 id（优先），否则 targetTitle 填课程或关键词。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'targetId': '日志 id', 'targetTitle': '课程名或关键词'},
@@ -648,16 +667,16 @@ void registerAllTools() {
   // ── 学习操作层 ──
   r.register(const AiToolDefinition(
     toolId: AiToolIds.createLoopFromSource,
-    label: '生成学习安排',
-    description: '从用户给出的材料生成学习记录、任务、笔记、闪卡和复习计划草稿。sourceText 放材料正文。',
+    label: '整理学习安排',
+    description: '从用户给出的材料整理学习记录、任务、笔记、闪卡和复习安排草稿。sourceText 放材料正文。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'sourceText': '学习材料正文'},
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.generateTodayMission,
-    label: '生成今日安排',
-    description: '结合当前任务、日志、闪卡和学习状态，生成今天的学习安排。',
+    label: '整理今日安排',
+    description: '结合当前任务、日志、闪卡和学习近况，整理今天的学习安排。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
   ));
@@ -671,7 +690,7 @@ void registerAllTools() {
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.noteFromOcr,
-    label: 'OCR 成笔记',
+    label: '从图片整理笔记',
     description: '把 OCR 文本保存为学习笔记。title 可选，content/sourceText 放 OCR 文本。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
@@ -679,8 +698,8 @@ void registerAllTools() {
   ));
   r.register(const AiToolDefinition(
     toolId: AiToolIds.createFlashcardBatch,
-    label: '批量生成闪卡',
-    description: '从材料批量生成知识闪卡。sourceText 放材料正文，status 可写数量。',
+    label: '批量整理闪卡',
+    description: '从材料批量整理知识闪卡。sourceText 放材料正文，status 可写数量。',
     isNavigation: false,
     riskLevel: AiRiskLevel.safe,
     params: {'sourceText': '学习材料正文', 'status': '数量'},

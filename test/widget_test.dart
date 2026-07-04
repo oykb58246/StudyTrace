@@ -8,6 +8,7 @@ import 'package:studytrace/src/models/ai_flash_card.dart';
 import 'package:studytrace/src/models/study_log_item.dart';
 import 'package:studytrace/src/models/study_task_item.dart';
 
+import 'package:studytrace/src/services/ai_credential_service.dart';
 import 'package:studytrace/src/services/weekly_report_service.dart';
 import 'package:studytrace/src/ui/shell/app_shell.dart';
 import 'package:studytrace/src/ui/shell/navigation_models.dart';
@@ -25,33 +26,34 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const MyApp());
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpWidget(MyApp(controllerFactory: _demoController));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const Key('landing_title')),
+    );
+    await _pumpFrames(tester, frames: 10);
 
     expect(find.byKey(const Key('landing_title')), findsOneWidget);
     expect(find.byKey(const Key('splash_primary_button')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('splash_primary_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1700));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const Key('login_email_field')),
+    );
 
     expect(find.byKey(const Key('login_email_field')), findsOneWidget);
     expect(find.byKey(const Key('login_password_field')), findsOneWidget);
 
-    await tester.enterText(
-      find.byKey(const Key('login_email_field')),
-      'demo@studytrace.ai',
-    );
-    await tester.enterText(
-      find.byKey(const Key('login_password_field')),
-      '12345678',
-    );
-
-    await tester.tap(find.byKey(const Key('splash_primary_button')));
+    await tester
+        .ensureVisible(find.byKey(const Key('local_experience_button')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 2600));
-    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('local_experience_button')));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const Key('page_home')),
+      timeout: const Duration(seconds: 8),
+    );
 
     expect(find.byKey(const Key('page_home')), findsOneWidget);
   });
@@ -63,21 +65,23 @@ void main() {
         MaterialApp(
           home: AppShell(
             key: ValueKey(tab),
+            initialController: _emptyController(),
             debugInitialPrimaryTab: tab,
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
     }
 
     await pumpShell(PrimaryTab.scenarios);
-    expect(find.byKey(const Key('page_study_logs')), findsOneWidget);
+    expect(find.byKey(const Key('page_calendar')), findsOneWidget);
 
     await pumpShell(PrimaryTab.create);
-    expect(find.byKey(const Key('page_study_tasks')), findsOneWidget);
+    expect(find.byKey(const Key('page_flash_cards')), findsOneWidget);
 
     await pumpShell(PrimaryTab.profile);
-    expect(find.byKey(const Key('page_course_archive')), findsOneWidget);
+    expect(find.byKey(const Key('page_user_profile')), findsOneWidget);
   });
 
   testWidgets('shell renders admin section page', (WidgetTester tester) async {
@@ -87,26 +91,30 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: AppShell(
+          initialController: _emptyController(),
           debugMenuInitiallyOpen: true,
           debugInitialAdminSection: AdminSection.overview,
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const Key('admin_title_overview')),
+    );
 
     final transformWidget = tester.widget<Transform>(
       find.byKey(const Key('shell_front_transform')),
     );
     expect(transformWidget.transform.isIdentity(), isFalse);
 
-    expect(find.text('BROWSE'), findsOneWidget);
+    expect(find.text('应用介绍'), findsOneWidget);
     expect(find.byKey(const Key('admin_title_overview')), findsOneWidget);
   });
 
   test('add study task and retrieve from controller', () async {
-    final controller = AppDataController();
+    final controller = _emptyController();
     await controller.load();
 
     final task = await controller.addStudyTask(
@@ -145,7 +153,7 @@ void main() {
   });
 
   test('add study log and retrieve from controller', () async {
-    final controller = AppDataController();
+    final controller = _emptyController();
     await controller.load();
 
     await controller.addStudyLog(
@@ -210,7 +218,7 @@ void main() {
   });
 
   test('controller generates and saves weekly report', () async {
-    final controller = AppDataController();
+    final controller = _emptyController();
     await controller.load();
 
     // Add a study log
@@ -238,7 +246,7 @@ void main() {
   });
 
   test('data persists across controller reloads', () async {
-    var controller = AppDataController();
+    var controller = _emptyController();
     await controller.load();
 
     await controller.addStudyTask(
@@ -265,7 +273,7 @@ void main() {
     );
 
     // Reload
-    controller = AppDataController();
+    controller = _emptyController();
     await controller.load();
 
     expect(controller.studyTasks, hasLength(1));
@@ -274,7 +282,7 @@ void main() {
   });
 
   test('course names are aggregated from tasks and logs', () async {
-    final controller = AppDataController();
+    final controller = _emptyController();
     await controller.load();
 
     await controller.addStudyTask(
@@ -316,12 +324,11 @@ void main() {
 
     await _pumpFlashCards(tester, controller);
 
-    expect(find.byKey(const Key('flash_card_date_group_2026-04-28')),
+    expect(find.byKey(const Key('flash_card_date_group_20260428')),
         findsOneWidget);
     expect(
-        find.byKey(const Key('flash_card_shelf_2026-04-28_0')), findsOneWidget);
-    expect(
-        find.byKey(const Key('flash_card_shelf_2026-04-28_1')), findsNothing);
+        find.byKey(const Key('flash_card_shelf_20260428_0')), findsOneWidget);
+    expect(find.byKey(const Key('flash_card_shelf_20260428_1')), findsNothing);
     expect(find.byKey(const Key('flash_card_mini_card_10')), findsOneWidget);
   });
 
@@ -334,9 +341,9 @@ void main() {
     await _pumpFlashCards(tester, controller);
 
     expect(
-        find.byKey(const Key('flash_card_shelf_2026-04-28_0')), findsOneWidget);
+        find.byKey(const Key('flash_card_shelf_20260428_0')), findsOneWidget);
     expect(
-        find.byKey(const Key('flash_card_shelf_2026-04-28_1')), findsOneWidget);
+        find.byKey(const Key('flash_card_shelf_20260428_1')), findsOneWidget);
   });
 
   testWidgets('flash card page toggles star and manages groups',
@@ -413,9 +420,65 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('闪卡浏览'), findsOneWidget);
-    expect(find.text('2 / 3'), findsOneWidget);
+    expect(find.text('第 2/3 张'), findsOneWidget);
     expect(find.text('问题 2'), findsOneWidget);
   });
+}
+
+AppDataController _demoController() =>
+    AppDataController(credentials: _NoopCredentialService());
+
+AppDataController _emptyController() => AppDataController(
+      credentials: _NoopCredentialService(),
+      enableBuiltInDemoSeed: false,
+    );
+
+class _NoopCredentialService extends AiCredentialService {
+  @override
+  Future<String?> getAuthToken() async => null;
+
+  @override
+  Future<String?> getRefreshToken() async => null;
+
+  @override
+  Future<void> saveAuthToken(String token) async {}
+
+  @override
+  Future<void> saveRefreshToken(String token) async {}
+
+  @override
+  Future<void> clearAuthToken() async {}
+
+  @override
+  Future<void> clearRefreshToken() async {}
+
+  @override
+  Future<void> clearLegacyAiKeys() async {}
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final end = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+  }
+  await tester.pump();
+}
+
+Future<void> _pumpFrames(
+  WidgetTester tester, {
+  int frames = 8,
+  Duration step = const Duration(milliseconds: 100),
+}) async {
+  for (var i = 0; i < frames; i++) {
+    await tester.pump(step);
+  }
 }
 
 List<AiFlashCard> _flashCards(int count, {required DateTime date}) {

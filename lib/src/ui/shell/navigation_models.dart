@@ -24,6 +24,7 @@ enum AdminSection {
   timer,
   flashCard,
   learningMoments,
+  evidencePackage,
   studyGroup,
   leaderboard,
   achievements,
@@ -41,28 +42,28 @@ extension PrimaryTabMeta on PrimaryTab {
       case PrimaryTab.assistant:
         return '首页';
       case PrimaryTab.scenarios:
-        return '记录';
+        return '计划';
       case PrimaryTab.calendar:
-        return '日历';
+        return '专注';
       case PrimaryTab.create:
-        return '任务';
+        return '复习';
       case PrimaryTab.profile:
-        return '归档';
+        return '我的';
     }
   }
 
   String get subtitle {
     switch (this) {
       case PrimaryTab.assistant:
-        return '周报入口与学习概览';
+        return '今日学习路径与学习概览';
       case PrimaryTab.scenarios:
-        return '每日学习记录与反思';
+        return '课程安排、截止时间与学习标记';
       case PrimaryTab.calendar:
-        return '日历视图与学习标记';
+        return '番茄钟专注与学习记录';
       case PrimaryTab.create:
-        return '课程任务管理与状态跟踪';
+        return '知识闪卡与今日复习';
       case PrimaryTab.profile:
-        return '课程汇总与历史周报';
+        return '个人资料、成就与学习偏好';
     }
   }
 
@@ -71,43 +72,13 @@ extension PrimaryTabMeta on PrimaryTab {
       case PrimaryTab.assistant:
         return Icons.home_outlined;
       case PrimaryTab.scenarios:
-        return Icons.article_outlined;
-      case PrimaryTab.calendar:
         return Icons.calendar_month_outlined;
-      case PrimaryTab.create:
-        return Icons.task_alt_outlined;
-      case PrimaryTab.profile:
-        return Icons.folder_outlined;
-    }
-  }
-
-  IconData get activeIcon {
-    switch (this) {
-      case PrimaryTab.assistant:
-        return Icons.home_rounded;
-      case PrimaryTab.scenarios:
-        return Icons.article_rounded;
       case PrimaryTab.calendar:
-        return Icons.calendar_month_rounded;
+        return Icons.timer_outlined;
       case PrimaryTab.create:
-        return Icons.task_alt_rounded;
+        return Icons.style_outlined;
       case PrimaryTab.profile:
-        return Icons.folder_rounded;
-    }
-  }
-
-  String get navLordiconAsset {
-    switch (this) {
-      case PrimaryTab.assistant:
-        return 'assets/icons/lordicon/nav_home.json';
-      case PrimaryTab.scenarios:
-        return 'assets/icons/lordicon/nav_logs.json';
-      case PrimaryTab.calendar:
-        return 'assets/icons/lordicon/nav_calendar.json';
-      case PrimaryTab.create:
-        return 'assets/icons/lordicon/nav_task.json';
-      case PrimaryTab.profile:
-        return 'assets/icons/lordicon/nav_archive.json';
+        return Icons.person_outline_rounded;
     }
   }
 
@@ -118,9 +89,9 @@ extension PrimaryTabMeta on PrimaryTab {
       case PrimaryTab.scenarios:
         return 'SEARCH';
       case PrimaryTab.calendar:
-        return 'SEARCH';
-      case PrimaryTab.create:
         return 'TIMER';
+      case PrimaryTab.create:
+        return 'SEARCH';
       case PrimaryTab.profile:
         return 'USER';
     }
@@ -133,9 +104,9 @@ extension PrimaryTabMeta on PrimaryTab {
       case PrimaryTab.scenarios:
         return 'SEARCH_Interactivity';
       case PrimaryTab.calendar:
-        return 'SEARCH_Interactivity';
-      case PrimaryTab.create:
         return 'TIMER_Interactivity';
+      case PrimaryTab.create:
+        return 'SEARCH_Interactivity';
       case PrimaryTab.profile:
         return 'USER_Interactivity';
     }
@@ -146,11 +117,11 @@ extension AdminSectionMeta on AdminSection {
   String get label {
     switch (this) {
       case AdminSection.overview:
-        return '作品总览';
+        return '关于学迹';
       case AdminSection.aiAssistant:
-        return 'AI学习助手';
+        return '学习助手';
       case AdminSection.aiSettings:
-        return 'AI设置';
+        return '助手设置';
       case AdminSection.notes:
         return '学习笔记';
       case AdminSection.statistics:
@@ -161,22 +132,24 @@ extension AdminSectionMeta on AdminSection {
         return '知识闪卡';
       case AdminSection.learningMoments:
         return '学迹动态';
+      case AdminSection.evidencePackage:
+        return '学习回顾';
       case AdminSection.studyGroup:
         return '学习小组';
       case AdminSection.leaderboard:
-        return '排行榜';
+        return '学习进度';
       case AdminSection.achievements:
-        return '成就殿堂';
+        return '成长记录';
       case AdminSection.knowledgeGraph:
-        return '知识图谱';
+        return '知识地图';
       case AdminSection.automations:
-        return '任务编排';
+        return '学习流程';
       case AdminSection.analytics:
         return '数据看板';
       case AdminSection.settings:
-        return '系统设置';
+        return '应用设置';
       case AdminSection.auditLog:
-        return 'AI操作记录';
+        return '整理历史';
       case AdminSection.trash:
         return '回收站';
     }
@@ -185,37 +158,39 @@ extension AdminSectionMeta on AdminSection {
   String get subtitle {
     switch (this) {
       case AdminSection.overview:
-        return '学习数据总览与周报入口。';
+        return '今日安排、最近学习和每周回顾入口。';
       case AdminSection.aiAssistant:
-        return 'AI学习助手、聊天、日志生成、任务拆解与周报分析。';
+        return '2 分钟复盘，整理下一步、闪卡和学习回顾。';
       case AdminSection.aiSettings:
-        return '助手状态、语音偏好与服务连通性。';
+        return '助手开关、语音偏好与资料备份。';
       case AdminSection.notes:
         return '记录课堂笔记、学习心得与知识整理。';
       case AdminSection.statistics:
-        return '学习数据统计图表与完成率分析。';
+        return '回看学习节奏、课程时间和完成进展。';
       case AdminSection.timer:
         return '番茄钟计时器，帮助保持专注学习节奏。';
       case AdminSection.flashCard:
-        return '从学习记录生成知识闪卡，巩固复习。';
+        return '从学习记录整理知识闪卡，巩固复习。';
       case AdminSection.learningMoments:
-        return '像朋友圈一样记录学习图文，并把任务、日志、笔记和AI操作汇成可追溯时间线。';
+        return '记录学习图文，并把任务、日志、笔记和助手整理汇成可回看的时间线。';
+      case AdminSection.evidencePackage:
+        return '汇总复盘、行动、复习和助手整理，形成7天学习回顾。';
       case AdminSection.studyGroup:
         return '参与学习小组，与同伴交流讨论，共同进步。';
       case AdminSection.leaderboard:
-        return '查看全站或好友学习榜单，激发学习动力。';
+        return '查看自己和小组的学习进展，互相给一点继续向前的反馈。';
       case AdminSection.achievements:
-        return '积分、徽章与连续打卡，学习更有动力。';
+        return '成长点、记录徽章与连续学习，给每一次小进步留个标记。';
       case AdminSection.knowledgeGraph:
-        return '可视化知识点关联，直观展示学习结构。';
+        return '把课程、笔记和复习卡串成学习线索。';
       case AdminSection.automations:
-        return '编排自动任务流、触发条件与执行记录。';
+        return '整理常用学习提醒、复盘和资料整理步骤。';
       case AdminSection.analytics:
-        return '追踪学习趋势、活跃度与完成情况。';
+        return '回看学习趋势、活跃度与完成情况。';
       case AdminSection.settings:
-        return '管理通知、权限、隐私与系统偏好。';
+        return '管理通知、权限、隐私与应用偏好。';
       case AdminSection.auditLog:
-        return '查看AI操作历史与执行结果。';
+        return '查看助手整理历史与结果。';
       case AdminSection.trash:
         return '回收站中已删除的数据，可恢复或永久删除。';
     }
@@ -239,12 +214,14 @@ extension AdminSectionMeta on AdminSection {
         return Icons.style_rounded;
       case AdminSection.learningMoments:
         return Icons.dynamic_feed_rounded;
+      case AdminSection.evidencePackage:
+        return Icons.inventory_2_rounded;
       case AdminSection.studyGroup:
         return Icons.groups_rounded;
       case AdminSection.leaderboard:
-        return Icons.leaderboard_rounded;
+        return Icons.auto_graph_rounded;
       case AdminSection.achievements:
-        return Icons.emoji_events_rounded;
+        return Icons.bookmarks_rounded;
       case AdminSection.knowledgeGraph:
         return Icons.account_tree_rounded;
       case AdminSection.automations:
@@ -278,6 +255,8 @@ extension AdminSectionMeta on AdminSection {
         return const Color(0xFFF8AA5B);
       case AdminSection.learningMoments:
         return const Color(0xFF19A974);
+      case AdminSection.evidencePackage:
+        return const Color(0xFF2F7D78);
       case AdminSection.studyGroup:
         return const Color(0xFFFF7C7C);
       case AdminSection.leaderboard:

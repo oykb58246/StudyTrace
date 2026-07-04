@@ -82,7 +82,70 @@ describe('AiService image integrations', () => {
       actionId: 'act_1',
       type: 'media.generate_image',
     });
-    expect(content.actions[0].sourceText).toContain('适合放进学习笔记');
+    expect(content.actions[0].sourceText).toBe(
+      '帮我生成一张适合放进学习笔记的二叉树遍历图解，把前序、中序、后序放在一张清晰的笔记配图里',
+    );
+  });
+
+  it('keeps generic assistant_turn image prompts neutral when inferring actions', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"schemaVersion":2,"reply":"抱歉，您输入的内容无法识别，请提供清晰的中文或明确的需求，我会为您操作StudyTrace App。","actions":[]}',
+              },
+            },
+          ],
+        }),
+    } as Response);
+    const { service } = createService();
+
+    const input = '帮我生成一张小猫图片';
+    const result = await service.chat('user-1', {
+      input,
+      purpose: 'assistant_turn',
+    });
+    const content = JSON.parse(result.content);
+
+    expect(content.reply).toBe('好，我来先帮你生成这张图片。');
+    expect(content.actions).toHaveLength(1);
+    expect(content.actions[0]).toMatchObject({
+      actionId: 'act_1',
+      type: 'media.generate_image',
+      title: '生成图片',
+      sourceText: input,
+    });
+    expect(content.actions[0].sourceText).not.toContain('学习笔记');
+  });
+
+  it('does not turn process text cleanup into image generation', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"schemaVersion":2,"reply":"抱歉，您输入的内容无法识别，请提供清晰的中文或明确的需求，我会为您操作StudyTrace App。","actions":[]}',
+              },
+            },
+          ],
+        }),
+    } as Response);
+    const { service } = createService();
+
+    const result = await service.chat('user-1', {
+      input: '把下面的流程文本整理成一篇学习笔记，智能分段并美化排版',
+      purpose: 'assistant_turn',
+    });
+    const content = JSON.parse(result.content);
+
+    expect(content.actions).toHaveLength(0);
   });
 
   it('sends required vivo query params for sync image generation', async () => {
@@ -98,6 +161,8 @@ describe('AiService image integrations', () => {
 
     const result = await service.submitImageTask('user-1', {
       prompt: '二叉树遍历学习图解',
+      width: 768,
+      height: 1024,
     });
 
     expect(vivo.postJson).toHaveBeenCalledWith(

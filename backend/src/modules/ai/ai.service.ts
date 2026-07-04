@@ -32,7 +32,12 @@ import {
   WeeklyAnalysisDto,
   WeeklyPlanDto,
 } from './dto/ai-common.dto';
-import { assistantJsonPrompt, assistantSystemPrompt, systemJsonPrompt } from './ai-prompts';
+import {
+  assistantJsonPrompt,
+  assistantSystemPrompt,
+  noteMarkdownPrompt,
+  systemJsonPrompt,
+} from './ai-prompts';
 import { vivoCapabilityLabel } from './vivo-capabilities';
 import { VivoGatewayService } from './vivo-gateway.service';
 
@@ -142,11 +147,11 @@ export class AiService {
     const outputSchema =
       target === 'task'
         ? '请输出 JSON：{"loopSchemaVersion":"final-demo-v2","summary":"","courseName":"","concepts":[],"sourceEvidence":[{"type":"reflection|history|flashcard|task","summary":"","confidence":0.0}],"reflectionAnalysis":{"summary":"","blockers":[""],"emotion":{"label":"","intensity":0.0},"mastery":{"知识点":0.0},"forgettingRisk":"low|medium|high","nextActions":[""],"explanation":""},"actionCards":[{"title":"","steps":[""],"deadline":"ISO8601","reason":"","priority":"high|medium|low","durationMinutes":25,"successCriteria":"","source":""}],"reviewCards":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[]},"flashcards":[],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"task.add_direct","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":'
-        : '请输出 JSON：{"loopSchemaVersion":"final-demo-v2","summary":"","courseName":"","concepts":[""],"sourceEvidence":[{"type":"reflection|history|flashcard|task","summary":"","confidence":0.0}],"reflectionAnalysis":{"summary":"","blockers":[""],"emotion":{"label":"","intensity":0.0},"mastery":{"知识点":0.0},"forgettingRisk":"low|medium|high","nextActions":[""],"explanation":""},"actionCards":[{"title":"","steps":[""],"deadline":"ISO8601","reason":"","priority":"high|medium|low","durationMinutes":25,"successCriteria":"","source":""}],"reviewCards":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[{"type":"heading|text|bullet|todo","content":""}]},"flashcards":[{"question":"","answer":"","hint":"","courseName":""}],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"log.create|task.add_direct|note.save|flashcard.create_batch","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":';
+        : '请输出 JSON：{"loopSchemaVersion":"final-demo-v2","summary":"","courseName":"","concepts":[""],"sourceEvidence":[{"type":"reflection|history|flashcard|task","summary":"","confidence":0.0}],"reflectionAnalysis":{"summary":"","blockers":[""],"emotion":{"label":"","intensity":0.0},"mastery":{"知识点":0.0},"forgettingRisk":"low|medium|high","nextActions":[""],"explanation":""},"actionCards":[{"title":"","steps":[""],"deadline":"ISO8601","reason":"","priority":"high|medium|low","durationMinutes":25,"successCriteria":"","source":""}],"reviewCards":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"taskDrafts":[{"title":"","type":"classHomework|paperReading|programmingHomework|labReport|projectDev|examReview|readingNotes|other","deadline":"ISO8601","note":"","subTasks":[{"title":"","deadline":"ISO8601","note":""}]}],"noteDraft":{"title":"","content":"","blocks":[{"type":"heading|text|bullet|todo|code|divider","content":""}]},"flashcards":[{"question":"","answer":"","hint":"","courseName":""}],"reviewPlan":[{"date":"YYYY-MM-DD","title":"","minutes":25,"reason":""}],"suggestedActions":[{"type":"log.create|task.add_direct|note.save|flashcard.create_batch","title":"","content":"","sourceText":""}],"vivoCapabilitiesUsed":';
     const outputConstraint =
       target === 'task'
-        ? '约束：loopSchemaVersion 固定为 final-demo-v2；sourceEvidence 最多 3 条，说明建议依据；reflectionAnalysis 必须解释卡点、情绪、掌握度、遗忘风险和原因；actionCards 最多 3 条，必须是明天或今天可执行的小行动，每条要有 priority、durationMinutes、successCriteria 和 source；taskDrafts 最多 2 个，每个 subTasks 最多 3 个；reviewPlan 和 reviewCards 最多 4 条且保持一致；noteDraft.blocks 和 flashcards 必须返回空数组；如果信息不足，生成 2-4 个今天可执行的专注块。'
-        : '约束：loopSchemaVersion 固定为 final-demo-v2；sourceEvidence 最多 3 条，说明建议依据；reflectionAnalysis 必须解释卡点、情绪、掌握度、遗忘风险和原因；actionCards 最多 3 条，必须是明天或今天可执行的小行动，每条要有 priority、durationMinutes、successCriteria 和 source；taskDrafts 最多 3 个，每个 subTasks 最多 4 个；flashcards 最多 6 张；reviewPlan 和 reviewCards 最多 4 条且保持一致；如果材料信息不足，仍给出保守、可编辑的草稿。';
+        ? '约束：loopSchemaVersion 固定为 final-demo-v2；sourceEvidence 最多 3 条，说明建议依据；reflectionAnalysis 必须解释难点、情绪、掌握度、遗忘风险和原因；actionCards 最多 3 条，必须是明天或今天可执行的小行动，每条要有 priority、durationMinutes、successCriteria 和 source；taskDrafts 最多 2 个，每个 subTasks 最多 3 个；reviewPlan 和 reviewCards 最多 4 条且保持一致；noteDraft.blocks 和 flashcards 必须返回空数组；如果信息不足，生成 2-4 个今天可执行的专注块。'
+        : '约束：loopSchemaVersion 固定为 final-demo-v2；sourceEvidence 最多 3 条，说明建议依据；reflectionAnalysis 必须解释难点、情绪、掌握度、遗忘风险和原因；actionCards 最多 3 条，必须是明天或今天可执行的小行动，每条要有 priority、durationMinutes、successCriteria 和 source；taskDrafts 最多 3 个，每个 subTasks 最多 4 个；flashcards 最多 6 张；reviewPlan 和 reviewCards 最多 4 条且保持一致；noteDraft 必须像 Notion 块笔记：title 简短，content 用 Markdown，小标题/短段落/列表/待办分明；noteDraft.blocks 优先返回 6-14 个块，type 只用 heading/text/bullet/todo/code/divider，不要把流程文字改成图片或图解提示词；如果材料信息不足，仍给出保守、可编辑的草稿。';
     const prompt =
       `${context}来源类型：${sourceKind}\n生成目标：${target}\n${imageHint}\n今天：${new Date().toISOString()}\n学习材料：\n${sourceText}\n\n` +
       outputSchema +
@@ -166,7 +171,7 @@ export class AiService {
       {
         role: 'system',
         content:
-          `${systemJsonPrompt} 你是 StudyTrace 的 AI 学习复盘与防遗忘规划助手。你要把学习材料转成结构化诊断、今日/明日行动卡、复习计划和可执行落地内容，字段必须稳定，内容要能直接写入学习任务、日志、笔记和闪卡。`,
+          `${systemJsonPrompt} 你是 StudyTrace 的 AI 学习复盘与防遗忘规划助手。你要把学习材料转成结构化诊断、今日/明日行动卡、复习计划和可执行落地内容，字段必须稳定，内容要能直接写入学习任务、日志、笔记和闪卡。\n${noteMarkdownPrompt}`,
       },
       {
         role: 'user',
@@ -414,7 +419,7 @@ export class AiService {
                   : `data:image/png;base64,${dto.initImageBase64}`,
               }
             : {}),
-          parameters: this.imageGenerationParameters(dto),
+          parameters: this.imageGenerationParameters(),
         },
         this.vivoTaskQuery(requestId),
       );
@@ -932,7 +937,8 @@ export class AiService {
       const body = await response.text();
       if (!response.ok) throw new Error(body);
       const decoded = JSON.parse(body);
-      content = decoded?.choices?.[0]?.message?.content?.trim();
+      this.assertChatResponseOk(decoded);
+      content = this.extractChatContent(decoded);
       if (!content) throw new Error('AI 返回空内容');
       await this.logUsage(userId, endpoint, runtime, true, startedAt, this.promptLength(messages), content.length);
       return content;
@@ -942,13 +948,60 @@ export class AiService {
     }
   }
 
+  private extractChatContent(decoded: unknown) {
+    const data = decoded as any;
+    const message = data?.choices?.[0]?.message;
+    const candidates = [
+      message?.content,
+      data?.output_text,
+      data?.content,
+      data?.data?.content,
+      data?.result?.content,
+      data?.result?.text,
+      data?.text,
+    ];
+    for (const candidate of candidates) {
+      const text = this.stringifyChatContent(candidate);
+      if (text) return text;
+    }
+    return '';
+  }
+
+  private assertChatResponseOk(decoded: unknown) {
+    const data = decoded as any;
+    const message = data?.error?.message ?? data?.message;
+    if (data?.error || (data?.code && !data?.choices)) {
+      throw new Error(this.stringifyChatContent(message) || 'AI 服务返回错误');
+    }
+  }
+
+  private stringifyChatContent(value: unknown): string {
+    if (typeof value === 'string') return value.trim();
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => this.stringifyChatContent(
+          typeof item === 'object' && item !== null
+            ? ((item as any).text ?? (item as any).content ?? item)
+            : item,
+        ))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+    }
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      return this.stringifyChatContent(record.text ?? record.content);
+    }
+    return '';
+  }
+
   private buildChatMessages(dto: ChatDto): Record<string, unknown>[] {
     const context = dto.context?.length ? `上下文：\n${dto.context.join('\n')}\n\n` : '';
     const systemContent =
       dto.purpose === 'assistant_turn'
         ? assistantJsonPrompt
         : dto.purpose === 'note'
-          ? '你是 StudyTrace 的学习笔记整理助手。'
+          ? noteMarkdownPrompt
           : assistantSystemPrompt;
     const messages = [
       { role: 'system', content: systemContent },
@@ -1181,32 +1234,63 @@ export class AiService {
     return text ? [text] : [];
   }
 
-  private imageGenerationParameters(dto: ImageTaskSubmitDto) {
-    const parameters: Record<string, unknown> = {};
-    if (dto.width && dto.height) {
-      parameters.size = `${dto.width}x${dto.height}`;
-    } else {
-      parameters.size = this.config.get<string>('VIVO_IMAGE_SIZE_DEFAULT') ?? '2K';
-    }
-    return parameters;
+  private imageGenerationParameters() {
+    const configuredSize = this.config.get<string>('VIVO_IMAGE_SIZE_DEFAULT')?.trim();
+    return {
+      size: configuredSize && configuredSize.length > 0 ? configuredSize : '2K',
+    };
   }
 
   private extractImageUrls(value: unknown): string[] {
-    if (!value || typeof value !== 'object') return this.extractStringList(value);
-    const data = value as Record<string, any>;
-    const urls = [
-      ...this.extractStringList(data.images_url ?? data.imagesUrl),
-      ...this.extractStringList(data.image),
-      ...this.extractStringList(data.url),
-      ...(Array.isArray(data.images)
-        ? data.images.flatMap((item) =>
-            this.extractStringList(
-              typeof item === 'object' && item !== null ? (item as any).url : item,
-            ),
-          )
-        : []),
-    ];
-    return urls.filter((url, index, all) => url && all.indexOf(url) === index);
+    const urls: string[] = [];
+    const add = (item: unknown) => {
+      if (item == null) return;
+      if (Array.isArray(item)) {
+        item.forEach(add);
+        return;
+      }
+      if (typeof item === 'object') {
+        const data = item as Record<string, unknown>;
+        [
+          'url',
+          'uri',
+          'urls',
+          'image',
+          'images',
+          'imageUrl',
+          'image_url',
+          'imageURL',
+          'imageUrls',
+          'image_urls',
+          'downloadUrl',
+          'download_url',
+          'fileUrl',
+          'file_url',
+          'outputUrl',
+          'output_url',
+          'result',
+          'data',
+          'content',
+          'output',
+          'outputs',
+          'resources',
+          'items',
+        ].forEach((key) => add(data[key]));
+        return;
+      }
+      const text = String(item).trim();
+      if (!text) return;
+      const matches = text.match(/(?:https?:\/\/|data:image\/|file:\/\/)[^\s"'<>\])}]+/gi);
+      const candidates = matches?.length ? matches : [text];
+      candidates
+        .map((url) => url.trim())
+        .filter((url) => /^(https?:\/\/|data:image\/|file:\/\/)/i.test(url))
+        .forEach((url) => {
+          if (!urls.includes(url)) urls.push(url);
+        });
+    };
+    add(value);
+    return urls;
   }
 
   private videoGenerationContent(dto: VideoTaskSubmitDto, prompt: string) {
@@ -1303,15 +1387,43 @@ export class AiService {
     dto: Partial<ChatDto>,
     stream: boolean,
   ) {
+    const maxTokens = Number(dto.options?.maxTokens ?? 1800);
+    const reasoningEffort = this.reasoningEffortFor(dto);
     return {
       model: runtime.model,
       messages,
       temperature: Number(dto.options?.temperature ?? 0.7),
-      max_tokens: Number(dto.options?.maxTokens ?? 1800),
+      max_completion_tokens: this.maxCompletionTokensFor(maxTokens, reasoningEffort),
       top_p: Number(dto.options?.topP ?? 0.7),
+      frequency_penalty: Number(dto.options?.frequencyPenalty ?? 0),
+      presence_penalty: Number(dto.options?.presencePenalty ?? 0),
+      reasoning_effort: reasoningEffort,
       stream,
-      ...(dto.thinkingEnabled ? { thinking: { type: 'enabled' } } : {}),
+      ...this.thinkingPayloadFor(runtime.model, dto.thinkingEnabled === true),
     };
+  }
+
+  private reasoningEffortFor(dto: Partial<ChatDto>) {
+    const raw = String(dto.options?.reasoningEffort ?? '').trim();
+    if (['minimal', 'low', 'medium', 'high'].includes(raw)) return raw;
+    return dto.thinkingEnabled ? 'high' : 'minimal';
+  }
+
+  private maxCompletionTokensFor(maxTokens: number, reasoningEffort: string) {
+    const thinkingBudget = {
+      minimal: 0,
+      low: 1024,
+      medium: 2048,
+      high: 4096,
+    }[reasoningEffort] ?? 0;
+    return Math.min(65536, Math.max(0, maxTokens + thinkingBudget));
+  }
+
+  private thinkingPayloadFor(model: string, enabled: boolean) {
+    if (model.toLowerCase() === 'qwen3.5-plus') {
+      return { enable_thinking: enabled };
+    }
+    return { thinking: { type: enabled ? 'enabled' : 'disabled' } };
   }
 
   private getRuntime(): ModelRuntime {
@@ -1392,7 +1504,7 @@ export class AiService {
   private rewritePrompt(intent: string) {
     switch (intent) {
       case 'continue':
-        return '接着往下写这段内容，保持相同的语气与风格，再写 1-2 段即可。';
+        return '接着往下写这段内容，保持相同的语气与风格，再写 1-2 个短段落；如果适合，补充为 Notion 块笔记格式的小标题或列表。';
       case 'rewrite_formal':
         return '把下面这段改写得更学术、更正式，保留原意。';
       case 'rewrite_casual':
@@ -1400,9 +1512,9 @@ export class AiService {
       case 'rewrite_concise':
         return '把下面这段改写得更简洁，能删则删，保留核心观点。';
       case 'expand':
-        return '把下面这段展开成更详细的内容，增加例子或论证。';
+        return '把下面这段展开成更详细的 Notion 块笔记，增加例子或论证，用小标题、短段落和列表分块。';
       case 'outline':
-        return '把下面这段总结成 3-5 条要点，使用 Markdown 列表。';
+        return '把下面这段总结成可扫读的块笔记：先给一个小标题，再列出 3-5 条 Markdown 要点。';
       default:
         return '请润色下面这段内容，保持原意。';
     }
@@ -1429,9 +1541,11 @@ export class AiService {
 
   private normalizeAssistantTurn(raw: string, input: string) {
     let decoded: Record<string, unknown> = {};
+    let decodedOk = true;
     try {
       decoded = this.decodeJsonObject(raw) as Record<string, unknown>;
     } catch (_) {
+      decodedOk = false;
       decoded = {};
     }
 
@@ -1441,8 +1555,16 @@ export class AiService {
             typeof item === 'object' && item !== null,
         )
       : [];
-    const inferredAction = parsedActions.length ? null : this.inferAssistantAction(input);
-    const reply = typeof decoded.reply === 'string' ? decoded.reply.trim() : '';
+    const reply =
+      typeof decoded.reply === 'string'
+        ? decoded.reply.trim()
+        : decodedOk
+          ? ''
+          : raw.trim();
+    const normalizedActions = parsedActions.map((action) =>
+      this.completeAssistantAction(action, input, reply),
+    );
+    const inferredAction = normalizedActions.length ? null : this.inferAssistantAction(input, reply);
 
     return {
       schemaVersion: Number(decoded.schemaVersion ?? decoded.schema_version ?? 2) || 2,
@@ -1450,34 +1572,90 @@ export class AiService {
         inferredAction && (!reply || this.isGenericAssistantFallback(reply))
           ? this.replyForAssistantAction(inferredAction.type)
           : reply || '我来帮你处理。',
-      actions: inferredAction ? [inferredAction] : parsedActions,
+      actions: inferredAction ? [inferredAction] : normalizedActions,
     };
   }
 
-  private inferAssistantAction(input: string) {
+  private completeAssistantAction(
+    action: Record<string, unknown>,
+    input: string,
+    reply: string,
+  ) {
+    const type = String(action.type ?? action.toolId ?? action.action ?? '').trim();
+    if (
+      this.isNoteSaveAction(type) &&
+      !this.stringifyChatContent(action.content) &&
+      this.isUsefulGeneratedNote(reply, input)
+    ) {
+      return {
+        ...action,
+        title: action.title ?? this.noteTitleFromInput(input),
+        content: reply,
+      };
+    }
+    return action;
+  }
+
+  private inferAssistantAction(input: string, reply = '') {
     const normalized = input.trim();
     if (this.isImageGenerationIntent(normalized)) {
       return {
         actionId: 'act_1',
         type: 'media.generate_image',
-        title: '生成学习配图',
-        sourceText: this.expandImagePrompt(normalized),
+        title: '生成图片',
+        sourceText: normalized,
+      };
+    }
+    if (this.isNoteGenerationIntent(normalized) && this.isUsefulGeneratedNote(reply, normalized)) {
+      return {
+        actionId: 'act_1',
+        type: 'note.save',
+        title: this.noteTitleFromInput(normalized),
+        content: reply,
       };
     }
     return null;
   }
 
-  private isImageGenerationIntent(input: string) {
-    return /(生成图片|生成一张|画图|做图|图解|笔记图解|流程图|示意图|知识图谱|配图)/.test(
-      input,
+  private isNoteSaveAction(type: string) {
+    const normalized = type.toLowerCase().replace(/[-_]/g, '.');
+    return normalized === 'note.save' || normalized === 'save.note';
+  }
+
+  private isNoteGenerationIntent(input: string) {
+    return (
+      /(生成|整理|写|创建|保存|做|产出).{0,16}(笔记|学习笔记|课堂笔记|复习笔记)/.test(input) ||
+      /(笔记|学习笔记|课堂笔记|复习笔记).{0,16}(生成|整理|写|创建|保存|做|产出)/.test(input)
     );
   }
 
-  private expandImagePrompt(input: string) {
-    if (/学习笔记|笔记|图解|流程图|示意图|配图/.test(input)) {
-      return `${input}，适合放进学习笔记，信息清晰，文字少而准，排版简洁。`;
-    }
-    return `${input}，适合大学生学习场景，信息清晰，文字少而准，排版简洁。`;
+  private isUsefulGeneratedNote(content: string, input: string) {
+    const text = content.trim();
+    if (text.length < 40) return false;
+    if (text === input.trim()) return false;
+    if (this.isGenericAssistantFallback(text)) return false;
+    return /[#\n。；;：:\-•*]/.test(text);
+  }
+
+  private noteTitleFromInput(input: string) {
+    const topic = input
+      .replace(/帮我|请|生成|整理|写|创建|保存|做|产出/g, '')
+      .replace(/一个|一份|一篇|详细的|详细|完整的|完整|学习笔记|课堂笔记|复习笔记|笔记/g, '')
+      .replace(/[，。！？!?：:\s]+/g, '')
+      .trim();
+    return `${topic || '学习'}笔记`;
+  }
+
+  private isImageGenerationIntent(input: string) {
+    return (
+      /(生成|画|绘制|做|制作|设计).{0,10}(图片|图像|配图|插图|图解|流程图|示意图|知识图谱)/.test(
+        input,
+      ) ||
+      /(图片|图像|配图|插图|图解|流程图|示意图|知识图谱).{0,10}(生成|画|绘制|做|制作|设计)/.test(
+        input,
+      ) ||
+      /(画图|做图|文生图|生成一张|以图呈现)/.test(input)
+    );
   }
 
   private isGenericAssistantFallback(reply: string) {
@@ -1486,7 +1664,7 @@ export class AiService {
 
   private replyForAssistantAction(type: string) {
     if (type === 'media.generate_image') {
-      return '好，我来先帮你生成这张学习配图。';
+      return '好，我来先帮你生成这张图片。';
     }
     return '我来帮你处理。';
   }

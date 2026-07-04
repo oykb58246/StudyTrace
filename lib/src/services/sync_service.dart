@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../models/ai_flash_card.dart';
 import '../models/ai_action_record.dart';
 import '../models/achievement.dart';
@@ -43,7 +41,7 @@ class SyncService {
   ApiClient get api {
     final client = _api;
     if (client == null) {
-      throw const ApiException('尚未初始化后端连接');
+      throw const ApiException('资料暂时还不能备份，请稍后再试');
     }
     return client;
   }
