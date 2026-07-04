@@ -51,6 +51,7 @@ test-flash.err
 
 # Local deployment/tool cache
 /tool/
+.github/
 
 # Local Codex and presentation scratch artifacts
 .codex/
@@ -58,6 +59,9 @@ test-flash.err
 .kiro/
 .playwright-mcp/
 .trellis/
+AGENTS.md
+CLAUDE.md
+skills-lock.json
 %SystemDrive%/
 output/
 scratch_test.pptx
@@ -67,6 +71,22 @@ shape_test.pptx
 *.zip
 ~$*.pptx
 releases/
+
+# Local notes and one-off project artifacts
+docs/
+scripts/
+文档/
+FLUTTER_UI_GUIDE.md
+architecture.md
+progress.txt
+task.json
+studytrace-azure-deploy.png
+StudyTrace_团队分工指南.md
+蓝心api.docx
+项目当前总结.md
+Directory.Build.props
+devtools_options.yaml
+assets/Build-an-Animated-App-with-Rive-and-Flutter-main/
 
 # StudyTrace backend
 backend/node_modules/
