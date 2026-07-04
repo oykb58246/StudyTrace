@@ -8,11 +8,23 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateMomentCommentDto,
   CreateMomentDto,
+  MomentFeedKind,
   MomentVisibilityDto,
 } from './dto/moments.dto';
 
 @Injectable()
 export class MomentsService {
+  private readonly userPostSourceType = 'user_post';
+  private readonly dynamicSourceTypes = new Set([
+    '',
+    'user_post',
+    'local_private_moment',
+    'media_image',
+    'location',
+    'location_evidence',
+    'moment',
+  ]);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateMomentDto) {
@@ -22,6 +34,7 @@ export class MomentsService {
       throw new BadRequestException('动态内容不能为空');
     }
     const db = this.prisma as any;
+    const sourceType = dto.sourceType?.trim() || this.userPostSourceType;
     const moment = await db.learningMoment.create({
       data: {
         userId,
@@ -34,14 +47,14 @@ export class MomentsService {
         visibility: normalized.visibility,
         allowedGroupIds: normalized.allowedGroupIds,
         deniedGroupIds: normalized.deniedGroupIds,
-        sourceType: dto.sourceType?.trim() || null,
+        sourceType,
         sourceId: dto.sourceId?.trim() || null,
       },
     });
     return this.getVisibleSerialized(userId, moment.id);
   }
 
-  async feed(userId: string) {
+  async feed(userId: string, kind: MomentFeedKind = 'all') {
     const groupIds = await this.currentGroupIds(userId);
     const db = this.prisma as any;
     const where =
@@ -79,6 +92,7 @@ export class MomentsService {
     });
     return moments
       .filter((moment: any) => this.canView(moment, userId, groupIds))
+      .filter((moment: any) => this.matchesFeedKind(moment, kind))
       .slice(0, 80)
       .map((moment: any) => this.serialize(moment, userId));
   }
@@ -269,8 +283,21 @@ export class MomentsService {
       : [];
   }
 
+  private matchesFeedKind(moment: any, kind: MomentFeedKind) {
+    if (kind === 'all') return true;
+    const momentKind = this.momentKind(moment);
+    return kind === 'dynamics' ? momentKind === 'dynamic' : momentKind === 'trace';
+  }
+
+  private momentKind(moment: any): 'dynamic' | 'trace' {
+    const sourceType =
+      typeof moment.sourceType === 'string' ? moment.sourceType.trim() : '';
+    return this.dynamicSourceTypes.has(sourceType) ? 'dynamic' : 'trace';
+  }
+
   private serialize(moment: any, viewerId: string) {
     const profile = moment.user?.profile;
+    const kind = this.momentKind(moment);
     const comments = [...(moment.comments ?? [])].reverse().map((comment: any) => {
       const commentProfile = comment.user?.profile;
       return {
@@ -297,6 +324,8 @@ export class MomentsService {
       deniedGroupIds: this.stringList(moment.deniedGroupIds),
       sourceType: moment.sourceType,
       sourceId: moment.sourceId,
+      momentKind: kind,
+      typeLabel: kind === 'dynamic' ? '动态' : '学迹',
       createdAt: moment.createdAt,
       updatedAt: moment.updatedAt,
       author: {

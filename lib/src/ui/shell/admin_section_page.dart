@@ -208,13 +208,27 @@ class _AdminOverviewPathCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  '把学习路径上的内容集中管理',
-                  style: TextStyle(
-                    color: StudyUi.title(isDarkMode),
-                    fontSize: 16,
-                    fontWeight: AppTypography.title,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '应用介绍',
+                      style: TextStyle(
+                        color: StudyUi.pathBlue,
+                        fontSize: 12,
+                        fontWeight: AppTypography.emphasis,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '把学习路径上的内容集中管理',
+                      style: TextStyle(
+                        color: StudyUi.title(isDarkMode),
+                        fontSize: 16,
+                        fontWeight: AppTypography.title,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -328,8 +342,7 @@ _AdminConfig _configFor(AdminSection section, {AppDataController? controller}) {
         accent: controller?.primaryColor ?? const Color(0xFF4470E8),
         subtitle: '2 分钟复盘，整理下一步、闪卡和学习回顾。',
         heroTitle: '学习助手',
-        heroSubtitle:
-            '把学习事实、难点和情绪整理成今天能开始的一步。',
+        heroSubtitle: '把学习事实、难点和情绪整理成今天能开始的一步。',
       );
     case AdminSection.aiSettings:
       return const _AdminConfig(

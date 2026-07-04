@@ -84,6 +84,7 @@ class StudyTaskItem {
   final DateTime? reminderTime;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? completedAt;
 
   const StudyTaskItem({
     required this.id,
@@ -97,6 +98,7 @@ class StudyTaskItem {
     this.reminderTime,
     required this.createdAt,
     required this.updatedAt,
+    this.completedAt,
   });
 
   bool get isTaskSet => subTasks.isNotEmpty;
@@ -105,23 +107,38 @@ class StudyTaskItem {
     if (subTasks.isEmpty) return status;
     final allDone = subTasks.every((s) => s.status == SubTaskStatus.completed);
     if (allDone) return StudyTaskStatus.completed;
-    final anyStarted = subTasks.any((s) => s.status != SubTaskStatus.notStarted);
+    final anyStarted =
+        subTasks.any((s) => s.status != SubTaskStatus.notStarted);
     return anyStarted ? StudyTaskStatus.inProgress : StudyTaskStatus.notStarted;
   }
 
-  StudyTaskStatus get effectiveStatus => subTasks.isEmpty ? status : _derivedStatus;
+  StudyTaskStatus get effectiveStatus =>
+      subTasks.isEmpty ? status : _derivedStatus;
+
+  DateTime? get effectiveCompletedAt {
+    if (effectiveStatus != StudyTaskStatus.completed) return null;
+    if (completedAt != null) return completedAt;
+    final completedSubTasks = subTasks
+        .map((item) => item.completedAt)
+        .whereType<DateTime>()
+        .toList(growable: false);
+    if (completedSubTasks.isEmpty) return updatedAt;
+    completedSubTasks.sort((a, b) => b.compareTo(a));
+    return completedSubTasks.first;
+  }
 
   double get progress {
-    if (subTasks.isEmpty) return status == StudyTaskStatus.completed ? 1.0 : 0.0;
+    if (subTasks.isEmpty) {
+      return status == StudyTaskStatus.completed ? 1.0 : 0.0;
+    }
     if (subTasks.isEmpty) return 0.0;
     return subTasks.where((s) => s.status == SubTaskStatus.completed).length /
         subTasks.length;
   }
 
-  int get completedCount =>
-      subTasks.isEmpty
-          ? (status == StudyTaskStatus.completed ? 1 : 0)
-          : subTasks.where((s) => s.status == SubTaskStatus.completed).length;
+  int get completedCount => subTasks.isEmpty
+      ? (status == StudyTaskStatus.completed ? 1 : 0)
+      : subTasks.where((s) => s.status == SubTaskStatus.completed).length;
 
   int get totalCount => subTasks.isEmpty ? 1 : subTasks.length;
 
@@ -135,6 +152,8 @@ class StudyTaskItem {
     List<StudySubTaskItem>? subTasks,
     DateTime? reminderTime,
     DateTime? updatedAt,
+    DateTime? completedAt,
+    bool clearCompletedAt = false,
   }) {
     return StudyTaskItem(
       id: id,
@@ -148,6 +167,7 @@ class StudyTaskItem {
       reminderTime: reminderTime ?? this.reminderTime,
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
+      completedAt: clearCompletedAt ? null : completedAt ?? this.completedAt,
     );
   }
 
@@ -164,6 +184,7 @@ class StudyTaskItem {
           'reminderTime': reminderTime!.toIso8601String(),
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
+        if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
       };
 
   static const _typeMigration = {
@@ -222,6 +243,7 @@ class StudyTaskItem {
       reminderTime: reminderTime,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      completedAt: DateTime.tryParse(json['completedAt']?.toString() ?? ''),
     );
   }
 }

@@ -8,6 +8,7 @@ import {
 } from 'class-validator';
 
 export type MomentVisibility = 'private' | 'public' | 'includeGroups' | 'excludeGroups';
+export type MomentFeedKind = 'all' | 'dynamics' | 'traces';
 
 export class MomentVisibilityDto {
   @IsIn(['private', 'public', 'includeGroups', 'excludeGroups'])
@@ -55,4 +56,10 @@ export class CreateMomentCommentDto {
   @IsString()
   @Length(1, 500)
   content: string;
+}
+
+export class MomentFeedQueryDto {
+  @IsOptional()
+  @IsIn(['all', 'dynamics', 'traces'])
+  kind?: MomentFeedKind;
 }

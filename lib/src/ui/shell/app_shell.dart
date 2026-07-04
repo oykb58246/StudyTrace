@@ -380,19 +380,7 @@ class _AppShellState extends State<AppShell>
       case 'rank':
       case 'ranking':
       case '排行榜':
-        _pushAnimatedPage(PageWithBackButton(
-          title: '学习进度',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.leaderboard.icon,
-          accent: AdminSection.leaderboard.accent,
-          compactHeader: true,
-          child: LeaderboardPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            onOpenStudyGroup: _openStudyGroupPage,
-            onOpenLearningMoments: _openLearningMomentsPage,
-          ),
-        ));
+        _openLeaderboardPage();
         return;
       case 'achievements':
       case 'achievement':
@@ -652,9 +640,7 @@ class _AppShellState extends State<AppShell>
     if (!mounted) return;
     final r = results.isNotEmpty ? results.first : null;
     _showShellSnack(
-      r == null
-          ? '这次还没整理好，可以稍后再试'
-          : (r.success ? '已重新整理好' : '这次还没整理好，可以稍后再试'),
+      r == null ? '这次还没整理好，可以稍后再试' : (r.success ? '已重新整理好' : '这次还没整理好，可以稍后再试'),
     );
   }
 
@@ -774,19 +760,7 @@ class _AppShellState extends State<AppShell>
           _openStudyGroupPage();
           return _navigationSuccess(action, '已打开学习小组');
         case AiAppActionType.openLeaderboard:
-          _pushAnimatedPage(PageWithBackButton(
-            title: '学习进度',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.leaderboard.icon,
-            accent: AdminSection.leaderboard.accent,
-            compactHeader: true,
-            child: LeaderboardPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-              onOpenStudyGroup: _openStudyGroupPage,
-              onOpenLearningMoments: _openLearningMomentsPage,
-            ),
-          ));
+          _openLeaderboardPage();
           return _navigationSuccess(action, '已打开学习进度');
         case AiAppActionType.openWeeklyReport:
           _pushAnimatedPage(_WeeklyReportPage(
@@ -1295,6 +1269,23 @@ class _AppShellState extends State<AppShell>
       child: StudyGroupPage(
         isDarkMode: _isDarkMode,
         controller: _appDataController,
+        onOpenLeaderboard: _openLeaderboardPage,
+      ),
+    ));
+  }
+
+  void _openLeaderboardPage() {
+    _pushAnimatedPage(PageWithBackButton(
+      title: '学习进度',
+      isDarkMode: _isDarkMode,
+      titleIcon: AdminSection.leaderboard.icon,
+      accent: AdminSection.leaderboard.accent,
+      compactHeader: true,
+      child: LeaderboardPage(
+        isDarkMode: _isDarkMode,
+        controller: _appDataController,
+        onOpenStudyGroup: _openStudyGroupPage,
+        onOpenLearningMoments: _openLearningMomentsPage,
       ),
     ));
   }
@@ -1387,19 +1378,7 @@ class _AppShellState extends State<AppShell>
         _openStudyGroupPage();
         return;
       case AdminSection.leaderboard:
-        _pushAnimatedPage(PageWithBackButton(
-          title: '学习进度',
-          isDarkMode: _isDarkMode,
-          titleIcon: AdminSection.leaderboard.icon,
-          accent: AdminSection.leaderboard.accent,
-          compactHeader: true,
-          child: LeaderboardPage(
-            isDarkMode: _isDarkMode,
-            controller: _appDataController,
-            onOpenStudyGroup: _openStudyGroupPage,
-            onOpenLearningMoments: _openLearningMomentsPage,
-          ),
-        ));
+        _openLeaderboardPage();
         return;
       case AdminSection.achievements:
         _pushAnimatedPage(PageWithBackButton(
@@ -1549,8 +1528,7 @@ class _AppShellState extends State<AppShell>
           onOpenLogs: _openStudyLogsPage,
           onOpenCalendar: () => _selectPrimaryTab(PrimaryTab.scenarios),
           onOpenTasks: () => _openTasksPage(),
-          onOpenOverdueTasks: () =>
-              _openTasksPage(initialOverdueFilter: true),
+          onOpenOverdueTasks: () => _openTasksPage(initialOverdueFilter: true),
           onOpenNotes: _openStudyNotesPage,
           onOpenTimer: _openTimerPage,
           onOpenFlashCards: _openFlashCardLibrary,
@@ -1564,19 +1542,7 @@ class _AppShellState extends State<AppShell>
             child: _buildEvidencePackagePage(),
           )),
           onOpenStudyGroup: _openStudyGroupPage,
-          onOpenLeaderboard: () => _pushAnimatedPage(PageWithBackButton(
-            title: '学习进度',
-            isDarkMode: _isDarkMode,
-            titleIcon: AdminSection.leaderboard.icon,
-            accent: AdminSection.leaderboard.accent,
-            compactHeader: true,
-            child: LeaderboardPage(
-              isDarkMode: _isDarkMode,
-              controller: _appDataController,
-              onOpenStudyGroup: _openStudyGroupPage,
-              onOpenLearningMoments: _openLearningMomentsPage,
-            ),
-          )),
+          onOpenLeaderboard: _openLeaderboardPage,
           onOpenSyncSettings: _openSystemSettingsPage,
           onOpenTaskPlanning: () => _pushAnimatedPage(PageWithBackButton(
             title: '学习流程',
@@ -1788,7 +1754,10 @@ class _PrimaryTabSurface extends StatelessWidget {
       data: isDarkMode ? buildDarkAppTheme() : buildAppTheme(),
       child: ColoredBox(
         color: isDarkMode ? const Color(0xFF101625) : const Color(0xFFF5F7FF),
-        child: child,
+        child: SafeArea(
+          bottom: false,
+          child: child,
+        ),
       ),
     );
   }
@@ -3001,7 +2970,7 @@ class _ForegroundSurface extends StatelessWidget {
                 if (showMenuButton)
                   Positioned(
                     left: 16,
-                    top: 38,
+                    top: MediaQuery.paddingOf(context).top + 10,
                     child: _MenuButton(
                       isDarkMode: isDarkMode,
                       isMenuOpen: isMenuOpen,
@@ -3513,6 +3482,16 @@ class _SideMenuState extends State<_SideMenu> {
                           widget.currentSection == AdminSection.learningMoments,
                       onTap: () =>
                           widget.onSelected(AdminSection.learningMoments),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideMenuActionItem(
+                      label: '学习小组',
+                      asset: AppAssets.sideGroupIcon,
+                      accent: AdminSection.studyGroup.accent,
+                      fallbackIcon: Icons.groups_rounded,
+                      selected:
+                          widget.currentSection == AdminSection.studyGroup,
+                      onTap: () => widget.onSelected(AdminSection.studyGroup),
                     ),
                     const SizedBox(height: 10),
                     _SideMenuActionItem(

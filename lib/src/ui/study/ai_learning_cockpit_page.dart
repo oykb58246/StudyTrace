@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
@@ -20,7 +21,24 @@ import '../../services/local_today_mission_builder.dart';
 import '../../services/ocr_service.dart';
 import '../../theme/app_theme.dart';
 import '../shared/common_widgets.dart';
+import '../shared/markdown_styles.dart';
 import 'timer_page.dart';
+
+class _LoopMaterialItem {
+  const _LoopMaterialItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.text,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String type;
+  final String title;
+  final String text;
+  final DateTime createdAt;
+}
 
 class AiLearningCockpitPage extends StatefulWidget {
   const AiLearningCockpitPage({
@@ -56,6 +74,8 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
   final _nextStepController = TextEditingController();
   late final OcrService _ocrService;
   final AudioRecorder _audioRecorder = AudioRecorder();
+  final ImagePicker _imagePicker = ImagePicker();
+  final List<_LoopMaterialItem> _materialItems = [];
 
   AiLearningLoopPlan? _plan;
   bool _isGeneratingLoop = false;
@@ -180,7 +200,6 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
   Widget build(BuildContext context) {
     const accent = StudyUi.primary;
     final titleColor = StudyUi.title(widget.isDarkMode);
-    final bodyColor = StudyUi.body(widget.isDarkMode);
 
     return Scaffold(
       backgroundColor: StudyUi.background(widget.isDarkMode),
@@ -230,15 +249,12 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
                   canGenerate: _hasPreparedMaterial,
                   statusText: _statusText,
                   statusColor: accent,
+                  materialItems: _materialItems,
                   onCapturePhoto: _captureLoop,
                   onRecordVoice: _toggleVoiceReview,
-                  onImportFile: () {
-                    setState(() {
-                      _pendingLoopImageBase64 = null;
-                      _pendingLoopSourceKind = 'manual';
-                      _statusText = '可以先把文件里的内容粘贴到材料区，再整理学习安排。';
-                    });
-                  },
+                  onImportFile: _importLocalImageLoop,
+                  onRemoveMaterial: _removeMaterialItem,
+                  onAskAiNextStep: _askAiToDecideNextStep,
                   onGenerate: _generateFromCurrentMaterials,
                 ),
                 const SizedBox(height: 14),
@@ -315,8 +331,12 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
         },
       ))
           .trim();
-      _fillReviewFromCapturedText(text);
       setState(() {
+        _appendMaterialItem(
+          type: 'photo',
+          title: '拍照材料 ${_materialItems.length + 1}',
+          text: text.isEmpty ? '这张图片没有识别出文字，请在这里补充图片内容。' : text,
+        );
         _pendingLoopImageBase64 = imageBase64;
         _pendingLoopSourceKind = 'photo';
         _isPreparingMaterial = false;
@@ -329,6 +349,55 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
       setState(() {
         _isPreparingMaterial = false;
         _statusText = '这次没有识别成功，可以换张图片或直接输入文字';
+      });
+    }
+  }
+
+  Future<void> _importLocalImageLoop() async {
+    setState(() {
+      _isPreparingMaterial = true;
+      _statusText = '正在读取本地图片...';
+    });
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1800,
+        imageQuality: 90,
+      );
+      if (image == null) {
+        if (!mounted) return;
+        setState(() {
+          _isPreparingMaterial = false;
+          _statusText = '已取消选择本地图片。';
+        });
+        return;
+      }
+      final imageBase64 = base64Encode(await image.readAsBytes());
+      final text = (await _ocrService.recognizeImageWithCloudFallback(
+        image,
+        onStatus: (status) {
+          if (mounted) setState(() => _statusText = status);
+        },
+      ))
+          .trim();
+      if (!mounted) return;
+      setState(() {
+        _appendMaterialItem(
+          type: 'localImage',
+          title: '本地图片 ${_materialItems.length + 1}',
+          text: text.isEmpty ? '这张本地图片没有识别出文字，请在这里补充图片内容。' : text,
+        );
+        _pendingLoopImageBase64 = imageBase64;
+        _pendingLoopSourceKind = 'photo';
+        _isPreparingMaterial = false;
+        _statusText =
+            text.isEmpty ? '本地图片已放进材料区，可以补充说明后再整理。' : '本地图片文字已追加到材料清单。';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isPreparingMaterial = false;
+        _statusText = '本地图片暂时没有读取成功，可以换一张或直接输入文字。';
       });
     }
   }
@@ -498,12 +567,60 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
     );
   }
 
-  void _fillReviewFromCapturedText(String text) {
+  void _appendMaterialItem({
+    required String type,
+    required String title,
+    required String text,
+  }) {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    _sourceController.text = trimmed;
-    _blockerController.clear();
-    _nextStepController.clear();
+    final existingManualText = _sourceController.text.trim();
+    if (_materialItems.isEmpty && existingManualText.isNotEmpty) {
+      _materialItems.add(_LoopMaterialItem(
+        id: 'material_${DateTime.now().microsecondsSinceEpoch}_manual',
+        type: 'manual',
+        title: '手动输入',
+        text: existingManualText,
+        createdAt: DateTime.now(),
+      ));
+    }
+    _materialItems.add(_LoopMaterialItem(
+      id: 'material_${DateTime.now().microsecondsSinceEpoch}',
+      type: type,
+      title: title,
+      text: trimmed,
+      createdAt: DateTime.now(),
+    ));
+    _syncMaterialTextFromItems();
+  }
+
+  void _syncMaterialTextFromItems() {
+    if (_materialItems.isEmpty) return;
+    _sourceController.text = _materialItems
+        .map((item) => '【${item.title}】\n${item.text}')
+        .join('\n\n');
+  }
+
+  void _removeMaterialItem(String id) {
+    setState(() {
+      _materialItems.removeWhere((item) => item.id == id);
+      if (_materialItems.isEmpty) {
+        _sourceController.clear();
+        _pendingLoopImageBase64 = null;
+        _pendingLoopSourceKind = 'manual';
+      } else {
+        _syncMaterialTextFromItems();
+      }
+      _statusText =
+          _materialItems.isEmpty ? '材料清单已清空，可以重新输入或导入。' : '已从材料清单移除一条内容。';
+    });
+  }
+
+  void _askAiToDecideNextStep() {
+    setState(() {
+      _nextStepController.text = '请根据上面的学习材料帮我判断下一步怎么做。';
+      _statusText = '下一步已交给 AI 判断，可以直接整理学习安排。';
+    });
   }
 
   Future<void> _generateLoop({
@@ -519,9 +636,7 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
     setState(() {
       _isGeneratingLoop = true;
       _isPreparingMaterial = false;
-      _statusText = imageBase64 == null
-          ? '正在整理学习安排...'
-          : '正在结合图片与文字整理学习安排...';
+      _statusText = imageBase64 == null ? '正在整理学习安排...' : '正在结合图片与文字整理学习安排...';
       _planCheckText = '';
     });
     try {
@@ -1205,18 +1320,22 @@ class _AiLearningCockpitPageState extends State<AiLearningCockpitPage> {
               )
               .catchError((_) {}),
         );
-        _fillReviewFromCapturedText(text);
         setState(() {
+          _appendMaterialItem(
+            type: 'voice',
+            title: '语音材料 ${_materialItems.length + 1}',
+            text: text,
+          );
           _pendingLoopImageBase64 = null;
           _pendingLoopSourceKind = 'voice';
           _isPreparingMaterial = false;
-          _statusText = '语音已转成材料，确认后点“整理学习安排”。';
+          _statusText = '语音已追加到材料清单，确认后点“整理学习安排”。';
         });
         return;
       }
       final hasPermission = await _audioRecorder.hasPermission();
       if (!hasPermission) {
-          setState(() => _statusText = '未获得麦克风权限，可直接输入文字材料');
+        setState(() => _statusText = '未获得麦克风权限，可直接输入文字材料');
         return;
       }
       final dir = await getTemporaryDirectory();
@@ -1778,9 +1897,12 @@ class _ManualSourceCard extends StatelessWidget {
     required this.canGenerate,
     required this.statusText,
     required this.statusColor,
+    required this.materialItems,
     required this.onCapturePhoto,
     required this.onRecordVoice,
     required this.onImportFile,
+    required this.onRemoveMaterial,
+    required this.onAskAiNextStep,
     required this.onGenerate,
   });
 
@@ -1792,9 +1914,12 @@ class _ManualSourceCard extends StatelessWidget {
   final bool canGenerate;
   final String statusText;
   final Color statusColor;
+  final List<_LoopMaterialItem> materialItems;
   final VoidCallback onCapturePhoto;
   final VoidCallback onRecordVoice;
   final VoidCallback onImportFile;
+  final ValueChanged<String> onRemoveMaterial;
+  final VoidCallback onAskAiNextStep;
   final VoidCallback onGenerate;
 
   @override
@@ -1831,7 +1956,7 @@ class _ManualSourceCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      '拍照、语音、文件会先放到这里；你也可以直接补文字。',
+                      '拍照、语音、本地图片会先进入材料清单；你也可以直接补文字。',
                       style: TextStyle(
                         color: bodyColor,
                         fontSize: 12.5,
@@ -1866,14 +1991,22 @@ class _ManualSourceCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: StudyStatusChip(
-                  label: '文件',
+                  label: '本地图片',
                   color: StudyUi.pathMint,
-                  icon: Icons.folder_open_rounded,
+                  icon: Icons.photo_library_rounded,
                   onTap: onImportFile,
                 ),
               ),
             ],
           ),
+          if (materialItems.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _MaterialListPanel(
+              items: materialItems,
+              isDarkMode: isDarkMode,
+              onRemove: onRemoveMaterial,
+            ),
+          ],
           if (statusText.isNotEmpty) ...[
             const SizedBox(height: 8),
             _CockpitInlineStatus(
@@ -1910,6 +2043,16 @@ class _ManualSourceCard extends StatelessWidget {
             isDarkMode: isDarkMode,
             color: StudyUi.primary,
           ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: StudyStatusChip(
+              label: 'AI 判断下一步',
+              color: StudyUi.primary,
+              icon: Icons.auto_awesome_rounded,
+              onTap: onAskAiNextStep,
+            ),
+          ),
           const SizedBox(height: 12),
           _ReviewGradientButton(
             isBusy: isBusy,
@@ -1920,6 +2063,121 @@ class _ManualSourceCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MaterialListPanel extends StatelessWidget {
+  const _MaterialListPanel({
+    required this.items,
+    required this.isDarkMode,
+    required this.onRemove,
+  });
+
+  final List<_LoopMaterialItem> items;
+  final bool isDarkMode;
+  final ValueChanged<String> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: StudyUi.surfaceAlt(isDarkMode),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: StudyUi.border(isDarkMode)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.playlist_add_check_rounded,
+                  color: StudyUi.pathMint, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                '材料清单',
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: AppTypography.title,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${items.length} 条',
+                style: TextStyle(color: bodyColor, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...items.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      _materialIcon(item.type),
+                      size: 17,
+                      color: _materialColor(item.type),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: titleColor,
+                              fontSize: 13,
+                              fontWeight: AppTypography.emphasis,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            item.text,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: bodyColor,
+                              fontSize: 12,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: '移除',
+                      icon: Icon(Icons.close_rounded,
+                          size: 16, color: StudyUi.muted(isDarkMode)),
+                      onPressed: () => onRemove(item.id),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  static IconData _materialIcon(String type) => switch (type) {
+        'photo' => Icons.photo_camera_rounded,
+        'localImage' => Icons.photo_library_rounded,
+        'voice' => Icons.mic_rounded,
+        _ => Icons.notes_rounded,
+      };
+
+  static Color _materialColor(String type) => switch (type) {
+        'photo' => StudyUi.secondary,
+        'localImage' => StudyUi.pathMint,
+        'voice' => StudyUi.pathCyan,
+        _ => StudyUi.primary,
+      };
 }
 
 class _LoopPromptCard extends StatelessWidget {
@@ -2009,9 +2267,7 @@ class _LoopPromptCard extends StatelessWidget {
           const SizedBox(height: 14),
           _CockpitActionButton(
             icon: Icons.auto_awesome_rounded,
-            label: isBusy
-                ? '整理中...'
-                : (canGenerate ? '整理学习安排' : '先输入学习材料'),
+            label: isBusy ? '整理中...' : (canGenerate ? '整理学习安排' : '先输入学习材料'),
             color: accent,
             isDarkMode: isDarkMode,
             expand: true,
@@ -2506,9 +2762,7 @@ class _ReviewGradientButton extends StatelessWidget {
                   ),
                 const SizedBox(width: 8),
                 Text(
-                  isBusy
-                      ? '整理中...'
-                      : (enabled ? '整理学习安排' : '先输入学习材料'),
+                  isBusy ? '整理中...' : (enabled ? '整理学习安排' : '先输入学习材料'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: AppTypography.hero,
@@ -2609,6 +2863,14 @@ class _LoopPreview extends StatelessWidget {
                   onSaveNoteChanged: onSaveNoteChanged,
                   onSaveFlashCardsChanged: onSaveFlashCardsChanged,
                 ),
+                if (plan.noteDraft.content.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _MarkdownNotePreview(
+                    markdown: plan.noteDraft.content,
+                    isDarkMode: isDarkMode,
+                    accent: accent,
+                  ),
+                ],
                 const SizedBox(height: 8),
                 _PreviewList(
                     title: '今日安排',
@@ -3164,6 +3426,64 @@ class _SaveChoiceTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MarkdownNotePreview extends StatelessWidget {
+  const _MarkdownNotePreview({
+    required this.markdown,
+    required this.isDarkMode,
+    required this.accent,
+  });
+
+  final String markdown;
+  final bool isDarkMode;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: StudyUi.surfaceAlt(isDarkMode),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: StudyUi.border(isDarkMode)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.article_rounded, color: accent, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                '学习笔记预览',
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: AppTypography.title,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          MarkdownBody(
+            data: markdown,
+            extensionSet: studyMarkdownExtensionSet,
+            styleSheet: buildStudyMarkdownStyleSheet(
+              isDarkMode: isDarkMode,
+              bodyFontSize: 13,
+              bodyHeight: 1.48,
+            ),
+            builders: buildStudyMarkdownBuilders(
+              isDarkMode: isDarkMode,
+              bodyFontSize: 13,
+            ),
+          ),
+        ],
       ),
     );
   }

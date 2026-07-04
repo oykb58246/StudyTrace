@@ -539,6 +539,7 @@ class AppDataController extends ChangeNotifier {
       reminderTime: reminderTime,
       createdAt: now,
       updatedAt: now,
+      completedAt: status == StudyTaskStatus.completed ? now : null,
     );
     _studyTasks.insert(0, task);
     await _storage.saveStudyTasks(_studyTasks);
@@ -555,9 +556,15 @@ class AppDataController extends ChangeNotifier {
   ) async {
     final index = _studyTasks.indexWhere((t) => t.id == taskId);
     if (index == -1) return;
+    final now = DateTime.now();
+    final previous = _studyTasks[index];
     _studyTasks[index] = _studyTasks[index].copyWith(
       status: status,
-      updatedAt: DateTime.now(),
+      updatedAt: now,
+      completedAt: status == StudyTaskStatus.completed
+          ? previous.completedAt ?? now
+          : null,
+      clearCompletedAt: status != StudyTaskStatus.completed,
     );
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();
@@ -626,6 +633,8 @@ class AppDataController extends ChangeNotifier {
       status: allDone ? StudyTaskStatus.completed : StudyTaskStatus.inProgress,
       subTasks: updatedSubTasks,
       updatedAt: now,
+      completedAt: allDone ? previous.completedAt ?? now : null,
+      clearCompletedAt: !allDone,
     );
     _studyTasks[index] = current;
     await _storage.saveStudyTasks(_studyTasks);
@@ -703,6 +712,11 @@ class AppDataController extends ChangeNotifier {
     if (index == -1) return;
     final previous = _studyTasks[index];
     final nextSubTasks = subTasks ?? previous.subTasks;
+    final now = DateTime.now();
+    final isCompleted = status == StudyTaskStatus.completed ||
+        (nextSubTasks.isNotEmpty &&
+            nextSubTasks
+                .every((item) => item.status == SubTaskStatus.completed));
     await NotificationService().cancelForTask(previous);
     _studyTasks[index] = StudyTaskItem(
       id: previous.id,
@@ -715,7 +729,8 @@ class AppDataController extends ChangeNotifier {
       subTasks: nextSubTasks,
       reminderTime: reminderTime,
       createdAt: previous.createdAt,
-      updatedAt: DateTime.now(),
+      updatedAt: now,
+      completedAt: isCompleted ? previous.completedAt ?? now : null,
     );
     await _storage.saveStudyTasks(_studyTasks);
     notifyListeners();

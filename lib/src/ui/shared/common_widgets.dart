@@ -275,8 +275,7 @@ class _StudyScreenBackgroundPainter extends CustomPainter {
       ),
     ];
     for (final wash in washes) {
-      washPaint.color =
-          wash.color.withValues(alpha: isDarkMode ? 0.08 : 0.14);
+      washPaint.color = wash.color.withValues(alpha: isDarkMode ? 0.08 : 0.14);
       canvas.drawCircle(wash.center, wash.radius, washPaint);
     }
 
@@ -951,8 +950,8 @@ class StudyDialogSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final titleColor = StudyUi.title(isDarkMode);
     final bodyColor = StudyUi.body(isDarkMode);
-    final dialogWidth =
-        math.max(260.0, math.min(maxWidth, MediaQuery.sizeOf(context).width - 44));
+    final dialogWidth = math.max(
+        260.0, math.min(maxWidth, MediaQuery.sizeOf(context).width - 44));
     return StudyFontScope(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
@@ -1050,6 +1049,7 @@ class StudyActionPill extends StatelessWidget {
     required this.onPressed,
     this.filled = true,
     this.expand = false,
+    this.showShadow = true,
   });
 
   final IconData icon;
@@ -1059,13 +1059,13 @@ class StudyActionPill extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool filled;
   final bool expand;
+  final bool showShadow;
 
   @override
   Widget build(BuildContext context) {
     final disabled = onPressed == null;
-    final foreground = filled
-        ? Colors.white
-        : (disabled ? StudyUi.muted(isDarkMode) : color);
+    final foreground =
+        filled ? Colors.white : (disabled ? StudyUi.muted(isDarkMode) : color);
     final background = filled
         ? color.withValues(alpha: disabled ? 0.48 : 1)
         : StudyUi.chipBackground(color, isDarkMode);
@@ -1086,7 +1086,7 @@ class StudyActionPill extends StatelessWidget {
                   : color.withValues(alpha: disabled ? 0.10 : 0.22),
             ),
             boxShadow: [
-              if (filled && !disabled && !isDarkMode)
+              if (showShadow && filled && !disabled && !isDarkMode)
                 BoxShadow(
                   color: color.withValues(alpha: 0.18),
                   blurRadius: 18,
@@ -1395,7 +1395,9 @@ class StudyStatusChip extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: selected ? color.withValues(alpha: 0.3) : StudyUi.border(isDarkMode),
+          color: selected
+              ? color.withValues(alpha: 0.3)
+              : StudyUi.border(isDarkMode),
         ),
       ),
       child: Row(

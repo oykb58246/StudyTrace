@@ -16,6 +16,22 @@ import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
 import '../shared/local_image.dart';
 
+const String _localPrivateMomentSourceType = 'local_private_moment';
+const String _userPostMomentSourceType = 'user_post';
+
+enum _MomentFeedFilter { all, dynamics, traces }
+
+bool _isUserPublishedMoment(LearningMoment moment) {
+  final sourceType = (moment.sourceType ?? '').trim();
+  return sourceType.isEmpty ||
+      sourceType == _userPostMomentSourceType ||
+      sourceType == _localPrivateMomentSourceType ||
+      sourceType == 'media_image' ||
+      sourceType == 'location' ||
+      sourceType == 'location_evidence' ||
+      sourceType == 'moment';
+}
+
 class LearningMomentsPage extends StatefulWidget {
   const LearningMomentsPage({
     super.key,
@@ -33,8 +49,6 @@ class LearningMomentsPage extends StatefulWidget {
 }
 
 class _LearningMomentsPageState extends State<LearningMomentsPage> {
-  static const String _localPrivateMomentSourceType = 'local_private_moment';
-
   final _contentController = TextEditingController();
   final _picker = ImagePicker();
   final List<String> _imagePaths = [];
@@ -46,6 +60,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   final List<String> _selectedAllowedGroupIds = [];
   final List<String> _selectedDeniedGroupIds = [];
   LearningMomentVisibility _visibility = LearningMomentVisibility.private;
+  _MomentFeedFilter _feedFilter = _MomentFeedFilter.all;
   bool _isPosting = false;
   bool _isLoadingFeed = false;
   String? _feedError;
@@ -213,8 +228,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   Future<void> _loadLocationCheckIns() async {
     if (!widget.controller.isLoggedIn) return;
     try {
-      final checkIns =
-          await widget.controller.communityEvidenceService.listMyLocationCheckIns();
+      final checkIns = await widget.controller.communityEvidenceService
+          .listMyLocationCheckIns();
       if (!mounted) return;
       setState(() {
         _locationCheckIns
@@ -229,7 +244,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   Future<void> _loadCapabilityBadges() async {
     if (!widget.controller.isLoggedIn) return;
     try {
-      final badges = await widget.controller.vivoCapabilityService.capabilityBadges();
+      final badges =
+          await widget.controller.vivoCapabilityService.capabilityBadges();
       if (!mounted) return;
       setState(() {
         _cloudCapabilityBadges = badges
@@ -285,16 +301,6 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
             ),
           ],
         ),
-        actions: [
-          _MomentToolbarAction(
-            tooltip: '学迹整理',
-            icon: Icons.more_horiz_rounded,
-            accent: StudyUi.pathViolet,
-            isDarkMode: widget.isDarkMode,
-            onPressed: _showMomentsTools,
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: StudyScreenBackground(
         isDarkMode: widget.isDarkMode,
@@ -302,9 +308,14 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         child: AnimatedBuilder(
           animation: widget.controller,
           builder: (context, _) {
-            final moments = _displayMoments();
-            final learningLoopMoments = moments
-                .where((moment) => (moment.sourceType ?? '').trim() == 'learning_loop')
+            final allMoments = _displayMoments();
+            final dynamicCount =
+                allMoments.where(_isUserPublishedMoment).length;
+            final traceCount = allMoments.length - dynamicCount;
+            final moments = _filterMoments(allMoments);
+            final learningLoopMoments = allMoments
+                .where((moment) =>
+                    (moment.sourceType ?? '').trim() == 'learning_loop')
                 .toList(growable: false);
             final latestLearningLoopMoment =
                 learningLoopMoments.isEmpty ? null : learningLoopMoments.first;
@@ -315,17 +326,22 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                 _HeaderPanel(
                   isDarkMode: widget.isDarkMode,
                   eventCount: widget.controller.studyLogs.length,
-                  momentCount: moments.length,
-                  packageCount: widget.controller.weeklyReports.length,
+                  dynamicCount: dynamicCount,
+                  traceCount: traceCount,
                   learningLoopCount: learningLoopMoments.length,
                   latestLearningLoopLabel: latestLearningLoopMoment == null
                       ? null
-                      : _formatLearningLoopTime(latestLearningLoopMoment.createdAt),
-                  onRecord: _openComposerSheet,
-                  onReview: _showMomentsTools,
-                  onRefresh: widget.controller.isLoggedIn
-                      ? () => unawaited(_loadMomentFeed())
-                      : null,
+                      : _formatLearningLoopTime(
+                          latestLearningLoopMoment.createdAt),
+                ),
+                const SizedBox(height: 10),
+                _MomentFeedFilterBar(
+                  isDarkMode: widget.isDarkMode,
+                  accent: accent,
+                  value: _feedFilter,
+                  dynamicCount: dynamicCount,
+                  traceCount: traceCount,
+                  onChanged: (value) => setState(() => _feedFilter = value),
                 ),
                 const SizedBox(height: 10),
                 _PostEntryCard(
@@ -336,54 +352,57 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                   avatarImagePath:
                       widget.controller.userProfile.avatarImagePath,
                   avatarEmoji: widget.controller.userProfile.avatarEmoji,
-                  onTap: _openComposerSheet,
+                  onPublish: _openComposerSheet,
+                  onPickImages: _openImageComposer,
                 ),
                 const SizedBox(height: 10),
                 if (moments.isEmpty)
                   _isLoadingFeed
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(28),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : _EmptyTimeline(
-                        isDarkMode: widget.isDarkMode,
-                        accent: accent,
-                        bodyColor: bodyColor,
-                        message: widget.controller.isLoggedIn ? _feedError : null,
-                        onRecord: _openComposerSheet,
-                        onReview: _showMomentsTools,
-                      )
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(28),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : _EmptyTimeline(
+                          isDarkMode: widget.isDarkMode,
+                          accent: accent,
+                          bodyColor: bodyColor,
+                          message:
+                              widget.controller.isLoggedIn && _feedError != null
+                                  ? _feedError
+                                  : _emptyMessageForFilter(),
+                        )
                 else
                   ...moments.map(
-                  (moment) {
-                    final isLocalOnly = _isLocalOnlyMoment(moment);
-                    return _MomentCard(
-                      moment: moment,
-                      groups: _groups,
-                      isDarkMode: widget.isDarkMode,
-                      accent: accent,
-                      titleColor: titleColor,
-                      bodyColor: bodyColor,
-                      onLike: isLocalOnly
-                          ? () => _showTip('这条私密记录保存在本机，暂不能标记有帮助')
-                          : () => _toggleMomentLike(moment),
-                      onComment: isLocalOnly
-                          ? () => _showTip('这条私密记录保存在本机，暂不能留下回看备注')
-                          : () => _commentMoment(moment),
-                      onDelete: moment.isMine || isLocalOnly
-                          ? () => _deleteMoment(moment.id)
-                          : null,
-                      onEditVisibility:
-                          widget.controller.isLoggedIn && moment.isMine && !isLocalOnly
-                              ? () => _editMomentVisibility(moment)
-                              : null,
-                      onDeleteComment: (comment) =>
-                          _deleteMomentComment(moment, comment),
-                    );
-                  },
-                ),
+                    (moment) {
+                      final isLocalOnly = _isLocalOnlyMoment(moment);
+                      return _MomentCard(
+                        moment: moment,
+                        groups: _groups,
+                        isDarkMode: widget.isDarkMode,
+                        accent: accent,
+                        titleColor: titleColor,
+                        bodyColor: bodyColor,
+                        onLike: isLocalOnly
+                            ? () => _showTip('这条私密记录保存在本机，暂不能点赞')
+                            : () => _toggleMomentLike(moment),
+                        onComment: isLocalOnly
+                            ? () => _showTip('这条私密记录保存在本机，暂不能评论')
+                            : () => _commentMoment(moment),
+                        onDelete: moment.isMine || isLocalOnly
+                            ? () => _deleteMoment(moment.id)
+                            : null,
+                        onEditVisibility: widget.controller.isLoggedIn &&
+                                moment.isMine &&
+                                !isLocalOnly
+                            ? () => _editMomentVisibility(moment)
+                            : null,
+                        onDeleteComment: (comment) =>
+                            _deleteMomentComment(moment, comment),
+                      );
+                    },
+                  ),
               ],
             );
             if (!widget.controller.isLoggedIn) return listView;
@@ -416,6 +435,25 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     return moments;
   }
 
+  List<LearningMoment> _filterMoments(List<LearningMoment> moments) {
+    return switch (_feedFilter) {
+      _MomentFeedFilter.all => moments,
+      _MomentFeedFilter.dynamics =>
+        moments.where(_isUserPublishedMoment).toList(growable: false),
+      _MomentFeedFilter.traces => moments
+          .where((moment) => !_isUserPublishedMoment(moment))
+          .toList(growable: false),
+    };
+  }
+
+  String _emptyMessageForFilter() {
+    return switch (_feedFilter) {
+      _MomentFeedFilter.all => '还没有动态，先发布第一条学习现场',
+      _MomentFeedFilter.dynamics => '还没有自己发布的动态，可以先发一条文字或图片',
+      _MomentFeedFilter.traces => '还没有自动沉淀的学迹，用学习整理台或完成任务后会出现在这里',
+    };
+  }
+
   String _formatLearningLoopTime(DateTime time) {
     final now = DateTime.now();
     final diff = now.difference(time);
@@ -430,8 +468,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       _isLocalOnlyMomentId(moment.id);
 
   bool _isLocalOnlyMomentId(String momentId) {
-    final existsLocally =
-        widget.controller.learningMoments.any((moment) => moment.id == momentId);
+    final existsLocally = widget.controller.learningMoments
+        .any((moment) => moment.id == momentId);
     if (!existsLocally) return false;
     return !_cloudMoments.any(
       (moment) =>
@@ -452,7 +490,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       if (sourceId != null) syncedLocalMomentIds.add(sourceId);
     }
     final localPrivateMoments = widget.controller.learningMoments
-        .where((moment) => moment.visibility == LearningMomentVisibility.private)
+        .where(
+            (moment) => moment.visibility == LearningMomentVisibility.private)
         .toList(growable: false);
 
     for (final localMoment in localPrivateMoments) {
@@ -504,16 +543,19 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   bool _isSyncedLocalPrivateMoment(LearningMoment moment) {
     final sourceType = (moment.sourceType ?? '').trim();
     return sourceType == _localPrivateMomentSourceType ||
+        sourceType == _userPostMomentSourceType ||
         sourceType == 'synced_learning_loop' ||
         sourceType == 'synced_task_progress';
   }
 
   String _syncedLocalSourceType(LearningMoment moment) {
-    return switch ((moment.sourceType ?? '').trim()) {
-      'learning_loop' => 'synced_learning_loop',
-      'task_progress' => 'synced_task_progress',
-      _ => _localPrivateMomentSourceType,
-    };
+    final sourceType = (moment.sourceType ?? '').trim();
+    if (sourceType.isEmpty || sourceType == _userPostMomentSourceType) {
+      return _userPostMomentSourceType;
+    }
+    if (sourceType == 'learning_loop') return 'synced_learning_loop';
+    if (sourceType == 'task_progress') return 'synced_task_progress';
+    return sourceType;
   }
 
   List<_EvidencePackage> _buildEvidencePackages(
@@ -549,7 +591,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   ) {
     final records = widget.controller.recentActionRecords;
     final moments = widget.controller.learningMoments;
-    final hasImageMoment = moments.any((moment) => moment.imagePaths.isNotEmpty);
+    final hasImageMoment =
+        moments.any((moment) => moment.imagePaths.isNotEmpty);
     final hasAiAction = records.any((record) => record.statusLabel == '已完成');
     final hasMemory = records.any((record) => record.toolId.contains('memory'));
     final hasLoop = records.any((record) => record.toolId.contains('loop')) ||
@@ -567,10 +610,11 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       _CapabilityBadge(
         '图片识读',
         hasImageMoment || _imagePaths.isNotEmpty,
-        current: (moments.where((moment) => moment.imagePaths.isNotEmpty).length +
-                _imagePaths.length)
-            .clamp(0, 3)
-            .toInt(),
+        current:
+            (moments.where((moment) => moment.imagePaths.isNotEmpty).length +
+                    _imagePaths.length)
+                .clamp(0, 3)
+                .toInt(),
         target: 3,
         source: '用图片材料整理学习记录',
         nextStep: '保存一条带图片的学迹',
@@ -579,7 +623,11 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       _CapabilityBadge(
         '智能执行',
         hasAiAction || records.isNotEmpty,
-        current: records.where((record) => record.statusLabel == '已完成').length.clamp(0, 5).toInt(),
+        current: records
+            .where((record) => record.statusLabel == '已完成')
+            .length
+            .clamp(0, 5)
+            .toInt(),
         target: 5,
         source: '用学习整理台梳理可落地的下一步',
         nextStep: '用学习整理台创建任务、笔记或今日安排',
@@ -588,7 +636,11 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       _CapabilityBadge(
         '学习记忆',
         hasMemory,
-        current: records.where((record) => record.toolId.contains('memory')).length.clamp(0, 3).toInt(),
+        current: records
+            .where((record) => record.toolId.contains('memory'))
+            .length
+            .clamp(0, 3)
+            .toInt(),
         target: 3,
         source: '从个人学习资料中找回线索',
         nextStep: '在学习对话里追问过去的任务或笔记',
@@ -597,7 +649,11 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       _CapabilityBadge(
         '复盘留痕',
         hasLoop || events.length >= 3,
-        current: events.where((event) => event.isAiGenerated).length.clamp(0, 4).toInt(),
+        current: events
+            .where((event) => event.isAiGenerated)
+            .length
+            .clamp(0, 4)
+            .toInt(),
         target: 4,
         source: '形成可回看的学习过程',
         nextStep: '保存一次计划并启动专注',
@@ -669,6 +725,12 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     );
   }
 
+  Future<void> _openImageComposer() async {
+    final added = await _pickImages();
+    if (!mounted || !added) return;
+    await _openComposerSheet();
+  }
+
   Future<void> _openComposerSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -734,9 +796,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                   setSheetState(() {});
                 },
                 onChooseGroups: (visibility) async {
-                  final current = visibility == LearningMomentVisibility.includeGroups
-                      ? _selectedAllowedGroupIds
-                      : _selectedDeniedGroupIds;
+                  final current =
+                      visibility == LearningMomentVisibility.includeGroups
+                          ? _selectedAllowedGroupIds
+                          : _selectedDeniedGroupIds;
                   final selected = await _showGroupMultiSelect(
                     title: visibility == LearningMomentVisibility.includeGroups
                         ? '指定小组可以看'
@@ -794,7 +857,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         accent: accent,
         icon: Icons.school_rounded,
         title: '关联课程',
-              subtitle: '选择这条学迹属于哪门课，或保持不关联。',
+        subtitle: '选择这条动态属于哪门课，或保持不关联。',
         child: Column(
           children: [
             _MomentGroupCheckTile(
@@ -818,7 +881,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '还没有课程记录，先保存为通用学迹也没问题。',
+                  '还没有课程记录，先发布为通用动态也没问题。',
                   style: TextStyle(
                     color: StudyUi.body(widget.isDarkMode),
                     fontSize: 12,
@@ -852,54 +915,54 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                _CapabilityBadgePanel(
-                  isDarkMode: widget.isDarkMode,
-                  accent: accent,
-                  titleColor: titleColor,
-                  bodyColor: bodyColor,
-                  badges: _cloudCapabilityBadges.isNotEmpty
-                      ? _cloudCapabilityBadges
-                      : _buildCapabilityBadges(allEvents),
-                  traces: _lastCapabilityTraces,
-                ),
-                const SizedBox(height: 14),
-                _CampusMapPanel(
-                  isDarkMode: widget.isDarkMode,
-                  accent: accent,
-                  titleColor: titleColor,
-                  bodyColor: bodyColor,
-                  locations: _locationCheckIns,
-                  isCheckingLocation: _isCheckingLocation,
-                  onCheckIn: _createLocationCheckIn,
-                ),
-                const SizedBox(height: 14),
-                _EvidencePackagePanel(
-                  isDarkMode: widget.isDarkMode,
-                  accent: accent,
-                  titleColor: titleColor,
-                  bodyColor: bodyColor,
-                  packages: packages,
-                  cloudPackages: _cloudPackages,
-                  onUsePackage: (package) {
-                    _useEvidencePackage(package);
-                    Navigator.of(context).pop();
-                    unawaited(_openComposerSheet());
-                  },
-                  onSavePackage: _saveEvidencePackage,
-                  onGenerateCover: _generateEvidenceCover,
-                  onToggleFeatured: _togglePackageFeatured,
-                  onSharePackage: _sharePackageToGroup,
-                ),
-                const SizedBox(height: 14),
-                _FeaturedWallPanel(
-                  isDarkMode: widget.isDarkMode,
-                  accent: accent,
-                  titleColor: titleColor,
-                  bodyColor: bodyColor,
-                  packages: _cloudPackages.where((package) => package.featured),
-                  events: allEvents.where((event) => event.isShareable).take(4),
-                  onShare: _shareTraceEvent,
-                ),
+              _CapabilityBadgePanel(
+                isDarkMode: widget.isDarkMode,
+                accent: accent,
+                titleColor: titleColor,
+                bodyColor: bodyColor,
+                badges: _cloudCapabilityBadges.isNotEmpty
+                    ? _cloudCapabilityBadges
+                    : _buildCapabilityBadges(allEvents),
+                traces: _lastCapabilityTraces,
+              ),
+              const SizedBox(height: 14),
+              _CampusMapPanel(
+                isDarkMode: widget.isDarkMode,
+                accent: accent,
+                titleColor: titleColor,
+                bodyColor: bodyColor,
+                locations: _locationCheckIns,
+                isCheckingLocation: _isCheckingLocation,
+                onCheckIn: _createLocationCheckIn,
+              ),
+              const SizedBox(height: 14),
+              _EvidencePackagePanel(
+                isDarkMode: widget.isDarkMode,
+                accent: accent,
+                titleColor: titleColor,
+                bodyColor: bodyColor,
+                packages: packages,
+                cloudPackages: _cloudPackages,
+                onUsePackage: (package) {
+                  _useEvidencePackage(package);
+                  Navigator.of(context).pop();
+                  unawaited(_openComposerSheet());
+                },
+                onSavePackage: _saveEvidencePackage,
+                onGenerateCover: _generateEvidenceCover,
+                onToggleFeatured: _togglePackageFeatured,
+                onSharePackage: _sharePackageToGroup,
+              ),
+              const SizedBox(height: 14),
+              _FeaturedWallPanel(
+                isDarkMode: widget.isDarkMode,
+                accent: accent,
+                titleColor: titleColor,
+                bodyColor: bodyColor,
+                packages: _cloudPackages.where((package) => package.featured),
+                events: allEvents.where((event) => event.isShareable).take(4),
+                onShare: _shareTraceEvent,
+              ),
             ],
           ),
         );
@@ -907,21 +970,43 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     );
   }
 
-  Future<void> _pickImages() async {
-    if (_imagePaths.length >= 9) return;
+  Future<bool> _pickImages() async {
+    if (_imagePaths.length >= 9) {
+      _showSnack('最多添加 9 张图片');
+      return false;
+    }
     try {
-      final picked = await _picker.pickMultiImage(imageQuality: 82);
-      if (picked.isEmpty) return;
+      var picked = await _picker.pickMultiImage(imageQuality: 82);
+      if (picked.isEmpty) return false;
       final remain = 9 - _imagePaths.length;
       final saved = <String>[];
       for (final image in picked.take(remain)) {
         saved.add(await persistPickedImage(image, prefix: 'learning_moment'));
       }
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _imagePaths.addAll(saved));
+      _showSnack('已添加 ${saved.length} 张图片');
+      return saved.isNotEmpty;
     } catch (_) {
-      _showSnack('图片选择失败，请稍后重试');
+      try {
+        final picked = await _picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 82,
+        );
+        if (picked == null) return false;
+        final saved = await persistPickedImage(
+          picked,
+          prefix: 'learning_moment',
+        );
+        if (!mounted) return false;
+        setState(() => _imagePaths.add(saved));
+        _showSnack('已添加图片');
+        return true;
+      } catch (_) {
+        _showSnack('图片选择失败，请检查相册权限后重试');
+      }
     }
+    return false;
   }
 
   Future<void> _saveEvidencePackage(_EvidencePackage package) async {
@@ -932,11 +1017,14 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     setState(() => _isSavingPackage = true);
     final events = widget.controller.learningTraceEvents
         .where((event) =>
-            (event.courseName.trim().isEmpty ? '未归课程' : event.courseName.trim()) ==
+            (event.courseName.trim().isEmpty
+                ? '未归课程'
+                : event.courseName.trim()) ==
             package.courseName)
         .toList();
     try {
-      final saved = await widget.controller.communityEvidenceService.createPackage(
+      final saved =
+          await widget.controller.communityEvidenceService.createPackage(
         title: '${package.courseName} 学习回顾',
         courseName: package.courseName == '未归课程' ? '' : package.courseName,
         description:
@@ -970,19 +1058,22 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       final currentCover = package.coverImageUrl ?? '';
       if (currentCover.startsWith('vivo-task:')) {
         final taskId = currentCover.replaceFirst('vivo-task:', '');
-        final task = await widget.controller.vivoCapabilityService.refreshImageTask(taskId);
+        final task = await widget.controller.vivoCapabilityService
+            .refreshImageTask(taskId);
         if (!mounted) return;
         setState(() => _lastCapabilityTraces = task.capabilityTraces);
         if (task.imagesUrl.isEmpty) {
           _showSnack('封面生成中，稍后刷新查看');
           return;
         }
-        final updated = await widget.controller.communityEvidenceService.updatePackage(
+        final updated =
+            await widget.controller.communityEvidenceService.updatePackage(
           package.id,
           coverImageUrl: task.imagesUrl.first,
         );
         if (!mounted) return;
-        final index = _cloudPackages.indexWhere((item) => item.id == package.id);
+        final index =
+            _cloudPackages.indexWhere((item) => item.id == package.id);
         setState(() {
           if (index >= 0) _cloudPackages[index] = updated;
         });
@@ -998,7 +1089,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       final coverImageUrl = task.imagesUrl.isNotEmpty
           ? task.imagesUrl.first
           : 'vivo-task:${task.taskId}';
-      final updated = await widget.controller.communityEvidenceService.updatePackage(
+      final updated =
+          await widget.controller.communityEvidenceService.updatePackage(
         package.id,
         coverImageUrl: coverImageUrl,
       );
@@ -1009,20 +1101,18 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         if (index >= 0) _cloudPackages[index] = updated;
       });
       unawaited(
-        widget.controller.activityService
-            .create(
-              type: 'imageGenerated',
-              title: task.imagesUrl.isNotEmpty ? '学习回顾封面已生成' : '学习回顾封面生成中',
-              summary: package.title,
-              sourceType: 'evidence_package',
-              sourceId: package.id,
-              payloadJson: {
-                'taskId': task.taskId,
-                'imageUrl': task.imagesUrl.isNotEmpty ? task.imagesUrl.first : '',
-                'purpose': 'learning_review_cover',
-              },
-            )
-            .catchError((_) {}),
+        widget.controller.activityService.create(
+          type: 'imageGenerated',
+          title: task.imagesUrl.isNotEmpty ? '学习回顾封面已生成' : '学习回顾封面生成中',
+          summary: package.title,
+          sourceType: 'evidence_package',
+          sourceId: package.id,
+          payloadJson: {
+            'taskId': task.taskId,
+            'imageUrl': task.imagesUrl.isNotEmpty ? task.imagesUrl.first : '',
+            'purpose': 'learning_review_cover',
+          },
+        ).catchError((_) {}),
       );
       _showSnack('回顾封面生成中，稍后刷新查看');
     } catch (_) {
@@ -1156,7 +1246,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     );
     if (!confirmed) return;
     try {
-      final updated = await widget.controller.communityEvidenceService.updatePackage(
+      final updated =
+          await widget.controller.communityEvidenceService.updatePackage(
         package.id,
         visibility: 'group',
         groupId: group.id,
@@ -1174,7 +1265,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
 
   Future<void> _togglePackageFeatured(cloud.EvidencePackage package) async {
     try {
-      final updated = await widget.controller.communityEvidenceService.updatePackage(
+      final updated =
+          await widget.controller.communityEvidenceService.updatePackage(
         package.id,
         featured: !package.featured,
       );
@@ -1204,15 +1296,16 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       visibility: draft.shareToGroup
           ? LearningMomentVisibility.includeGroups
           : LearningMomentVisibility.private,
-      allowedGroupIds:
-          draft.shareToGroup && draft.groupId != null ? [draft.groupId!] : const [],
+      allowedGroupIds: draft.shareToGroup && draft.groupId != null
+          ? [draft.groupId!]
+          : const [],
       confirmText: draft.shareToGroup ? '保存并同步' : '保存',
     );
     if (!confirmed || !mounted) return;
     setState(() => _isCheckingLocation = true);
     try {
-      final checkIn =
-          await widget.controller.communityEvidenceService.createLocationCheckIn(
+      final checkIn = await widget.controller.communityEvidenceService
+          .createLocationCheckIn(
         title: draft.title,
         address: _trimAddress(draft.city),
         groupId: draft.shareToGroup ? draft.groupId : null,
@@ -1239,64 +1332,63 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
 
   Future<_LocationCheckInDraft?> _showLocationCheckInDialog() async {
     final titleController = TextEditingController(
-      text: _selectedCourse.trim().isEmpty ? '' : '${_selectedCourse.trim()} 自习',
+      text:
+          _selectedCourse.trim().isEmpty ? '' : '${_selectedCourse.trim()} 自习',
     );
     final cityController = TextEditingController();
     var shareToGroup = false;
-    var selectedGroupId = _selectedGroupId ??
-        (_groups.isNotEmpty ? _groups.first.id : null);
+    var selectedGroupId =
+        _selectedGroupId ?? (_groups.isNotEmpty ? _groups.first.id : null);
     try {
-	      return await showDialog<_LocationCheckInDraft>(
-	        context: context,
-	        builder: (dialogContext) {
-	          return StatefulBuilder(
-	            builder: (context, setDialogState) => _MomentsDialogSurface(
-	              isDarkMode: widget.isDarkMode,
-	              accent: StudyUi.pathCyan,
-	              icon: Icons.location_on_rounded,
-	              title: '手动地点记录',
-	              child: Column(
-	                mainAxisSize: MainAxisSize.min,
-	                children: [
-	                  TextField(
-	                    controller: titleController,
-	                    autofocus: true,
-	                    style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
-	                    decoration: _momentInputDecoration(
-	                      labelText: '学习地点',
-	                      hintText: '图书馆三楼 / 信息楼自习室',
-	                    ),
-	                    onSubmitted: (_) => _popLocationDraft(
-	                      dialogContext,
-	                      titleController,
-	                      cityController,
-	                      shareToGroup,
-	                      selectedGroupId,
-	                    ),
-	                  ),
-	                  const SizedBox(height: 12),
-	                  TextField(
-	                    controller: cityController,
-	                    style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
-	                    decoration: _momentInputDecoration(
-	                      labelText: '校区或备注',
-	                      hintText: '可选，如主校区 / 靠窗座位',
-	                    ),
-	                  ),
-	                  if (_groups.isNotEmpty) ...[
-	                    const SizedBox(height: 12),
-	                    _MomentGroupCheckTile(
+      return await showDialog<_LocationCheckInDraft>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) => _MomentsDialogSurface(
+              isDarkMode: widget.isDarkMode,
+              accent: StudyUi.pathCyan,
+              icon: Icons.location_on_rounded,
+              title: '手动地点记录',
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleController,
+                    autofocus: true,
+                    style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+                    decoration: _momentInputDecoration(
+                      labelText: '学习地点',
+                      hintText: '图书馆三楼 / 信息楼自习室',
+                    ),
+                    onSubmitted: (_) => _popLocationDraft(
+                      dialogContext,
+                      titleController,
+                      cityController,
+                      shareToGroup,
+                      selectedGroupId,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: cityController,
+                    style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+                    decoration: _momentInputDecoration(
+                      labelText: '校区或备注',
+                      hintText: '可选，如主校区 / 靠窗座位',
+                    ),
+                  ),
+                  if (_groups.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _MomentGroupCheckTile(
                       title: '同步到小组',
-	                      subtitle: shareToGroup
-	                          ? '这条地点记录会进入小组学迹'
-	                          : '默认保存为私密学习记录',
-	                      selected: shareToGroup,
-	                      accent: StudyUi.pathCyan,
-	                      isDarkMode: widget.isDarkMode,
-	                      onTap: () => setDialogState(
-	                        () => shareToGroup = !shareToGroup,
-	                      ),
-	                    ),
+                      subtitle: shareToGroup ? '这条地点记录会进入小组学迹' : '默认保存为私密学习记录',
+                      selected: shareToGroup,
+                      accent: StudyUi.pathCyan,
+                      isDarkMode: widget.isDarkMode,
+                      onTap: () => setDialogState(
+                        () => shareToGroup = !shareToGroup,
+                      ),
+                    ),
                     if (shareToGroup) ...[
                       const SizedBox(height: 8),
                       ..._groups.map(
@@ -1312,39 +1404,39 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                         ),
                       ),
                     ],
-	                  ],
-	                  const SizedBox(height: 16),
-	                  Row(
-	                    children: [
-	                      _MomentActionPill(
-	                        icon: Icons.close_rounded,
-	                        label: '取消',
-	                        accent: StudyUi.muted(widget.isDarkMode),
-	                        isDarkMode: widget.isDarkMode,
-	                        onPressed: () => Navigator.of(dialogContext).pop(),
-	                      ),
-	                      const Spacer(),
-	                      _MomentActionPill(
-	                        icon: Icons.check_rounded,
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      _MomentActionPill(
+                        icon: Icons.close_rounded,
+                        label: '取消',
+                        accent: StudyUi.muted(widget.isDarkMode),
+                        isDarkMode: widget.isDarkMode,
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                      ),
+                      const Spacer(),
+                      _MomentActionPill(
+                        icon: Icons.check_rounded,
                         label: shareToGroup ? '保存并同步' : '保存',
-	                        accent: StudyUi.pathCyan,
-	                        isDarkMode: widget.isDarkMode,
-	                        isFilled: true,
-	                        onPressed: () => _popLocationDraft(
-	                          dialogContext,
-	                          titleController,
-	                          cityController,
-	                          shareToGroup,
-	                          selectedGroupId,
-	                        ),
-	                      ),
-	                    ],
-	                  ),
-	                ],
-	              ),
-	            ),
-	          );
-	        },
+                        accent: StudyUi.pathCyan,
+                        isDarkMode: widget.isDarkMode,
+                        isFilled: true,
+                        onPressed: () => _popLocationDraft(
+                          dialogContext,
+                          titleController,
+                          cityController,
+                          shareToGroup,
+                          selectedGroupId,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
     } finally {
       titleController.dispose();
@@ -1380,7 +1472,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   Future<bool> _publishMoment() async {
     final content = _contentController.text.trim();
     if (content.isEmpty && _imagePaths.isEmpty) {
-      _showTip('写点学习收获，或至少添加一张图片');
+      _showTip('写点动态内容，或至少上传一张图片');
       return false;
     }
     if (_visibility != LearningMomentVisibility.private &&
@@ -1404,18 +1496,18 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     }
     final confirmed = await _confirmShareScope(
       title: '确认可见范围',
-      targetLabel: content.isEmpty ? '学习图片记录' : _trimConfirmText(content),
+      targetLabel: content.isEmpty ? '图片动态' : _trimConfirmText(content),
       visibility: _visibility,
       allowedGroupIds: _selectedAllowedGroupIds,
       deniedGroupIds: _selectedDeniedGroupIds,
       confirmText:
-          _visibility == LearningMomentVisibility.private ? '保存' : '保存到小组',
+          _visibility == LearningMomentVisibility.private ? '发布' : '发布到小组',
     );
     if (!confirmed || !mounted) return false;
     setState(() => _isPosting = true);
     final publishedVisibility = _visibility;
     try {
-      final text = content.isEmpty ? '记录了一组学习图片' : content;
+      final text = content.isEmpty ? '发布了一组学习图片' : content;
       if (widget.controller.isLoggedIn) {
         final moment = await widget.controller.learningMomentService.create(
           content: text,
@@ -1424,6 +1516,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
           visibility: _visibility,
           allowedGroupIds: List<String>.from(_selectedAllowedGroupIds),
           deniedGroupIds: List<String>.from(_selectedDeniedGroupIds),
+          sourceType: _userPostMomentSourceType,
         );
         _upsertCloudMoment(moment);
       } else {
@@ -1432,6 +1525,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
           courseName: _selectedCourse,
           imagePaths: List<String>.from(_imagePaths),
           visibility: LearningMomentVisibility.private,
+          sourceType: _userPostMomentSourceType,
         );
       }
       if (!mounted) return false;
@@ -1443,13 +1537,14 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
         _selectedAllowedGroupIds.clear();
         _selectedDeniedGroupIds.clear();
         _visibility = LearningMomentVisibility.private;
+        _feedFilter = _MomentFeedFilter.dynamics;
       });
       _showTip(publishedVisibility == LearningMomentVisibility.private
-          ? '已保存私密学迹，可在时间线回看，也可整理成学习回顾'
-          : '已保存到小组学迹，可一起回看，也可整理成学习回顾');
+          ? '已发布私密动态，可在动态里回看'
+          : '已发布到小组动态，可一起回看');
       return true;
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '学习记录保存失败，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '动态发布失败，请稍后重试'));
       return false;
     } finally {
       if (mounted) setState(() => _isPosting = false);
@@ -1472,9 +1567,10 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
   }
 
   void _useEvidencePackage(_EvidencePackage package) {
-    final validCourse = widget.controller.courseNames.contains(package.courseName)
-        ? package.courseName
-        : '';
+    final validCourse =
+        widget.controller.courseNames.contains(package.courseName)
+            ? package.courseName
+            : '';
     setState(() {
       _selectedCourse = validCourse;
       _contentController.text =
@@ -1486,6 +1582,16 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
 
   Future<void> _deleteMoment(String momentId) async {
     try {
+      final allMoments = [
+        ..._cloudMoments,
+        ...widget.controller.learningMoments,
+      ];
+      final target = allMoments
+          .where((moment) => moment.id == momentId)
+          .cast<LearningMoment?>()
+          .firstWhere((moment) => moment != null, orElse: () => null);
+      final typeLabel =
+          target != null && _isUserPublishedMoment(target) ? '动态' : '学迹';
       if (widget.controller.isLoggedIn && !_isLocalOnlyMomentId(momentId)) {
         LearningMoment? cloudMoment;
         for (final moment in _cloudMoments) {
@@ -1513,15 +1619,15 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
       } else {
         await widget.controller.deleteLearningMoment(momentId);
       }
-      _showTip('已删除学迹');
+      _showTip('已删除$typeLabel');
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '学迹删除失败，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '删除失败，请稍后重试'));
     }
   }
 
   Future<void> _toggleMomentLike(LearningMoment moment) async {
     if (!widget.controller.isLoggedIn) {
-      _showTip('登录后可标记有帮助');
+      _showTip('登录后可点赞');
       return;
     }
     try {
@@ -1536,62 +1642,62 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
 
   Future<void> _commentMoment(LearningMoment moment) async {
     if (!widget.controller.isLoggedIn) {
-      _showTip('登录后可留下回看备注');
+      _showTip('登录后可评论');
       return;
     }
     final controller = TextEditingController();
-	    try {
-	      final text = await showDialog<String>(
-	        context: context,
-	        builder: (dialogContext) => _MomentsDialogSurface(
-	          isDarkMode: widget.isDarkMode,
-	          accent: widget.controller.primaryColor,
-	          icon: Icons.mode_comment_rounded,
-	          title: '写回看备注',
-	          child: Column(
-	            mainAxisSize: MainAxisSize.min,
-	            children: [
-	              TextField(
-	                controller: controller,
-	                autofocus: true,
-	                maxLength: 500,
-	                minLines: 2,
-	                maxLines: 4,
-	                style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
-	                decoration: _momentInputDecoration(hintText: '留下这次回看的想法...'),
-	              ),
-	              const SizedBox(height: 8),
-	              Row(
-	                children: [
-	                  _MomentActionPill(
-	                    icon: Icons.close_rounded,
-	                    label: '取消',
-	                    accent: StudyUi.muted(widget.isDarkMode),
-	                    isDarkMode: widget.isDarkMode,
-	                    onPressed: () => Navigator.of(dialogContext).pop(),
-	                  ),
-	                  const Spacer(),
-	                  _MomentActionPill(
-	                    icon: Icons.send_rounded,
-	                    label: '发送',
-	                    accent: widget.controller.primaryColor,
-	                    isDarkMode: widget.isDarkMode,
-	                    isFilled: true,
-	                    onPressed: () => Navigator.of(dialogContext)
-	                        .pop(controller.text.trim()),
-	                  ),
-	                ],
-	              ),
-	            ],
-	          ),
-	        ),
-	      );
+    try {
+      final text = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => _MomentsDialogSurface(
+          isDarkMode: widget.isDarkMode,
+          accent: widget.controller.primaryColor,
+          icon: Icons.mode_comment_rounded,
+          title: '写评论',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 500,
+                minLines: 2,
+                maxLines: 4,
+                style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+                decoration: _momentInputDecoration(hintText: '留下你的评论...'),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _MomentActionPill(
+                    icon: Icons.close_rounded,
+                    label: '取消',
+                    accent: StudyUi.muted(widget.isDarkMode),
+                    isDarkMode: widget.isDarkMode,
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                  const Spacer(),
+                  _MomentActionPill(
+                    icon: Icons.send_rounded,
+                    label: '发送',
+                    accent: widget.controller.primaryColor,
+                    isDarkMode: widget.isDarkMode,
+                    isFilled: true,
+                    onPressed: () =>
+                        Navigator.of(dialogContext).pop(controller.text.trim()),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
       if (text == null || text.isEmpty) return;
-      final updated =
-          await widget.controller.learningMomentService.comment(moment.id, text);
+      final updated = await widget.controller.learningMomentService
+          .comment(moment.id, text);
       _upsertCloudMoment(updated);
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '回看备注暂时没有保存成功，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '评论暂时没有保存成功，请稍后重试'));
     } finally {
       controller.dispose();
     }
@@ -1607,7 +1713,7 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
           .deleteComment(moment.id, comment.id);
       _upsertCloudMoment(updated);
     } catch (error) {
-      _showTip(_friendlyCloudError(error, '回看备注暂时没有删除成功，请稍后重试'));
+      _showTip(_friendlyCloudError(error, '评论暂时没有删除成功，请稍后重试'));
     }
   }
 
@@ -1632,7 +1738,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     );
     if (!confirmed) return;
     try {
-      final updated = await widget.controller.learningMomentService.updateVisibility(
+      final updated =
+          await widget.controller.learningMomentService.updateVisibility(
         momentId: moment.id,
         visibility: result.visibility,
         allowedGroupIds: result.allowedGroupIds,
@@ -1678,93 +1785,93 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
     );
     final note = _visibilityScopeNote(visibility);
     final icon = _visibilityScopeIcon(visibility);
-	    final confirmed = await showDialog<bool>(
-	      context: context,
-	      builder: (dialogContext) => _MomentsDialogSurface(
-	        isDarkMode: widget.isDarkMode,
-	        accent: widget.controller.primaryColor,
-	        icon: icon,
-	        title: title,
-	        child: Column(
-	          mainAxisSize: MainAxisSize.min,
-	          crossAxisAlignment: CrossAxisAlignment.start,
-	          children: [
-	            Text(
-	              targetLabel.isEmpty ? '这条学习内容' : targetLabel,
-	              maxLines: 2,
-	              overflow: TextOverflow.ellipsis,
-	              style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
-	            ),
-	            const SizedBox(height: 14),
-	            Container(
-	              padding: const EdgeInsets.all(12),
-	              decoration: BoxDecoration(
-	                color: StudyUi.surfaceAlt(widget.isDarkMode),
-	                borderRadius: BorderRadius.circular(16),
-	                border: Border.all(color: StudyUi.border(widget.isDarkMode)),
-	              ),
-	              child: Row(
-	                crossAxisAlignment: CrossAxisAlignment.start,
-	                children: [
-	                  StudyGlassIconNode(
-	                    icon: icon,
-	                    accent: widget.controller.primaryColor,
-	                    size: 34,
-	                    iconSize: 16,
-	                    isDarkMode: widget.isDarkMode,
-	                  ),
-	                  const SizedBox(width: 10),
-	                  Expanded(
-	                    child: Column(
-	                      crossAxisAlignment: CrossAxisAlignment.start,
-	                      children: [
-	                        Text(
-	                          scopeText,
-	                          style: TextStyle(
-	                            color: StudyUi.title(widget.isDarkMode),
-	                            fontWeight: AppTypography.title,
-	                          ),
-	                        ),
-	                        const SizedBox(height: 4),
-	                        Text(
-	                          note,
-	                          style: TextStyle(
-	                            color: StudyUi.body(widget.isDarkMode),
-	                            fontSize: 12,
-	                            height: 1.35,
-	                          ),
-	                        ),
-	                      ],
-	                    ),
-	                  ),
-	                ],
-	              ),
-	            ),
-	            const SizedBox(height: 16),
-	            Row(
-	              children: [
-	                _MomentActionPill(
-	                  icon: Icons.close_rounded,
-	                  label: '取消',
-	                  accent: StudyUi.muted(widget.isDarkMode),
-	                  isDarkMode: widget.isDarkMode,
-	                  onPressed: () => Navigator.of(dialogContext).pop(false),
-	                ),
-	                const Spacer(),
-	                _MomentActionPill(
-	                  icon: Icons.check_rounded,
-	                  label: confirmText,
-	                  accent: widget.controller.primaryColor,
-	                  isDarkMode: widget.isDarkMode,
-	                  isFilled: true,
-	                  onPressed: () => Navigator.of(dialogContext).pop(true),
-	                ),
-	              ],
-	            ),
-	          ],
-	        ),
-	      ),
-	    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _MomentsDialogSurface(
+        isDarkMode: widget.isDarkMode,
+        accent: widget.controller.primaryColor,
+        icon: icon,
+        title: title,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              targetLabel.isEmpty ? '这条学习内容' : targetLabel,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: StudyUi.title(widget.isDarkMode)),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: StudyUi.surfaceAlt(widget.isDarkMode),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: StudyUi.border(widget.isDarkMode)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  StudyGlassIconNode(
+                    icon: icon,
+                    accent: widget.controller.primaryColor,
+                    size: 34,
+                    iconSize: 16,
+                    isDarkMode: widget.isDarkMode,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          scopeText,
+                          style: TextStyle(
+                            color: StudyUi.title(widget.isDarkMode),
+                            fontWeight: AppTypography.title,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          note,
+                          style: TextStyle(
+                            color: StudyUi.body(widget.isDarkMode),
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _MomentActionPill(
+                  icon: Icons.close_rounded,
+                  label: '取消',
+                  accent: StudyUi.muted(widget.isDarkMode),
+                  isDarkMode: widget.isDarkMode,
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                const Spacer(),
+                _MomentActionPill(
+                  icon: Icons.check_rounded,
+                  label: confirmText,
+                  accent: widget.controller.primaryColor,
+                  isDarkMode: widget.isDarkMode,
+                  isFilled: true,
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
     return confirmed == true;
   }
 
@@ -1839,7 +1946,8 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                   decoration: BoxDecoration(
                     color: StudyUi.surfaceAlt(widget.isDarkMode),
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: StudyUi.border(widget.isDarkMode)),
+                    border:
+                        Border.all(color: StudyUi.border(widget.isDarkMode)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2009,12 +2117,14 @@ class _LearningMomentsPageState extends State<LearningMomentsPage> {
                     isDarkMode: widget.isDarkMode,
                     isFilled: true,
                     onPressed: () {
-                      if (visibility == LearningMomentVisibility.includeGroups &&
+                      if (visibility ==
+                              LearningMomentVisibility.includeGroups &&
                           allowed.isEmpty) {
                         _showTip('请选择允许查看的小组');
                         return;
                       }
-                      if (visibility == LearningMomentVisibility.excludeGroups &&
+                      if (visibility ==
+                              LearningMomentVisibility.excludeGroups &&
                           denied.isEmpty) {
                         _showTip('请选择不允许查看的小组');
                         return;
@@ -2065,24 +2175,18 @@ class _HeaderPanel extends StatelessWidget {
   const _HeaderPanel({
     required this.isDarkMode,
     required this.eventCount,
-    required this.momentCount,
-    required this.packageCount,
+    required this.dynamicCount,
+    required this.traceCount,
     required this.learningLoopCount,
     required this.latestLearningLoopLabel,
-    required this.onRecord,
-    required this.onReview,
-    required this.onRefresh,
   });
 
   final bool isDarkMode;
   final int eventCount;
-  final int momentCount;
-  final int packageCount;
+  final int dynamicCount;
+  final int traceCount;
   final int learningLoopCount;
   final String? latestLearningLoopLabel;
-  final VoidCallback onRecord;
-  final VoidCallback onReview;
-  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -2091,102 +2195,13 @@ class _HeaderPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              StudyGlassIconNode(
-                icon: Icons.dynamic_feed_rounded,
-                accent: StudyUi.pathViolet,
-                size: 42,
-                iconSize: 20,
-                isDarkMode: isDarkMode,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '学迹',
-                      style: TextStyle(
-                        color: StudyUi.title(isDarkMode),
-                        fontSize: 24,
-                        fontWeight: AppTypography.hero,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _summaryText,
-                      style: TextStyle(
-                        color: StudyUi.body(isDarkMode),
-                        fontSize: 13,
-                        height: 1.42,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MomentHeaderChip(
-                label: '记录 $eventCount',
-                icon: Icons.edit_note_rounded,
-                color: StudyUi.pathBlue,
-                isDarkMode: isDarkMode,
-              ),
-              _MomentHeaderChip(
-                label: '学迹 $momentCount',
-                icon: Icons.dynamic_feed_rounded,
-                color: StudyUi.pathMint,
-                isDarkMode: isDarkMode,
-              ),
-              _MomentHeaderChip(
-                label: '回顾 $packageCount',
-                icon: Icons.auto_stories_rounded,
-                color: StudyUi.pathViolet,
-                isDarkMode: isDarkMode,
-              ),
-              if (learningLoopCount > 0)
-                _MomentHeaderChip(
-                  label: '整理 $learningLoopCount',
-                  icon: Icons.auto_awesome_rounded,
-                  color: StudyUi.secondary,
-                  isDarkMode: isDarkMode,
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MomentActionPill(
-                icon: Icons.add_rounded,
-                label: '记录学迹',
-                accent: StudyUi.pathViolet,
-                isDarkMode: isDarkMode,
-                onPressed: onRecord,
-              ),
-              _MomentActionPill(
-                icon: Icons.auto_stories_rounded,
-                label: '整理回顾',
-                accent: StudyUi.pathBlue,
-                isDarkMode: isDarkMode,
-                onPressed: onReview,
-              ),
-              _MomentActionPill(
-                icon: Icons.refresh_rounded,
-                label: '刷新',
-                accent: StudyUi.pathMint,
-                isDarkMode: isDarkMode,
-                onPressed: onRefresh,
-              ),
-            ],
+          Text(
+            _summaryText,
+            style: TextStyle(
+              color: StudyUi.body(isDarkMode),
+              fontSize: 13,
+              height: 1.42,
+            ),
           ),
         ],
       ),
@@ -2201,52 +2216,128 @@ class _HeaderPanel extends StatelessWidget {
       }
       return '最近已有 $learningLoopCount 条学习整理沉淀进学迹，适合顺着下一步继续学。';
     }
-    if (momentCount == 0 && eventCount == 0) {
-      return '先记录一条学习瞬间，后面再慢慢整理回顾。';
+    if (dynamicCount == 0 && traceCount == 0 && eventCount == 0) {
+      return '先发布一条学习动态，后面再慢慢沉淀成学迹。';
     }
-    if (momentCount == 0) {
-      return '已有学习记录，可以挑一条写成学迹。';
+    if (dynamicCount == 0) {
+      return '已有学习记录，可以先发布一条自己的学习动态。';
     }
-    return '最近有 $momentCount 条学迹，适合回看学习过程。';
+    return '最近有 $dynamicCount 条动态、$traceCount 条学迹，适合回看学习过程。';
   }
 }
 
-class _MomentHeaderChip extends StatelessWidget {
-  const _MomentHeaderChip({
-    required this.label,
-    required this.icon,
-    required this.color,
+class _MomentFeedFilterBar extends StatelessWidget {
+  const _MomentFeedFilterBar({
     required this.isDarkMode,
+    required this.accent,
+    required this.value,
+    required this.dynamicCount,
+    required this.traceCount,
+    required this.onChanged,
   });
 
-  final String label;
-  final IconData icon;
-  final Color color;
   final bool isDarkMode;
+  final Color accent;
+  final _MomentFeedFilter value;
+  final int dynamicCount;
+  final int traceCount;
+  final ValueChanged<_MomentFeedFilter> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final total = dynamicCount + traceCount;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: isDarkMode ? 0.05 : 0.54),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.16)),
+        color: StudyUi.surfaceAlt(isDarkMode).withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: StudyUi.border(isDarkMode)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 14),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: StudyUi.body(isDarkMode),
-              fontSize: 12,
-              fontWeight: AppTypography.emphasis,
-            ),
+          _MomentFeedFilterChip(
+            label: '全部',
+            count: total,
+            selected: value == _MomentFeedFilter.all,
+            accent: accent,
+            isDarkMode: isDarkMode,
+            onTap: () => onChanged(_MomentFeedFilter.all),
+          ),
+          _MomentFeedFilterChip(
+            label: '动态',
+            count: dynamicCount,
+            selected: value == _MomentFeedFilter.dynamics,
+            accent: StudyUi.pathCyan,
+            isDarkMode: isDarkMode,
+            onTap: () => onChanged(_MomentFeedFilter.dynamics),
+          ),
+          _MomentFeedFilterChip(
+            label: '学迹',
+            count: traceCount,
+            selected: value == _MomentFeedFilter.traces,
+            accent: StudyUi.pathMint,
+            isDarkMode: isDarkMode,
+            onTap: () => onChanged(_MomentFeedFilter.traces),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MomentFeedFilterChip extends StatelessWidget {
+  const _MomentFeedFilterChip({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = selected ? Colors.white : StudyUi.body(isDarkMode);
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.22),
+                      blurRadius: 14,
+                      offset: const Offset(0, 7),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            '$label $count',
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 12,
+              fontWeight:
+                  selected ? AppTypography.title : AppTypography.emphasis,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2260,7 +2351,8 @@ class _PostEntryCard extends StatelessWidget {
     required this.bodyColor,
     required this.avatarImagePath,
     required this.avatarEmoji,
-    required this.onTap,
+    required this.onPublish,
+    required this.onPickImages,
   });
 
   final bool isDarkMode;
@@ -2269,107 +2361,91 @@ class _PostEntryCard extends StatelessWidget {
   final Color bodyColor;
   final String? avatarImagePath;
   final String avatarEmoji;
-  final VoidCallback onTap;
+  final VoidCallback onPublish;
+  final VoidCallback onPickImages;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: StudyUi.surface(isDarkMode),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: StudyUi.border(isDarkMode),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: StudyUi.surface(isDarkMode),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: StudyUi.border(isDarkMode),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: isDarkMode ? 0.08 : 0.12),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: accent.withValues(alpha: isDarkMode ? 0.08 : 0.12),
-              blurRadius: 22,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                StudyUserAvatar(
-                  avatarImagePath: avatarImagePath,
-                  avatarEmoji: avatarEmoji,
-                  accent: accent,
-                  size: 44,
-                  isDarkMode: isDarkMode,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '记录这次学习...',
-                        style: TextStyle(
-                          color: titleColor,
-                          fontSize: 14,
-                          fontWeight: AppTypography.emphasis,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '现场、错题、板书或阶段整理都可以留下',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: bodyColor, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                _MomentActionPill(
-                  icon: Icons.edit_rounded,
-                  label: '保存记录',
-                  accent: accent,
-                  isDarkMode: isDarkMode,
-                  onPressed: onTap,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: const [
-                _MomentToolChip(icon: Icons.menu_book_rounded),
-                SizedBox(width: 10),
-                _MomentToolChip(icon: Icons.image_rounded),
-                SizedBox(width: 10),
-                _MomentToolChip(icon: Icons.edit_note_rounded),
-              ],
-            ),
-          ],
-        ),
+        ],
       ),
-    );
-  }
-}
-
-class _MomentToolChip extends StatelessWidget {
-  const _MomentToolChip({required this.icon});
-
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return Expanded(
-      child: Container(
-        height: 42,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: StudyUi.surfaceAlt(dark).withValues(alpha: dark ? 0.72 : 0.86),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: StudyUi.border(dark)),
-        ),
-        child: Icon(icon, color: StudyUi.muted(dark), size: 20),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              StudyUserAvatar(
+                avatarImagePath: avatarImagePath,
+                avatarEmoji: avatarEmoji,
+                accent: accent,
+                size: 44,
+                isDarkMode: isDarkMode,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '发布动态',
+                      style: TextStyle(
+                        color: titleColor,
+                        fontSize: 14,
+                        fontWeight: AppTypography.emphasis,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '文字、图片、错题或板书都可以发成动态',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: bodyColor, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _MomentActionPill(
+                  icon: Icons.edit_rounded,
+                  label: '发布动态',
+                  accent: accent,
+                  isDarkMode: isDarkMode,
+                  isFilled: true,
+                  expand: true,
+                  onPressed: onPublish,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MomentActionPill(
+                  icon: Icons.add_photo_alternate_rounded,
+                  label: '上传图片',
+                  accent: StudyUi.pathCyan,
+                  isDarkMode: isDarkMode,
+                  expand: true,
+                  onPressed: onPickImages,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2432,7 +2508,8 @@ class _CapabilityBadgePanel extends StatelessWidget {
               Expanded(
                 child: Text(
                   '根据最近记录整理你用过的学习方式，方便下次接着尝试。',
-                  style: TextStyle(color: bodyColor, fontSize: 12, height: 1.35),
+                  style:
+                      TextStyle(color: bodyColor, fontSize: 12, height: 1.35),
                 ),
               ),
               BadgePill(
@@ -2536,7 +2613,8 @@ class _CapabilityBadgeTile extends StatelessWidget {
                   width: 58,
                   height: 58,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: isDarkMode ? 0.08 : 0.72),
+                    color: Colors.white
+                        .withValues(alpha: isDarkMode ? 0.08 : 0.72),
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: Padding(
@@ -2592,7 +2670,8 @@ class _CapabilityBadgeTile extends StatelessWidget {
                     badge.source.isEmpty ? badge.nextStep : badge.source,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: bodyColor, fontSize: 12, height: 1.3),
+                    style:
+                        TextStyle(color: bodyColor, fontSize: 12, height: 1.3),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -2712,7 +2791,8 @@ class _CampusMapPanel extends StatelessWidget {
                       width: 220,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: accent.withValues(alpha: isDarkMode ? 0.14 : 0.08),
+                        color:
+                            accent.withValues(alpha: isDarkMode ? 0.14 : 0.08),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: accent.withValues(alpha: 0.14),
@@ -2763,7 +2843,8 @@ class _CampusMapPanel extends StatelessWidget {
                               const Spacer(),
                               Text(
                                 _dateLabel(location.createdAt),
-                                style: TextStyle(color: bodyColor, fontSize: 11),
+                                style:
+                                    TextStyle(color: bodyColor, fontSize: 11),
                               ),
                             ],
                           ),
@@ -3066,7 +3147,7 @@ class _CourseSelectorField extends StatelessWidget {
         accent: accent,
         icon: Icons.school_rounded,
         title: '关联课程',
-        subtitle: '选择这条学迹属于哪门课，或保持不关联。',
+        subtitle: '选择这条动态属于哪门课，或保持不关联。',
         child: Column(
           children: [
             _MomentGroupCheckTile(
@@ -3096,7 +3177,7 @@ class _CourseSelectorField extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '还没有课程记录，先保存为通用学迹也没问题。',
+                  '还没有课程记录，先发布为通用动态也没问题。',
                   style: TextStyle(color: bodyColor, fontSize: 12),
                 ),
               ),
@@ -3368,7 +3449,7 @@ class _ComposerCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '记录学迹',
+                        '发布动态',
                         style: TextStyle(
                           color: titleColor,
                           fontSize: 18,
@@ -3377,7 +3458,7 @@ class _ComposerCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '记录学习现场、错题、板书或阶段整理。',
+                        '把学习现场、错题、板书或阶段想法发出来。',
                         style: TextStyle(color: bodyColor, fontSize: 12),
                       ),
                     ],
@@ -3399,12 +3480,22 @@ class _ComposerCard extends StatelessWidget {
                 maxLines: 8,
                 style: TextStyle(color: titleColor, fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: '今天学了什么？拍到的板书、课件、错题也可以一起保存。',
+                  hintText: '想发布什么动态？可以写学习现场、错题、板书或阶段想法。',
                   hintStyle: TextStyle(color: bodyColor),
                   border: InputBorder.none,
                   isCollapsed: true,
                 ),
               ),
+            ),
+            const SizedBox(height: 10),
+            _MomentActionPill(
+              icon: Icons.add_photo_alternate_rounded,
+              label:
+                  imagePaths.isEmpty ? '上传图片' : '继续添加图片 ${imagePaths.length}/9',
+              accent: StudyUi.pathCyan,
+              isDarkMode: isDarkMode,
+              expand: true,
+              onPressed: imagePaths.length >= 9 ? null : () => onPickImages(),
             ),
             if (imagePaths.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -3443,23 +3534,14 @@ class _ComposerCard extends StatelessWidget {
             const SizedBox(height: 18),
             Row(
               children: [
-                _MomentToolbarAction(
-                  tooltip: '添加图片',
-                  icon: Icons.add_photo_alternate_rounded,
-                  accent: accent,
-                  isDarkMode: isDarkMode,
-                  onPressed:
-                      imagePaths.length >= 9 ? null : () => onPickImages(),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: _MomentActionPill(
                     icon: Icons.send_rounded,
                     onPressed: isPosting ? null : () => onPost(),
                     label: Text(
                       visibility == LearningMomentVisibility.private
-                          ? '保存私密学迹'
-                          : '保存到小组',
+                          ? '发布私密动态'
+                          : '发布到小组',
                     ),
                     accent: accent,
                     isDarkMode: isDarkMode,
@@ -3475,7 +3557,6 @@ class _ComposerCard extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _EvidencePackagePanel extends StatelessWidget {
@@ -3507,7 +3588,9 @@ class _EvidencePackagePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (packages.isEmpty && cloudPackages.isEmpty) return const SizedBox.shrink();
+    if (packages.isEmpty && cloudPackages.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return StudyCard(
       padding: const EdgeInsets.all(16),
       radius: 22,
@@ -3686,8 +3769,9 @@ class _FeaturedWallPanel extends StatelessWidget {
                 accent: accent,
                 icon: Icons.push_pin_rounded,
                 title: package.title,
-                subtitle:
-                    package.description.isEmpty ? '常看学习回顾' : package.description,
+                subtitle: package.description.isEmpty
+                    ? '常看学习回顾'
+                    : package.description,
               ),
             )
           else
@@ -3923,6 +4007,9 @@ class _MomentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sourceLabel = _momentSourceLabel(moment);
+    final typeLabel = _isUserPublishedMoment(moment) ? '动态' : '学迹';
+    final typeAccent =
+        _isUserPublishedMoment(moment) ? StudyUi.pathCyan : StudyUi.pathMint;
     final learningLoopContent = _LearningLoopMomentContent.tryParse(moment);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -3986,7 +4073,7 @@ class _MomentCard extends StatelessWidget {
                     ),
                     if (onEditVisibility != null || onDelete != null)
                       StudyPopupMenuButton<String>(
-                        tooltip: '学迹操作',
+                        tooltip: '$typeLabel操作',
                         onSelected: (value) {
                           if (value == 'visibility') onEditVisibility?.call();
                           if (value == 'delete') onDelete?.call();
@@ -3998,9 +4085,9 @@ class _MomentCard extends StatelessWidget {
                               child: Text('修改可见范围'),
                             ),
                           if (onDelete != null)
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'delete',
-                              child: Text('删除学迹'),
+                              child: Text('删除$typeLabel'),
                             ),
                         ],
                         child: StudyGlassIconNode(
@@ -4022,15 +4109,26 @@ class _MomentCard extends StatelessWidget {
                       style: TextStyle(color: bodyColor, fontSize: 12),
                     ),
                   ),
-                if (sourceLabel.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _MiniTag(
-                      label: sourceLabel,
-                      accent: accent,
-                      isDarkMode: isDarkMode,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _MiniTag(
+                        label: typeLabel,
+                        accent: typeAccent,
+                        isDarkMode: isDarkMode,
+                      ),
+                      if (sourceLabel.isNotEmpty)
+                        _MiniTag(
+                          label: sourceLabel,
+                          accent: accent,
+                          isDarkMode: isDarkMode,
+                        ),
+                    ],
                   ),
+                ),
                 if (learningLoopContent != null)
                   _LearningLoopMomentBody(
                     content: learningLoopContent,
@@ -4063,11 +4161,11 @@ class _MomentCard extends StatelessWidget {
                             : Icons.favorite_border_rounded,
                         size: 18,
                       ),
-                      label: moment.likeCount == 0
-                          ? '有帮助'
-                          : '${moment.likeCount}',
-                      accent:
-                          moment.likedByMe ? StudyUi.danger : StudyUi.pathViolet,
+                      label:
+                          moment.likeCount == 0 ? '点赞' : '${moment.likeCount}',
+                      accent: moment.likedByMe
+                          ? StudyUi.danger
+                          : StudyUi.pathViolet,
                       isDarkMode: isDarkMode,
                     ),
                     const SizedBox(width: 8),
@@ -4075,7 +4173,7 @@ class _MomentCard extends StatelessWidget {
                       onPressed: onComment,
                       icon: Icons.mode_comment_outlined,
                       label: moment.commentCount == 0
-                          ? '回看备注'
+                          ? '评论'
                           : '${moment.commentCount}',
                       accent: StudyUi.pathCyan,
                       isDarkMode: isDarkMode,
@@ -4389,16 +4487,12 @@ class _EmptyTimeline extends StatelessWidget {
     required this.accent,
     required this.bodyColor,
     this.message,
-    this.onRecord,
-    this.onReview,
   });
 
   final bool isDarkMode;
   final Color accent;
   final Color bodyColor;
   final String? message;
-  final VoidCallback? onRecord;
-  final VoidCallback? onReview;
 
   @override
   Widget build(BuildContext context) {
@@ -4418,31 +4512,9 @@ class _EmptyTimeline extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            message ?? '还没有学迹，先保存第一条学习现场，之后可整理成回顾和下一步',
+            message ?? '还没有内容，先发布第一条学习现场',
             textAlign: TextAlign.center,
             style: TextStyle(color: bodyColor, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MomentActionPill(
-                icon: Icons.edit_note_rounded,
-                label: '记录一条',
-                accent: accent,
-                isDarkMode: isDarkMode,
-                onPressed: onRecord,
-              ),
-              _MomentActionPill(
-                icon: Icons.auto_stories_rounded,
-                label: '整理回顾',
-                accent: StudyUi.pathBlue,
-                isDarkMode: isDarkMode,
-                onPressed: onReview,
-              ),
-            ],
           ),
         ],
       ),
@@ -4788,9 +4860,8 @@ class _MomentActionPill extends StatelessWidget {
           width: expand ? double.infinity : null,
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
           decoration: BoxDecoration(
-            color: isFilled
-                ? accent
-                : StudyUi.chipBackground(accent, isDarkMode),
+            color:
+                isFilled ? accent : StudyUi.chipBackground(accent, isDarkMode),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: isFilled

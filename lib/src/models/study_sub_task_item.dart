@@ -46,6 +46,7 @@ class StudySubTaskItem {
     String? note,
     DateTime? updatedAt,
     DateTime? completedAt,
+    bool clearCompletedAt = false,
   }) =>
       StudySubTaskItem(
         id: id,
@@ -56,8 +57,12 @@ class StudySubTaskItem {
         note: note ?? this.note,
         createdAt: createdAt,
         updatedAt: updatedAt ?? DateTime.now(),
-        completedAt: completedAt ??
-            (status == SubTaskStatus.completed ? DateTime.now() : this.completedAt),
+        completedAt: clearCompletedAt
+            ? null
+            : completedAt ??
+                (status == SubTaskStatus.completed
+                    ? DateTime.now()
+                    : this.completedAt),
       );
 
   Map<String, dynamic> toJson() => {

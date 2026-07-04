@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -14,16 +15,20 @@ import '../../services/group_service.dart';
 import '../../theme/app_theme.dart';
 import '../shared/app_assets.dart';
 import '../shared/common_widgets.dart';
+import '../shared/page_wrapper.dart';
+import 'leaderboard_page.dart';
 
 class StudyGroupPage extends StatefulWidget {
   const StudyGroupPage({
     super.key,
     required this.isDarkMode,
     required this.controller,
+    this.onOpenLeaderboard,
   });
 
   final bool isDarkMode;
   final AppDataController controller;
+  final VoidCallback? onOpenLeaderboard;
 
   @override
   State<StudyGroupPage> createState() => _StudyGroupPageState();
@@ -74,7 +79,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         GroupChallenge(
           id: 'review_challenge_lhopital',
           groupId: 'review_group_math',
-          title: '7 天洛必达条件小组回顾',
+          title: '7 天洛必达条件共学挑战',
           description: '每天保存学习记录或错题复盘，最后形成可回看的条件判断表。',
           participantCount: 5,
           evidenceCount: 18,
@@ -83,7 +88,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         GroupChallenge(
           id: 'review_challenge_algo_review',
           groupId: 'review_group_algo',
-          title: '算法图解小组回顾',
+          title: '算法图解共学挑战',
           description: '把本周算法学习整理成复盘、行动、专注、复习、回顾五步。',
           participantCount: 4,
           evidenceCount: 11,
@@ -91,7 +96,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         ),
       ];
       _challengeText =
-          '本周小组回顾：每天留下 1 个小学习动作，优先整理复盘、错题和闪卡记录，周末一起回看路径变化。';
+          '本周共学挑战：每天留下 1 个小学习动作，优先整理复盘、错题和闪卡记录，周末一起回看路径变化。';
       _isLoading = false;
       _error = null;
     });
@@ -266,7 +271,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: StudyPathMetricPill(
-                          label: '小组回顾',
+                          label: '共学挑战',
                           value: '${_challenges.length}',
                           icon: Icons.flag_rounded,
                           color: StudyUi.secondary,
@@ -306,6 +311,8 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             ),
             const SizedBox(height: 18),
             if (hasGroupAccess) ...[
+              _buildGroupFeaturePanel(titleColor, bodyColor, accent),
+              const SizedBox(height: 14),
               _buildChallengePanel(titleColor, bodyColor, accent),
               const SizedBox(height: 18),
             ],
@@ -339,6 +346,79 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     );
   }
 
+  Widget _buildGroupFeaturePanel(
+    Color titleColor,
+    Color bodyColor,
+    Color accent,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoColumns = constraints.maxWidth >= 430;
+        final tiles = [
+          _GroupFeatureTile(
+            title: '共学挑战',
+            subtitle: _groups.isEmpty
+                ? '先加入小组再开始'
+                : _challenges.isEmpty
+                    ? '创建 3-7 天小组目标'
+                    : '创建或查看 ${_challenges.length} 个挑战',
+            icon: Icons.flag_rounded,
+            accent: StudyUi.secondary,
+            isDarkMode: widget.isDarkMode,
+            onTap: _groups.isEmpty ? _showJoinGroupSheet : _generateChallenge,
+          ),
+          _GroupFeatureTile(
+            title: '小组排行榜',
+            subtitle: _groups.isEmpty ? '加入后查看同伴进度' : '按记录、回顾和挑战查看',
+            icon: Icons.auto_graph_rounded,
+            accent: StudyUi.pathWarm,
+            isDarkMode: widget.isDarkMode,
+            onTap: _openLeaderboard,
+          ),
+        ];
+        if (!twoColumns) {
+          return Column(
+            children: [
+              tiles[0],
+              const SizedBox(height: 10),
+              tiles[1],
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: tiles[0]),
+            const SizedBox(width: 10),
+            Expanded(child: tiles[1]),
+          ],
+        );
+      },
+    );
+  }
+
+  void _openLeaderboard() {
+    final open = widget.onOpenLeaderboard;
+    if (open != null) {
+      open();
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PageWithBackButton(
+          title: '小组排行榜',
+          isDarkMode: widget.isDarkMode,
+          titleIcon: Icons.auto_graph_rounded,
+          accent: StudyUi.pathWarm,
+          compactHeader: true,
+          child: LeaderboardPage(
+            isDarkMode: widget.isDarkMode,
+            controller: widget.controller,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildChallengePanel(
     Color titleColor,
     Color bodyColor,
@@ -364,7 +444,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '小组回顾',
+                      '共学挑战',
                       style: TextStyle(
                         color: titleColor,
                         fontSize: 16,
@@ -373,7 +453,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '把小组目标整理成每天能跟上的学习动作。',
+                      '把小组目标拆成每天能提交的学习动作。',
                       style: TextStyle(color: bodyColor, fontSize: 12),
                     ),
                   ],
@@ -397,7 +477,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             )
           else
             Text(
-              '会基于当前课程、任务和学习记录整理出 3-7 天计划；成员完成任务、番茄钟或学迹后进入组内近况与学习进度。',
+              '会基于当前课程、任务和学习记录整理出 3-7 天挑战；成员提交任务、番茄钟或学迹后进入挑战排行。',
               style: TextStyle(color: bodyColor, fontSize: 13, height: 1.45),
             ),
           if (_challenges.isNotEmpty) ...[
@@ -433,7 +513,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           _GroupActionPill(
             label: _groups.isEmpty
                 ? '先创建或加入小组'
-                : (_isGeneratingChallenge ? '整理中...' : '创建小组回顾'),
+                : (_isGeneratingChallenge ? '生成中...' : '创建共学挑战'),
             icon: _groups.isEmpty ? Icons.group_add_rounded : Icons.flag_rounded,
             accent: accent,
             isDarkMode: widget.isDarkMode,
@@ -490,7 +570,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
             runSpacing: 8,
             children: [
               _GroupActionPill(
-                label: '跟进计划',
+                label: '加入挑战',
                 icon: Icons.add_rounded,
                 accent: accent,
                 isDarkMode: widget.isDarkMode,
@@ -498,11 +578,19 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                 onPressed: () => _joinChallenge(challenge),
               ),
               _GroupActionPill(
-                label: '保存到回顾',
+                label: '提交记录',
                 icon: Icons.upload_rounded,
                 accent: accent,
                 isDarkMode: widget.isDarkMode,
                 onPressed: () => _submitLatestEvidence(challenge),
+              ),
+              _GroupActionPill(
+                label: '挑战排行',
+                icon: Icons.leaderboard_rounded,
+                accent: StudyUi.pathWarm,
+                isDarkMode: widget.isDarkMode,
+                filled: false,
+                onPressed: () => _showChallengeLeaderboard(challenge),
               ),
             ],
           ),
@@ -538,7 +626,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       String? coverImageUrl;
       try {
         final cover = await widget.controller.vivoCapabilityService.createCover(
-          prompt: '为学习小组回顾制作清晰、积极、适合回看的封面。回顾内容：${text.trim()}',
+          prompt: '为共学挑战制作清晰、积极、适合回看的封面。挑战内容：${text.trim()}',
           purpose: 'challenge_cover',
         );
         coverImageUrl = cover.imagesUrl.isNotEmpty
@@ -548,7 +636,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
           widget.controller.activityService
               .create(
                 type: 'imageGenerated',
-                title: cover.imagesUrl.isNotEmpty ? '小组计划封面已生成' : '小组计划封面整理中',
+                title: cover.imagesUrl.isNotEmpty ? '挑战封面已生成' : '挑战封面整理中',
                 summary: group.name,
                 groupId: group.id,
                 sourceType: 'group_challenge_cover',
@@ -566,7 +654,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       }
       final saved = await widget.controller.communityEvidenceService.createChallenge(
         groupId: group.id,
-        title: '${group.name} 小组回顾',
+        title: '${group.name} 共学挑战',
         description: text.trim(),
         planJson: {'draftText': text.trim(), 'durationDays': 7},
         scoringJson: const {
@@ -585,7 +673,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _challengeText = '7 天小组回顾：每天完成 1 个可完成行动，'
+        _challengeText = '7 天共学挑战：每天完成 1 个可完成行动，'
             '如保存学习日志、完成番茄钟、沉淀笔记或留下学迹；'
             '周末一起回看哪些方法有帮助、下一步从哪里继续。';
       });
@@ -599,16 +687,222 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
       await widget.controller.communityEvidenceService
           .joinChallenge(challenge.groupId, challenge.id);
       if (!mounted) return;
-      StudyToast.show(context, '已加入小组回顾');
+      StudyToast.show(context, '已加入共学挑战');
       await _loadGroups();
     } catch (_) {
       if (!mounted) return;
       await StudyToast.dialog(
         context,
-        title: '加入小组回顾失败',
+        title: '加入共学挑战失败',
         message: '请稍后重试。',
       );
     }
+  }
+
+  List<ChallengeLeaderboardEntry> _reviewChallengeLeaderboardFor(
+    GroupChallenge challenge,
+  ) {
+    return [
+      ChallengeLeaderboardEntry(
+        rank: 1,
+        userId: 'review_challenge_me',
+        username: '我',
+        points: math.max(challenge.evidenceCount ~/ 2, 4).toInt(),
+        progress: 68,
+        evidenceCount: math.max(challenge.evidenceCount ~/ 2, 4).toInt(),
+      ),
+      const ChallengeLeaderboardEntry(
+        rank: 2,
+        userId: 'review_challenge_lin',
+        username: '林同学',
+        points: 3,
+        progress: 52,
+        evidenceCount: 3,
+      ),
+      const ChallengeLeaderboardEntry(
+        rank: 3,
+        userId: 'review_challenge_chen',
+        username: '陈同学',
+        points: 2,
+        progress: 34,
+        evidenceCount: 2,
+      ),
+    ];
+  }
+
+  void _showChallengeLeaderboard(GroupChallenge challenge) {
+    var entries = UiReviewConfig.enabled
+        ? _reviewChallengeLeaderboardFor(challenge)
+        : <ChallengeLeaderboardEntry>[];
+    var isLoading = !UiReviewConfig.enabled;
+    String? error;
+    var didStartLoad = UiReviewConfig.enabled;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          if (!didStartLoad) {
+            didStartLoad = true;
+            widget.controller.communityEvidenceService
+                .challengeLeaderboard(challenge.groupId, challenge.id)
+                .then((value) {
+              if (!ctx.mounted) return;
+              setSheetState(() {
+                entries = value;
+                isLoading = false;
+                error = null;
+              });
+            }).catchError((_) {
+              if (!ctx.mounted) return;
+              setSheetState(() {
+                isLoading = false;
+                error = '挑战排行暂时加载失败';
+              });
+            });
+          }
+
+          final titleColor = StudyUi.title(widget.isDarkMode);
+          final bodyColor = StudyUi.body(widget.isDarkMode);
+          return DraggableScrollableSheet(
+            initialChildSize: 0.52,
+            maxChildSize: 0.82,
+            minChildSize: 0.34,
+            builder: (_, scrollCtrl) => _groupSheetSurface(
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 40),
+                children: [
+                  _groupSheetHandle(),
+                  const SizedBox(height: 18),
+                  _groupSheetTitle(
+                    title: '挑战排行',
+                    subtitle: challenge.title,
+                    icon: Icons.leaderboard_rounded,
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '按成员提交到这个共学挑战的学习记录排序。',
+                    style: TextStyle(
+                      color: bodyColor,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (isLoading)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(28),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else if (error != null)
+                    Text(error!, style: TextStyle(color: bodyColor))
+                  else if (entries.isEmpty)
+                    Text(
+                      '还没有成员提交记录，先提交一条学习记录就会出现在这里。',
+                      style: TextStyle(color: bodyColor, height: 1.45),
+                    )
+                  else
+                    ...entries.map(
+                      (entry) => _buildChallengeRankTile(
+                        entry,
+                        titleColor,
+                        bodyColor,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildChallengeRankTile(
+    ChallengeLeaderboardEntry entry,
+    Color titleColor,
+    Color bodyColor,
+  ) {
+    final nickname = _challengeRankName(entry);
+    final count = entry.evidenceCount > 0 ? entry.evidenceCount : entry.points;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: widget.isDarkMode
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: StudyUi.pathWarm.withValues(alpha: widget.isDarkMode ? 0.16 : 0.10),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: StudyUi.pathWarm.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                '#${entry.rank}',
+                style: const TextStyle(
+                  color: StudyUi.pathWarm,
+                  fontWeight: AppTypography.hero,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nickname,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 14,
+                    fontWeight: AppTypography.title,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '进度 ${entry.progress}% · 提交 $count 条记录',
+                  style: TextStyle(color: bodyColor, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          BadgePill(
+            label: '$count 条',
+            background: StudyUi.chipBackground(StudyUi.pathWarm, widget.isDarkMode),
+            foreground: StudyUi.pathWarm,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _challengeRankName(ChallengeLeaderboardEntry entry) {
+    final profile = entry.profile;
+    final nickname = profile?['nickname']?.toString().trim();
+    if (nickname != null && nickname.isNotEmpty) return nickname;
+    final username = entry.username?.trim();
+    if (username != null && username.isNotEmpty) return username;
+    return '小组成员';
   }
 
   Future<void> _submitLatestEvidence(GroupChallenge challenge) async {
@@ -616,7 +910,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         .where((event) => event.isShareable)
         .toList();
     if (events.isEmpty) {
-      StudyToast.show(context, '请先保存一次复盘、专注或闪卡复习，再加入小组回顾');
+      StudyToast.show(context, '请先保存一次复盘、专注或闪卡复习，再提交共学挑战');
       return;
     }
     final event = events.first;
@@ -647,13 +941,13 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         },
       );
       if (!mounted) return;
-      StudyToast.show(context, '学习记录已保存到小组回顾');
+      StudyToast.show(context, '学习记录已提交到共学挑战');
       await _loadGroups();
     } catch (_) {
       if (!mounted) return;
       await StudyToast.dialog(
         context,
-        title: '保存到回顾失败',
+        title: '提交挑战失败',
         message: '请稍后重试。',
       );
     }
@@ -680,8 +974,8 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
         isDarkMode: widget.isDarkMode,
         icon: Icons.upload_rounded,
         accent: widget.controller.primaryColor,
-        title: '把记录保存到小组回顾？',
-        subtitle: '这条学习记录会进入小组一起回看的学习线。',
+        title: '把记录提交到共学挑战？',
+        subtitle: '这条学习记录会进入挑战记录和排行。',
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -741,7 +1035,7 @@ class _StudyGroupPageState extends State<StudyGroupPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _GroupActionPill(
-                    label: '保存到共学回看',
+                    label: '提交到挑战',
                     icon: Icons.upload_rounded,
                     accent: widget.controller.primaryColor,
                     isDarkMode: widget.isDarkMode,
@@ -1736,6 +2030,103 @@ class _GroupDialogSurface extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupFeatureTile extends StatelessWidget {
+  const _GroupFeatureTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.accent,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color accent;
+  final bool isDarkMode;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleColor = StudyUi.title(isDarkMode);
+    final bodyColor = StudyUi.body(isDarkMode);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDarkMode
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.white.withValues(alpha: 0.76),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: accent.withValues(alpha: isDarkMode ? 0.18 : 0.14),
+            ),
+            boxShadow: [
+              if (!isDarkMode)
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.10),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+            ],
+          ),
+          child: Row(
+            children: [
+              StudyGlassIconNode(
+                icon: icon,
+                accent: accent,
+                size: 40,
+                iconSize: 19,
+                isDarkMode: isDarkMode,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: titleColor,
+                        fontSize: 14,
+                        fontWeight: AppTypography.title,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: bodyColor,
+                        fontSize: 11.5,
+                        height: 1.28,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: accent,
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),

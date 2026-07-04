@@ -100,6 +100,8 @@ class _AiChatPageState extends State<AiChatPage> {
     super.initState();
     _aiService = widget.controller.aiStudyService;
     _sessionId = 'chat_${DateTime.now().millisecondsSinceEpoch}';
+    _thinkingEnabled = widget.controller.aiConfig.thinkingEnabled ||
+        widget.controller.aiConfig.thinkingMode;
     if (UiReviewConfig.enabled) {
       _seedReviewSession();
     } else {
@@ -133,7 +135,7 @@ class _AiChatPageState extends State<AiChatPage> {
               "**一阶线性方程解题步骤**\n\n1. 先整理成标准形式 `y' + P(x)y = Q(x)`。\n2. 写出积分因子 `μ = e^(∫P(x)dx)`。\n3. 两边同乘积分因子，把左侧合成 `(μy)'`。\n4. 积分后代回初值，最后检查符号和常数项。",
         ),
       ]);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _scrollToBottom(settle: true);
   }
 
   bool _isDefaultSessionTitle(String title) {
@@ -201,11 +203,12 @@ class _AiChatPageState extends State<AiChatPage> {
           text: m.content,
           attachments: m.attachments,
           resultShortcuts: _resultShortcutsFromAttachments(m.attachments),
+          agentSteps: _agentStepsFromAttachments(m.attachments),
         ));
       }
       if (mounted) {
         setState(() {});
-        _scrollToBottom();
+        _scrollToBottom(settle: true);
       }
     } catch (error) {
       debugPrint('加载最近会话失败: $error');
@@ -275,52 +278,7 @@ class _AiChatPageState extends State<AiChatPage> {
                         ),
                       ),
                     ),
-                    StudyPopupMenuButton<String>(
-                      tooltip: '更多',
-                      constraints:
-                          const BoxConstraints(minWidth: 178, maxWidth: 220),
-                      onSelected: (value) {
-                        switch (value) {
-                          case 'history':
-                            _showHistorySheet();
-                            break;
-                          case 'new':
-                            _newSession();
-                            break;
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        PopupMenuItem<String>(
-                          value: 'history',
-                          child: Row(
-                            children: [
-                              Icon(Icons.history_rounded,
-                                  size: 18, color: titleColor),
-                              const SizedBox(width: 10),
-                              const Text('历史对话'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'new',
-                          child: Row(
-                            children: [
-                              Icon(Icons.add_comment_rounded,
-                                  size: 18, color: titleColor),
-                              const SizedBox(width: 10),
-                              const Text('新建对话'),
-                            ],
-                          ),
-                        ),
-                      ],
-                      child: StudyGlassIconNode(
-                        icon: Icons.more_horiz_rounded,
-                        accent: StudyUi.secondary,
-                        size: 36,
-                        iconSize: 18,
-                        isDarkMode: widget.isDarkMode,
-                      ),
-                    ),
+                    const SizedBox(width: 36),
                   ],
                 ),
               ),
@@ -440,7 +398,7 @@ class _AiChatPageState extends State<AiChatPage> {
             constraints: const BoxConstraints(minWidth: 150, maxWidth: 190),
             onSelected: (value) {
               if (value == _thinkingEnabled) return;
-              setState(() => _thinkingEnabled = value);
+              unawaited(_setThinkingEnabled(value));
             },
             itemBuilder: (context) => [
               _thinkingModeMenuItem(
@@ -484,11 +442,31 @@ class _AiChatPageState extends State<AiChatPage> {
             label: '新建',
             color: StudyUi.pathMint,
             icon: Icons.add_rounded,
-            onTap: _newSession,
+            onTap: _confirmNewSession,
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _setThinkingEnabled(bool value) async {
+    if (!mounted) return;
+    setState(() => _thinkingEnabled = value);
+    try {
+      await widget.controller.saveAiSettings(
+        config: widget.controller.aiConfig.copyWith(
+          thinkingMode: value,
+          thinkingEnabled: value,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _thinkingEnabled = widget.controller.aiConfig.thinkingEnabled ||
+            widget.controller.aiConfig.thinkingMode;
+      });
+      _showSnack('思考深度暂时没有保存成功，请稍后重试');
+    }
   }
 
   PopupMenuItem<bool> _thinkingModeMenuItem({
@@ -1384,6 +1362,70 @@ class _AiChatPageState extends State<AiChatPage> {
     ));
   }
 
+  Future<void> _confirmNewSession() async {
+    if (_entries.isEmpty &&
+        _inputController.text.trim().isEmpty &&
+        _pendingImageBase64 == null) {
+      _newSession();
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: 22,
+          vertical: 24,
+        ),
+        child: StudyDialogSurface(
+          isDarkMode: widget.isDarkMode,
+          accent: StudyUi.pathMint,
+          icon: Icons.add_comment_rounded,
+          title: '新建对话？',
+          subtitle: '当前内容会保留在历史记录里，新对话会从一条空白学习问题开始。',
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: StudyActionPill(
+                    icon: Icons.close_rounded,
+                    label: '取消',
+                    color: StudyUi.muted(widget.isDarkMode),
+                    isDarkMode: widget.isDarkMode,
+                    filled: false,
+                    expand: true,
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: StudyActionPill(
+                    icon: Icons.add_rounded,
+                    label: '新建',
+                    color: StudyUi.pathMint,
+                    isDarkMode: widget.isDarkMode,
+                    expand: true,
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          child: Text(
+            '如果只是想查看旧内容，可以点上方的“历史”。',
+            style: TextStyle(
+              color: StudyUi.body(widget.isDarkMode),
+              fontSize: 13,
+              height: 1.45,
+            ),
+          ),
+        ),
+      ),
+    );
+    if (confirmed == true) _newSession();
+  }
+
   Future<void> _loadSession(String id) async {
     try {
       final raw = await _storage.getString('chat_sessions');
@@ -1409,10 +1451,11 @@ class _AiChatPageState extends State<AiChatPage> {
             text: m.content,
             attachments: m.attachments,
             resultShortcuts: _resultShortcutsFromAttachments(m.attachments),
+            agentSteps: _agentStepsFromAttachments(m.attachments),
           ));
         }
       });
-      _scrollToBottom();
+      _scrollToBottom(settle: true);
     } catch (error) {
       _showSnack('历史对话暂时没打开，请稍后再试');
     }
@@ -1638,14 +1681,15 @@ class _AiChatPageState extends State<AiChatPage> {
 
         if (actions.dangerous.isNotEmpty && mounted) {
           final displayedReply = _composeAgentReply(finalReply, toolResults);
+          final waitingSteps = _agentStepViews(
+            toolResults,
+            waitingActions: actions.dangerous,
+          );
           setState(() {
             _replaceAssistantDraft(
               displayedReply,
               memorySources: memorySources,
-              agentSteps: _agentStepViews(
-                toolResults,
-                waitingActions: actions.dangerous,
-              ),
+              agentSteps: waitingSteps,
             );
             _entries.add(_ChatEntry(
               id: _newEntryId('confirm'),
@@ -1660,11 +1704,13 @@ class _AiChatPageState extends State<AiChatPage> {
           _pendingDangerousReply = displayedReply;
           _pendingDangerousInput = input;
           await _saveChatMessage(
+            id: _latestAssistantEntryId(),
             role: ChatMessageRole.assistant,
             content: displayedReply,
             attachments: _buildAssistantAttachments(
               displayedReply,
               resultShortcuts: _buildResultShortcuts(toolResults),
+              agentSteps: waitingSteps,
             ),
           );
           return; // 提前返回，不清除 isSending
@@ -1684,15 +1730,16 @@ class _AiChatPageState extends State<AiChatPage> {
       );
       final undoResults = _undoableResults(toolResults);
       final resultShortcuts = _buildResultShortcuts(toolResults);
+      final finalAgentSteps = _agentStepViews(
+        toolResults,
+        footer: finalFooter,
+      );
       if (mounted) {
         setState(
           () => _replaceAssistantDraft(
             finalReply,
             memorySources: memorySources,
-            agentSteps: _agentStepViews(
-              toolResults,
-              footer: finalFooter,
-            ),
+            agentSteps: finalAgentSteps,
             undoResults: undoResults,
             resultShortcuts: resultShortcuts,
           ),
@@ -1700,11 +1747,13 @@ class _AiChatPageState extends State<AiChatPage> {
         _scrollToBottom();
       }
       await _saveChatMessage(
+        id: _latestAssistantEntryId(),
         role: ChatMessageRole.assistant,
         content: finalReply,
         attachments: _buildAssistantAttachments(
           finalReply,
           resultShortcuts: resultShortcuts,
+          agentSteps: finalAgentSteps,
         ),
       );
     } catch (error) {
@@ -1957,6 +2006,7 @@ class _AiChatPageState extends State<AiChatPage> {
         undoResults: const [],
         undoApplied: true,
       );
+      unawaited(_syncStoredEntry(_entries[index]));
     });
     StudyToast.show(
       context,
@@ -2431,16 +2481,18 @@ class _AiChatPageState extends State<AiChatPage> {
               _entries[i].resultShortcuts,
               _buildResultShortcuts(results),
             );
+            final mergedSteps = [
+              ..._entries[i].agentSteps,
+              ..._agentStepViews(results),
+            ];
             _entries[i] = _entries[i].copyWith(
               text: updated,
               attachments: _buildAssistantAttachments(
                 updated,
                 resultShortcuts: mergedShortcuts,
+                agentSteps: mergedSteps,
               ),
-              agentSteps: [
-                ..._entries[i].agentSteps,
-                ..._agentStepViews(results),
-              ],
+              agentSteps: mergedSteps,
               undoResults: [
                 ..._entries[i].undoResults,
                 ...undoResults,
@@ -2488,6 +2540,7 @@ class _AiChatPageState extends State<AiChatPage> {
             attachments: _buildAssistantAttachments(
               updated,
               resultShortcuts: _entries[i].resultShortcuts,
+              agentSteps: _entries[i].agentSteps,
             ),
           );
           updatedAssistantEntry = _entries[i];
@@ -2724,6 +2777,7 @@ class _AiChatPageState extends State<AiChatPage> {
       final reply = _stripLegacyActions(fallback);
       if (mounted) setState(() => _replaceAssistantDraft(reply));
       await _saveChatMessage(
+        id: _latestAssistantEntryId(),
         role: ChatMessageRole.assistant,
         content: reply,
         attachments: _attachmentsFromMarkdown(reply),
@@ -2732,6 +2786,7 @@ class _AiChatPageState extends State<AiChatPage> {
       final friendly = _friendlyErrorMessage(error);
       if (mounted) setState(() => _replaceAssistantDraft(friendly));
       await _saveChatMessage(
+        id: _latestAssistantEntryId(),
         role: ChatMessageRole.assistant,
         content: friendly,
       );
@@ -2779,15 +2834,17 @@ class _AiChatPageState extends State<AiChatPage> {
     List<_ChatResultShortcut>? resultShortcuts,
     bool? undoApplied,
   }) {
-    final attachments = _buildAssistantAttachments(
-      text,
-      resultShortcuts: resultShortcuts,
-    );
     for (var i = _entries.length - 1; i >= 0; i--) {
       if (_entries[i].role == _ChatRole.assistant) {
+        final nextAgentSteps = agentSteps ?? _entries[i].agentSteps;
+        final nextShortcuts = resultShortcuts ?? _entries[i].resultShortcuts;
         _entries[i] = _entries[i].copyWith(
           text: text,
-          attachments: attachments,
+          attachments: _buildAssistantAttachments(
+            text,
+            resultShortcuts: nextShortcuts,
+            agentSteps: nextAgentSteps,
+          ),
           memorySources: memorySources.isEmpty ? null : memorySources,
           agentSteps: agentSteps,
           undoResults: undoResults,
@@ -2801,7 +2858,11 @@ class _AiChatPageState extends State<AiChatPage> {
       id: _newEntryId('assistant'),
       role: _ChatRole.assistant,
       text: text,
-      attachments: attachments,
+      attachments: _buildAssistantAttachments(
+        text,
+        resultShortcuts: resultShortcuts,
+        agentSteps: agentSteps,
+      ),
       memorySources: memorySources,
       agentSteps: agentSteps ?? const [],
       undoResults: undoResults ?? const [],
@@ -3450,13 +3511,14 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   Future<void> _saveChatMessage({
+    String? id,
     required ChatMessageRole role,
     required String content,
     List<AiChatAttachment> attachments = const [],
   }) async {
     try {
       final message = AiChatMessage(
-        id: '${_sessionId}_${DateTime.now().millisecondsSinceEpoch}',
+        id: id ?? '${_sessionId}_${DateTime.now().millisecondsSinceEpoch}',
         role: role,
         content: content,
         timestamp: DateTime.now(),
@@ -3517,6 +3579,7 @@ class _AiChatPageState extends State<AiChatPage> {
   List<AiChatAttachment> _buildAssistantAttachments(
     String content, {
     List<_ChatResultShortcut>? resultShortcuts,
+    List<_AgentStepView>? agentSteps,
   }) {
     final attachments =
         _attachmentsFromMarkdown(content).toList(growable: true);
@@ -3532,7 +3595,28 @@ class _AiChatPageState extends State<AiChatPage> {
         },
       ));
     }
+    final steps = agentSteps ?? const <_AgentStepView>[];
+    if (steps.isNotEmpty) {
+      attachments.add(AiChatAttachment(
+        id: 'agent_steps_${DateTime.now().microsecondsSinceEpoch}',
+        type: AiChatAttachmentType.apiResult,
+        title: '工具流',
+        metadata: {
+          'kind': 'agent_steps',
+          'items': steps.map((item) => item.toJson()).toList(),
+        },
+      ));
+    }
     return attachments;
+  }
+
+  List<AiChatAttachment> _attachmentsForEntry(_ChatEntry entry) {
+    if (entry.role != _ChatRole.assistant) return entry.attachments;
+    return _buildAssistantAttachments(
+      entry.text,
+      resultShortcuts: entry.resultShortcuts,
+      agentSteps: entry.agentSteps,
+    );
   }
 
   List<_ChatResultShortcut> _resultShortcutsFromAttachments(
@@ -3547,6 +3631,34 @@ class _AiChatPageState extends State<AiChatPage> {
       return rawItems
           .whereType<Map>()
           .map((item) => _ChatResultShortcut.fromJson(
+                item.cast<String, dynamic>(),
+              ))
+          .toList(growable: false);
+    }
+    return const [];
+  }
+
+  String? _latestAssistantEntryId() {
+    for (var i = _entries.length - 1; i >= 0; i--) {
+      if (_entries[i].role == _ChatRole.assistant) {
+        return _entries[i].id;
+      }
+    }
+    return null;
+  }
+
+  List<_AgentStepView> _agentStepsFromAttachments(
+    List<AiChatAttachment> attachments,
+  ) {
+    for (final attachment in attachments) {
+      if (attachment.type != AiChatAttachmentType.apiResult) continue;
+      final metadata = attachment.metadata;
+      if (metadata['kind'] != 'agent_steps') continue;
+      final rawItems = metadata['items'];
+      if (rawItems is! List) continue;
+      return rawItems
+          .whereType<Map>()
+          .map((item) => _AgentStepView.fromJson(
                 item.cast<String, dynamic>(),
               ))
           .toList(growable: false);
@@ -3707,7 +3819,7 @@ class _AiChatPageState extends State<AiChatPage> {
         role: current.role,
         content: entry.text,
         timestamp: current.timestamp,
-        attachments: entry.attachments,
+        attachments: _attachmentsForEntry(entry),
       );
       sessions[sessionIndex] = AiChatSession(
         id: session.id,
@@ -4253,6 +4365,8 @@ class _AiChatPageState extends State<AiChatPage> {
       scroll();
       if (settle) {
         Future<void>.delayed(const Duration(milliseconds: 90), scroll);
+        Future<void>.delayed(const Duration(milliseconds: 220), scroll);
+        Future<void>.delayed(const Duration(milliseconds: 420), scroll);
       }
     });
   }
@@ -4612,9 +4726,8 @@ class _ThinkingModeDropdownChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = enabled
-        ? accent
-        : StudyUi.muted(isDarkMode).withValues(alpha: 0.62);
+    final foreground =
+        enabled ? accent : StudyUi.muted(isDarkMode).withValues(alpha: 0.62);
     final background = enabled
         ? StudyUi.chipBackground(accent, isDarkMode)
         : StudyUi.surfaceAlt(isDarkMode);
@@ -4834,7 +4947,7 @@ class _ChatBubble extends StatelessWidget {
         child: Row(
           mainAxisAlignment:
               isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (!isUser) ...[
               _buildAvatar(isUser, accent),
@@ -4845,8 +4958,9 @@ class _ChatBubble extends StatelessWidget {
                 constraints: BoxConstraints(maxWidth: maxWidth),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment:
-                      isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  crossAxisAlignment: isUser
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
                   children: [
                     Stack(
                       clipBehavior: Clip.none,
@@ -4862,8 +4976,7 @@ class _ChatBubble extends StatelessWidget {
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                     colors: [
-                                      StudyUi.secondary
-                                          .withValues(alpha: 0.22),
+                                      StudyUi.secondary.withValues(alpha: 0.22),
                                       StudyUi.pathViolet
                                           .withValues(alpha: 0.22),
                                     ],
@@ -5675,6 +5788,24 @@ class _AgentStepView {
   final String title;
   final String detail;
   final _AgentStepStatus status;
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'detail': detail,
+        'status': status.name,
+      };
+
+  factory _AgentStepView.fromJson(Map<String, dynamic> json) {
+    final rawStatus = json['status']?.toString();
+    return _AgentStepView(
+      title: json['title']?.toString() ?? '',
+      detail: json['detail']?.toString() ?? '',
+      status: _AgentStepStatus.values.firstWhere(
+        (item) => item.name == rawStatus,
+        orElse: () => _AgentStepStatus.info,
+      ),
+    );
+  }
 }
 
 class _ConfirmActionCard extends StatefulWidget {

@@ -6,11 +6,17 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser, CurrentUserPayload } from '../../common/current-user.decorator';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
-import { CreateMomentCommentDto, CreateMomentDto, MomentVisibilityDto } from './dto/moments.dto';
+import {
+  CreateMomentCommentDto,
+  CreateMomentDto,
+  MomentFeedQueryDto,
+  MomentVisibilityDto,
+} from './dto/moments.dto';
 import { MomentsService } from './moments.service';
 
 @UseGuards(JwtAuthGuard)
@@ -24,8 +30,8 @@ export class MomentsController {
   }
 
   @Get('feed')
-  feed(@CurrentUser() user: CurrentUserPayload) {
-    return this.moments.feed(user.userId);
+  feed(@CurrentUser() user: CurrentUserPayload, @Query() query: MomentFeedQueryDto) {
+    return this.moments.feed(user.userId, query.kind);
   }
 
   @Patch(':id/visibility')

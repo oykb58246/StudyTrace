@@ -81,6 +81,23 @@ class CommunityEvidenceService {
     return ChallengeEvidence.fromJson(data);
   }
 
+  Future<List<ChallengeLeaderboardEntry>> challengeLeaderboard(
+    String groupId,
+    String challengeId,
+  ) async {
+    final list = await api.getList(
+      '/groups/$groupId/challenges/$challengeId/leaderboard',
+    );
+    return list
+        .whereType<Map>()
+        .map(
+          (item) => ChallengeLeaderboardEntry.fromJson(
+            item.cast<String, dynamic>(),
+          ),
+        )
+        .toList();
+  }
+
   Future<EvidencePackage> createPackage({
     required String title,
     required String courseName,

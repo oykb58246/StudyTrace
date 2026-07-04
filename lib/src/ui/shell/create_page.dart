@@ -108,9 +108,14 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
           .toList();
     }
     result.sort((a, b) {
-      final aDone = a.status == StudyTaskStatus.completed ? 1 : 0;
-      final bDone = b.status == StudyTaskStatus.completed ? 1 : 0;
-      if (aDone != bDone) return aDone - bDone;
+      final aDone = a.effectiveStatus == StudyTaskStatus.completed;
+      final bDone = b.effectiveStatus == StudyTaskStatus.completed;
+      if (aDone != bDone) return aDone ? 1 : -1;
+      if (aDone && bDone) {
+        final aCompleted = a.effectiveCompletedAt ?? a.updatedAt;
+        final bCompleted = b.effectiveCompletedAt ?? b.updatedAt;
+        return bCompleted.compareTo(aCompleted);
+      }
       final aDeadline = _earliestUnfinishedDeadline(a.subTasks, a.deadline);
       final bDeadline = _earliestUnfinishedDeadline(b.subTasks, b.deadline);
       return aDeadline.compareTo(bDeadline);
@@ -125,9 +130,8 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
     final now = DateTime.now();
     final tomorrow = now.add(const Duration(days: 1));
     return switch (filter) {
-      _TaskQuickFilter.overdue => tasks
-          .where((task) => _isTaskOverdue(task, now: now))
-          .toList(),
+      _TaskQuickFilter.overdue =>
+        tasks.where((task) => _isTaskOverdue(task, now: now)).toList(),
       _TaskQuickFilter.dueSoon => tasks
           .where(
             (task) =>
@@ -398,8 +402,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
                     onOpenDetail: () => _openTaskRoute(task),
                     onEdit: () => _showEditForm(context, task),
                     onRescheduleOverdue: () => _showEditForm(context, task),
-                    onDismissOverdueWarning: () =>
-                        _resolveOverdueWarning(task),
+                    onDismissOverdueWarning: () => _resolveOverdueWarning(task),
                     onDelete: () {
                       showDialog(
                         context: context,
@@ -487,7 +490,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
     bool isDarkMode,
   ) {
     final unfinished = allTasks
-        .where((task) => task.status != StudyTaskStatus.completed)
+        .where((task) => task.effectiveStatus != StudyTaskStatus.completed)
         .toList()
       ..sort((a, b) {
         final aDeadline = _earliestUnfinishedDeadline(a.subTasks, a.deadline);
@@ -504,7 +507,7 @@ class _StudyTasksPageState extends State<StudyTasksPage> {
             !_isTaskOverdue(task, now: now) && task.deadline.isBefore(tomorrow))
         .length;
     final completed = allTasks
-        .where((task) => task.status == StudyTaskStatus.completed)
+        .where((task) => task.effectiveStatus == StudyTaskStatus.completed)
         .length;
     final focusTask = unfinished.isNotEmpty ? unfinished.first : null;
     return StudyPathHero(
@@ -1625,8 +1628,9 @@ class _TaskRouteDetailPageState extends State<_TaskRouteDetailPage> {
 
   List<Widget> _buildGeneratedRoute(StudyTaskItem task, Color accent) {
     final course = task.courseName.isEmpty ? task.type.label : task.courseName;
-    final note =
-        task.note.trim().isEmpty ? '先确认要做什么、最后要交什么，以及容易漏掉的细节。' : task.note.trim();
+    final note = task.note.trim().isEmpty
+        ? '先确认要做什么、最后要交什么，以及容易漏掉的细节。'
+        : task.note.trim();
     return [
       _TaskRouteStepTile(
         index: 1,
@@ -1697,11 +1701,17 @@ class _TaskRouteDetailPageState extends State<_TaskRouteDetailPage> {
 
   void _markTaskCompleted(StudyTaskItem task) {
     if (task.subTasks.isEmpty) {
-      widget.controller.updateStudyTaskStatus(task.id, StudyTaskStatus.completed);
+      widget.controller
+          .updateStudyTaskStatus(task.id, StudyTaskStatus.completed);
       return;
     }
+    final now = DateTime.now();
     final updated = task.subTasks
-        .map((item) => item.copyWith(status: SubTaskStatus.completed))
+        .map((item) => item.copyWith(
+              status: SubTaskStatus.completed,
+              updatedAt: now,
+              completedAt: item.completedAt ?? now,
+            ))
         .toList();
     _updateSubTasks(task, updated, status: StudyTaskStatus.completed);
   }
@@ -1712,7 +1722,12 @@ class _TaskRouteDetailPageState extends State<_TaskRouteDetailPage> {
     final nextStatus = current.status == SubTaskStatus.completed
         ? SubTaskStatus.notStarted
         : SubTaskStatus.completed;
-    updated[index] = current.copyWith(status: nextStatus);
+    updated[index] = current.copyWith(
+      status: nextStatus,
+      completedAt:
+          nextStatus == SubTaskStatus.completed ? DateTime.now() : null,
+      clearCompletedAt: nextStatus != SubTaskStatus.completed,
+    );
     _updateSubTasks(task, updated);
   }
 
@@ -2752,8 +2767,7 @@ class _TaskCardState extends State<_TaskCard> {
                                     accent: StudyUi.danger,
                                     isDarkMode: isDark,
                                     expand: true,
-                                    onPressed:
-                                        widget.onDismissOverdueWarning,
+                                    onPressed: widget.onDismissOverdueWarning,
                                   ),
                                 ),
                               ],

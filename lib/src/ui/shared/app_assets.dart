@@ -5,6 +5,7 @@ class AppAssets {
   static const avatarDefault = 'assets/avatars/Avatar Default.jpg';
   static const brandAppIcon = 'logo/app图标.png';
   static const brandWordLogo = 'logo/文字logo.png';
+  static const brandWhiteTransparentLogo = 'logo/logo白透明.png';
 
   static const emailBox = 'assets/icons/email_box.svg';
   static const googleBox = 'assets/icons/google_box.svg';
@@ -49,16 +50,14 @@ class AppAssets {
   static const generatedHomeReviewIcon =
       'assets/icons/generated/home_review.png';
   static const generatedHomePathIcon = 'assets/icons/generated/home_path.png';
-  static const generatedHomeVoiceIcon =
-      'assets/icons/generated/home_voice.png';
+  static const generatedHomeVoiceIcon = 'assets/icons/generated/home_voice.png';
   static const generatedHomeCameraIcon =
       'assets/icons/generated/home_camera.png';
   static const generatedHomePlanIcon = 'assets/icons/generated/home_plan.png';
   static const generatedHomeNotesIcon = 'assets/icons/generated/home_notes.png';
   static const generatedHomeMomentsIcon =
       'assets/icons/generated/home_moments.png';
-  static const generatedHomeFocusIcon =
-      'assets/icons/generated/home_focus.png';
+  static const generatedHomeFocusIcon = 'assets/icons/generated/home_focus.png';
   static const generatedHomeWeeklyReviewIcon =
       'assets/icons/generated/home_weekly_review.png';
   static const generatedHomeFlashcardsIcon =
@@ -98,6 +97,7 @@ class AppAssets {
   static const sideAiSettingsIcon =
       'assets/icons/generated/side_ai_settings.png';
   static const sideMomentsIcon = 'assets/icons/generated/side_moments.png';
+  static const sideGroupIcon = 'assets/icons/generated/side_group.png';
   static const sideDashboardIcon = 'assets/icons/generated/side_dashboard.png';
   static const sideSettingsIcon = 'assets/icons/generated/side_settings.png';
   static const sideAchievementsIcon =
@@ -120,8 +120,6 @@ class AppAssets {
       'assets/icons/generated/feature_calendar_report.png';
   static const featureGroupRankIcon =
       'assets/icons/generated/feature_group_rank.png';
-  static const brandAiAvatarIcon =
-      'assets/icons/generated/brand_ai_avatar.png';
-  static const aiChatAssistantAvatarIcon =
-      brandAiAvatarIcon;
+  static const brandAiAvatarIcon = 'assets/icons/generated/brand_ai_avatar.png';
+  static const aiChatAssistantAvatarIcon = brandAiAvatarIcon;
 }

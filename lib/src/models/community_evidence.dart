@@ -70,6 +70,43 @@ class ChallengeEvidence {
   }
 }
 
+class ChallengeLeaderboardEntry {
+  const ChallengeLeaderboardEntry({
+    required this.rank,
+    required this.userId,
+    required this.points,
+    this.username,
+    this.profile,
+    this.progress = 0,
+    this.evidenceCount = 0,
+    this.completedAt,
+  });
+
+  final int rank;
+  final String userId;
+  final int points;
+  final String? username;
+  final Map<String, dynamic>? profile;
+  final int progress;
+  final int evidenceCount;
+  final DateTime? completedAt;
+
+  factory ChallengeLeaderboardEntry.fromJson(Map<String, dynamic> json) {
+    return ChallengeLeaderboardEntry(
+      rank: (json['rank'] as num?)?.toInt() ?? 0,
+      userId: json['userId'] as String? ?? '',
+      points: (json['points'] as num?)?.toInt() ?? 0,
+      username: json['username'] as String?,
+      profile: json['profile'] is Map<String, dynamic>
+          ? json['profile'] as Map<String, dynamic>
+          : null,
+      progress: (json['progress'] as num?)?.toInt() ?? 0,
+      evidenceCount: (json['evidenceCount'] as num?)?.toInt() ?? 0,
+      completedAt: DateTime.tryParse(json['completedAt'] as String? ?? ''),
+    );
+  }
+}
+
 class EvidencePackage {
   const EvidencePackage({
     required this.id,
